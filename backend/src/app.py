@@ -1,8 +1,10 @@
 from flask import Flask, jsonify, make_response
+from flask_cors import CORS
 import os
 from snowpark import snowpark
 
 app = Flask(__name__)
+CORS(app)
 app.register_blueprint(snowpark, url_prefix='/snowpark')
 
 @app.route("/")

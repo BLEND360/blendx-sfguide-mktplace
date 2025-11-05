@@ -148,6 +148,7 @@ export default {
           console.log("Error reading top_clerks")
         })
     }
+    
   }
 
 }

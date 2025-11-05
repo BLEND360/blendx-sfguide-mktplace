@@ -12,18 +12,21 @@
 
     <v-main>
       <TopClerks/>
+      <LLMCall/>
     </v-main>
   </v-app>
 </template>
 
 <script>
 import TopClerks from './components/TopClerks';
+import LLMCall from './components/LLMCall';
 
 export default {
   name: 'App',
 
   components: {
     TopClerks,
+    LLMCall,
   },
 
   data: () => ({

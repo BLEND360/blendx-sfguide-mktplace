@@ -4,3 +4,8 @@ pandas
 numpy
 datetime
 flask
+flask-cors
+litellm
+sqlalchemy
+snowflake-sqlalchemy
+pydantic_settings

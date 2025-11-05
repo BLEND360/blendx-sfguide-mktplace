@@ -1,9 +1,8 @@
 from flask import Blueprint, request, abort, make_response, jsonify
 import datetime
-import snowflake.snowpark.functions as f
+from sqlalchemy import text
 
-from spcs_helpers.connection import session as snow_session
-session = snow_session()
+from database.db import get_new_db_session
 
 # Make the API endpoints
 snowpark = Blueprint('snowpark', __name__)
@@ -23,14 +22,40 @@ def top_clerks():
         topn = int(topn_str)
     except:
         abort(400, "Invalid arguments.")
+    with get_new_db_session() as session:
+        try:
+            sql = text("""
+                SELECT O_CLERK, SUM(O_TOTALPRICE) as CLERK_TOTAL
+                FROM NAC_TEST_DB.DATA.ORDERS
+                WHERE O_ORDERDATE >= :start_date
+                  AND O_ORDERDATE <= :end_date
+                GROUP BY O_CLERK
+                ORDER BY CLERK_TOTAL DESC
+                LIMIT :limit
+            """)
+            result = session.execute(sql, {
+                'start_date': sdt,
+                'end_date': edt,
+                'limit': topn
+            })
+            rows = [dict(row._mapping) for row in result]
+            return make_response(jsonify(rows))
+        except Exception as ex:
+            print(f"ERROR: {ex}")
+            abort(500, "Error reading from Snowflake. Check the logs for details.")
+
+@snowpark.route('/llm-call')
+def llm_call():
     try:
-        df = session.sql("SELECT * FROM Reference('ORDERS_TABLE')") \
-                .filter(f.col('O_ORDERDATE') >= sdt) \
-                .filter(f.col('O_ORDERDATE') <= edt) \
-                .group_by(f.col('O_CLERK')) \
-                .agg(f.sum(f.col('O_TOTALPRICE')).as_('CLERK_TOTAL')) \
-                .order_by(f.col('CLERK_TOTAL').desc()) \
-                .limit(topn)
-        return make_response(jsonify([x.as_dict() for x in df.to_local_iterator()]))
-    except:
-        abort(500, "Error reading from Snowflake. Check the logs for details.")
+        with get_new_db_session() as session:
+            a = session.execute(text("SELECT 1"))
+            print('DB Connection OK')
+            result = session.execute(text("""SELECT AI_COMPLETE('SNOWFLAKE.MODELS."LLAMA3.1-70B"', 'Hello');"""))
+            response = result.fetchone()[0]
+            print(f"Call LLM, response:{response}")
+            return make_response(jsonify({"response": response}))
+
+    except Exception as ex:
+        print(f"ERROR while connecting to DB {ex}")
+        abort(500, f"Error calling LLM: {str(ex)}")
+        
