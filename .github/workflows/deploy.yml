@@ -1,0 +1,131 @@
+name: Deploy Snowflake Native App
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+env:
+  SNOWFLAKE_REPO: wb19670-c2gpartners.registry.snowflakecomputing.com/spcs_app/napp/img_repo
+  BACKEND_IMAGE: eap_backend
+  FRONTEND_IMAGE: eap_frontend
+  ROUTER_IMAGE: eap_router
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Install Snowflake CLI
+        run: |
+          pip install snowflake-cli-labs
+
+      - name: Configure Snowflake connection
+        run: |
+          mkdir -p ~/.snowflake
+          cat > ~/.snowflake/config.toml << EOF
+          [connections.mkt_blendx_demo]
+          account = "${{ secrets.SNOWFLAKE_ACCOUNT }}"
+          user = "${{ secrets.SNOWFLAKE_USER }}"
+          authenticator = "SNOWFLAKE_JWT"
+          private_key_raw = "${{ secrets.SNOWFLAKE_PRIVATE_KEY_RAW }}"
+          warehouse = "${{ secrets.SNOWFLAKE_WAREHOUSE }}"
+          database = "${{ secrets.SNOWFLAKE_DATABASE }}"
+          schema = "${{ secrets.SNOWFLAKE_SCHEMA }}"
+          EOF
+
+      - name: Build backend image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend
+          platforms: linux/amd64
+          tags: ${{ env.BACKEND_IMAGE }}:latest
+          load: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build frontend image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./frontend
+          platforms: linux/amd64
+          tags: ${{ env.FRONTEND_IMAGE }}:latest
+          load: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build router image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./router
+          platforms: linux/amd64
+          tags: ${{ env.ROUTER_IMAGE }}:latest
+          load: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Login to Snowflake Docker registry
+        run: |
+          snow spcs image-registry login --connection mkt_blendx_demo
+          docker login ${{ env.SNOWFLAKE_REPO }} -u ${{ secrets.SNOWFLAKE_USER }} -p $(snow spcs image-registry token --connection mkt_blendx_demo --format=JSON | jq -r .token)
+
+      - name: Tag and push backend image
+        run: |
+          docker tag ${{ env.BACKEND_IMAGE }}:latest ${{ env.SNOWFLAKE_REPO }}/${{ env.BACKEND_IMAGE }}
+          docker push ${{ env.SNOWFLAKE_REPO }}/${{ env.BACKEND_IMAGE }}
+
+      - name: Tag and push frontend image
+        run: |
+          docker tag ${{ env.FRONTEND_IMAGE }}:latest ${{ env.SNOWFLAKE_REPO }}/${{ env.FRONTEND_IMAGE }}
+          docker push ${{ env.SNOWFLAKE_REPO }}/${{ env.FRONTEND_IMAGE }}
+
+      - name: Tag and push router image
+        run: |
+          docker tag ${{ env.ROUTER_IMAGE }}:latest ${{ env.SNOWFLAKE_REPO }}/${{ env.ROUTER_IMAGE }}
+          docker push ${{ env.SNOWFLAKE_REPO }}/${{ env.ROUTER_IMAGE }}
+
+      - name: Upload application files to Snowflake stage
+        run: |
+          snow sql -q "PUT file://${{ github.workspace }}/app/src/* @spcs_app_test.napp.app_stage AUTO_COMPRESS=FALSE OVERWRITE=TRUE;" --connection mkt_blendx_demo
+
+      - name: Remove old version from release channel
+        run: |
+          snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_NASPCS_ROLE }}; ALTER APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }} MODIFY RELEASE CHANNEL default DROP VERSION v1;" --connection mkt_blendx_demo || echo "Version v1 not in channel (OK)"
+
+      - name: Drop old version
+        run: |
+          snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_NASPCS_ROLE }}; ALTER APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }} DEREGISTER VERSION v1;" --connection mkt_blendx_demo || echo "Version v1 doesn't exist (OK)"
+
+      - name: Register new version
+        run: |
+          snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_NASPCS_ROLE }}; ALTER APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }} REGISTER VERSION v1 USING @spcs_app_test.napp.app_stage;" --connection mkt_blendx_demo
+          snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_NASPCS_ROLE }}; ALTER APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }} MODIFY RELEASE CHANNEL default ADD VERSION v1;" --connection mkt_blendx_demo
+
+      - name: Upgrade application
+        run: |
+          snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_NAC_ROLE }}; ALTER APPLICATION ${{ secrets.SNOWFLAKE_APP_INSTANCE }} UPGRADE USING VERSION v1;" --connection mkt_blendx_demo
+
+      - name: Restart service
+        run: |
+          snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_NAC_ROLE }}; CALL ${{ secrets.SNOWFLAKE_APP_INSTANCE }}.app_public.stop_app();" --connection mkt_blendx_demo || echo "Service not running (OK)"
+          snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_NAC_ROLE }}; CALL ${{ secrets.SNOWFLAKE_APP_INSTANCE }}.app_public.start_app('${{ secrets.SNOWFLAKE_COMPUTE_POOL }}', '${{ secrets.SNOWFLAKE_WAREHOUSE }}');" --connection mkt_blendx_demo
+
+      - name: Wait for service to start
+        run: sleep 30
+
+      - name: Check service status
+        run: |
+          echo "Service Status:"
+          snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_NAC_ROLE }}; SHOW SERVICES IN APPLICATION ${{ secrets.SNOWFLAKE_APP_INSTANCE }};" --connection mkt_blendx_demo
+
+      - name: Get application URL
+        run: |
+          echo "Application URL:"
+          snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_NAC_ROLE }}; CALL ${{ secrets.SNOWFLAKE_APP_INSTANCE }}.app_public.app_url();" --connection mkt_blendx_demo

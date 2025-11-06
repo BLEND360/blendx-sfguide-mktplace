@@ -1,5 +1,5 @@
-CREATE APPLICATION ROLE app_admin;
-CREATE APPLICATION ROLE app_user;
+CREATE APPLICATION ROLE IF NOT EXISTS app_admin;
+CREATE APPLICATION ROLE IF NOT EXISTS app_user;
 CREATE SCHEMA IF NOT EXISTS app_public;
 GRANT USAGE ON SCHEMA app_public TO APPLICATION ROLE app_admin;
 GRANT USAGE ON SCHEMA app_public TO APPLICATION ROLE app_user;
@@ -7,7 +7,7 @@ CREATE OR ALTER VERSIONED SCHEMA v1;
 GRANT USAGE ON SCHEMA v1 TO APPLICATION ROLE app_admin;
 
 
-CREATE PROCEDURE v1.register_single_callback(ref_name STRING, operation STRING, ref_or_alias STRING)
+CREATE OR REPLACE PROCEDURE v1.register_single_callback(ref_name STRING, operation STRING, ref_or_alias STRING)
  RETURNS STRING
  LANGUAGE SQL
  AS $$
@@ -70,4 +70,26 @@ END
 $$;
 GRANT USAGE ON PROCEDURE app_public.app_url() TO APPLICATION ROLE app_admin;
 GRANT USAGE ON PROCEDURE app_public.app_url() TO APPLICATION ROLE app_user;
+
+CREATE OR REPLACE PROCEDURE app_public.get_service_logs(container_name VARCHAR, num_lines NUMBER)
+    RETURNS STRING
+    LANGUAGE sql
+    AS
+$$
+BEGIN
+    RETURN SYSTEM$GET_SERVICE_LOGS('app_public.st_spcs', 0, :container_name, :num_lines);
+END
+$$;
+GRANT USAGE ON PROCEDURE app_public.get_service_logs(VARCHAR, NUMBER) TO APPLICATION ROLE app_admin;
+
+CREATE OR REPLACE PROCEDURE app_public.get_service_status()
+    RETURNS STRING
+    LANGUAGE sql
+    AS
+$$
+BEGIN
+    RETURN SYSTEM$GET_SERVICE_STATUS('app_public.st_spcs');
+END
+$$;
+GRANT USAGE ON PROCEDURE app_public.get_service_status() TO APPLICATION ROLE app_admin;
 

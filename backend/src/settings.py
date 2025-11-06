@@ -29,7 +29,7 @@ class Settings(BaseSettings):
     )
 
     # Environment setting
-    environment: str = Field("SHARED")
+    environment: str = Field("PRODUCTION")
 
     # Snowflake connection settings
     snowflake_account: str = Field(

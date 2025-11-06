@@ -24,6 +24,10 @@ privileges:
       description: "Enables application to expose service endpoints"
  - CREATE WAREHOUSE:
       description: "Enables application to create its own warehouse(s)"
+ - EXECUTE MANAGED TASK:
+      description: "Enables application to execute Snowflake Cortex functions"
+ - IMPORTED PRIVILEGES ON SNOWFLAKE DB:
+      description: "Enables application to use Snowflake Cortex AI functions"
 
 
 references:
