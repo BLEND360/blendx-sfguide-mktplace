@@ -1,9 +1,12 @@
+from http.client import HTTPException
 from flask import Blueprint, request, abort, make_response, jsonify
+
 import datetime
 import logging
 from sqlalchemy import text
 
 from database.db import get_new_db_session
+from lite_llm_handler import get_llm
 
 # Make the API endpoints
 snowpark = Blueprint('snowpark', __name__)
@@ -33,6 +36,18 @@ def llm_call():
             result = session.execute(text(llm_query))
             response = result.fetchone()[0]
             logger.info(f"LLM call successful. Response: {response}")
+
+            # Try to use LiteLLM handler
+            try:
+                llm = get_llm(provider='snowflake', model='mistral-large')
+                logger.info("Calling LLM..")
+                response = llm.call([({"role": "user", "content": "Hello"})])
+                logger.info(f"Get response from LLM {response}")
+       
+            except Exception as e:
+                logger.error(f"Failed to create LLM: {str(e)}")
+                return "ERROR"
+               
             return make_response(jsonify({"response": response}))
 
     except Exception as ex:

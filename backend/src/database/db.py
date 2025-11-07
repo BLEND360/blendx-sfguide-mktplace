@@ -67,6 +67,7 @@ def create_snowflake_engine_with_private_key():
 
     private_key_raw = settings.snowflake_private_key_raw
     private_key_path = settings.snowflake_private_key_path
+    print(f"private_key_path={private_key_path}")
 
     if private_key_raw:
         # GitHub Actions case - key is provided as content
