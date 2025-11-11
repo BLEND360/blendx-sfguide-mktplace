@@ -9,8 +9,6 @@ spec:
       env:
         ENVIRONMENT: PRODUCTION
         SNOWFLAKE_AUTHMETHOD: oauth
-        SNOWFLAKE_ACCOUNT: c2gpartners
-        SNOWFLAKE_HOST: c2gpartners.us-east-1.snowflakecomputing.com
         SNOWFLAKE_WAREHOUSE: WH_NAC
         SNOWFLAKE_DATABASE: NAC_TEST_DB
         SNOWFLAKE_SCHEMA: DATA

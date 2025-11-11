@@ -1,14 +1,3 @@
-# Dependencies
-node_modules/
-package_modules/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-
-# Build outputs (if any exist before Docker build)
-dist/
-build/
-
 # IDE
 .vscode/
 .idea/
@@ -35,10 +24,6 @@ docker-compose.yml
 README*
 docs/
 
-# Testing
-coverage/
-.nyc_output/
-
 # Logs
 *.log
 
@@ -51,8 +36,17 @@ coverage/
 __pycache__/
 *.pyc
 
+# Node (if any)
+node_modules/
+
 # Keys and secrets
 *.key
 *.pem
 *.p8
 keys/
+
+# Test files
+test/
+tests/
+*.test.*
+*.spec.*

@@ -153,17 +153,28 @@ def create_snowflake_engine():
         # ALWAYS read fresh token from file
         oauth_token = _read_fresh_oauth_token()
 
+        # In SPCS with OAuth, we only need database, schema, warehouse
+        # The token contains account and host information
+        # Only pass account/host if they're explicitly set (for local testing)
+        url_params = {
+            "warehouse": settings.snowflake_warehouse,
+            "database": settings.snowflake_database,
+            "schema": settings.snowflake_schema,
+            "authenticator": "oauth",
+            "token": oauth_token,
+        }
+
+        # Only include account/host if they're non-empty (for local OAuth testing)
+        # Empty strings should not be passed to avoid DNS resolution errors
+        if settings.snowflake_account and settings.snowflake_account.strip():
+            url_params["account"] = settings.snowflake_account
+        if settings.snowflake_host and settings.snowflake_host.strip():
+            url_params["host"] = settings.snowflake_host
+
+        logger.info(f"Creating OAuth connection with params: {list(url_params.keys())}")
+
         engine = create_engine(
-            URL(
-                account=settings.snowflake_account,
-                host=settings.snowflake_host,
-                port=443,
-                warehouse=settings.snowflake_warehouse,
-                database=settings.snowflake_database,
-                schema=settings.snowflake_schema,
-                authenticator="oauth",
-                token=oauth_token,
-            ),
+            URL(**url_params),
             poolclass=None,
             echo=False,
         )

@@ -553,11 +553,11 @@ class UnifiedLLMService:
             ]:
                 # OAuth authentication for containers
                 try:
+                    logger.info("Attempting OAuth authentication for Snowflake session")
                     with open("/snowflake/session/token", "r") as token_file:
                         oauth_token = token_file.read().strip()
 
                     session_config = {
-                        "account": self.settings.snowflake_account,
                         "authenticator": "oauth",
                         "token": oauth_token,
                         "warehouse": self.settings.snowflake_warehouse,
@@ -565,12 +565,27 @@ class UnifiedLLMService:
                         "schema": self.settings.snowflake_schema,
                     }
 
+                    # Only include account/host if explicitly set (for local testing)
+                    # In SPCS containers, omit these to avoid DNS resolution
+                    if self.settings.snowflake_account and self.settings.snowflake_account.strip():
+                        session_config["account"] = self.settings.snowflake_account
+                        logger.info(f"Including account in session config: {self.settings.snowflake_account}")
+                    else:
+                        logger.info("Account not set - using OAuth token implicit account (SPCS mode)")
+
+                    if self.settings.snowflake_host and self.settings.snowflake_host.strip():
+                        session_config["host"] = self.settings.snowflake_host
+                        logger.info(f"Including host in session config: {self.settings.snowflake_host}")
+
                     if self.settings.snowflake_role:
                         session_config["role"] = self.settings.snowflake_role
 
+                    logger.info(f"Creating Snowflake session with config keys: {list(session_config.keys())}")
                     self._snowflake_session = Session.builder.configs(
                         session_config
                     ).create()
+                    logger.info("✅ Successfully created Snowflake OAuth session")
+
                 except FileNotFoundError:
                     logger.info(
                         "OAuth token file not found, using password authentication"
@@ -772,21 +787,38 @@ class UnifiedLLMService:
 
             # If account or user not set in settings, get from Snowflake session
             if not account or not user:
-                logger.info("Account or user not set in settings, retrieving from Snowflake session")
-                session = self._get_snowflake_session()
-                account_info = session.sql("SELECT CURRENT_ACCOUNT(), CURRENT_USER(), CURRENT_REGION()").collect()
+                try:
+                    logger.info("Account or user not set in settings, retrieving from Snowflake session")
+                    logger.info(f"Current values - account={account}, user={user}, host={host}")
 
-                if not account:
-                    account = account_info[0][0]  # CURRENT_ACCOUNT()
-                if not user:
-                    user = account_info[0][1]     # CURRENT_USER()
+                    # Try to get snowflake session
+                    logger.info("Attempting to get Snowflake session...")
+                    session = self._get_snowflake_session()
+                    logger.info("✅ Successfully obtained Snowflake session")
 
-                # Construct host from account and region if not set
-                if not host:
-                    region = account_info[0][2]   # CURRENT_REGION()
-                    host = f"{account}.{region}.snowflakecomputing.com"
+                    logger.info("Querying account info...")
+                    account_info = session.sql("SELECT CURRENT_ACCOUNT(), CURRENT_USER(), CURRENT_REGION()").collect()
+                    logger.info(f"✅ account_info={account_info}")
 
-                logger.info(f"Retrieved from Snowflake - Account: {account}, User: {user}")
+                    if not account:
+                        account = account_info[0][0]  # CURRENT_ACCOUNT()
+                        logger.info(f"Set account from query: {account}")
+                    if not user:
+                        user = account_info[0][1]     # CURRENT_USER()
+                        logger.info(f"Set user from query: {user}")
+
+                    # Construct host from account and region if not set
+                    if not host:
+                        region = account_info[0][2]   # CURRENT_REGION()
+                        host = f"{account}.{region}.snowflakecomputing.com"
+                        logger.info(f"Constructed host from region: {host}")
+
+                    logger.info(f"✅ Retrieved from Snowflake - Account: {account}, User: {user}, Host: {host}")
+
+                except Exception as e:
+                    logger.error(f"❌ Failed to get account info from Snowflake session: {e}")
+                    logger.exception("Full traceback:")
+                    raise ValueError(f"Could not retrieve Snowflake account info: {e}")
 
             # Use SNOWFLAKE_URL if provided (respecting HTTP/HTTPS as configured)
             if hasattr(self.settings, "snowflake_url") and self.settings.snowflake_url:

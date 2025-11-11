@@ -46,3 +46,8 @@ snow connection test --connection mkt_blendx_admin
 ```bash
 make all
 ```
+
+### Remove existing app and deploy new one
+```bash
+./deploy.sh
+```

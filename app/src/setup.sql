@@ -1,3 +1,5 @@
+CREATE SCHEMA IF NOT EXISTS config;
+GRANT USAGE ON SCHEMA config TO APPLICATION ROLE app_admin;
 CREATE APPLICATION ROLE IF NOT EXISTS app_admin;
 CREATE APPLICATION ROLE IF NOT EXISTS app_user;
 CREATE SCHEMA IF NOT EXISTS app_public;
@@ -7,25 +9,50 @@ CREATE OR ALTER VERSIONED SCHEMA v1;
 GRANT USAGE ON SCHEMA v1 TO APPLICATION ROLE app_admin;
 
 
-CREATE OR REPLACE PROCEDURE v1.register_single_callback(ref_name STRING, operation STRING, ref_or_alias STRING)
- RETURNS STRING
- LANGUAGE SQL
- AS $$
-      BEGIN
-      CASE (operation)
-         WHEN 'ADD' THEN
-            SELECT system$set_reference(:ref_name, :ref_or_alias);
-         WHEN 'REMOVE' THEN
-            SELECT system$remove_reference(:ref_name);
-         WHEN 'CLEAR' THEN
-            SELECT system$remove_reference(:ref_name);
-         ELSE
-            RETURN 'Unknown operation: ' || operation;
-      END CASE;
-      RETURN 'Operation ' || operation || ' succeeds.';
-      END;
-   $$;
-GRANT USAGE ON PROCEDURE v1.register_single_callback( STRING,  STRING,  STRING) TO APPLICATION ROLE app_admin;
+-- -- Callback procedure for External Access Integration registration
+-- CREATE OR REPLACE PROCEDURE v1.register_external_access(ref_name STRING, operation STRING, ref_or_alias STRING)
+-- RETURNS STRING
+-- LANGUAGE SQL
+-- AS
+-- $$
+--   BEGIN
+--     CASE (operation)
+--       WHEN 'ADD' THEN
+--         SELECT SYSTEM$SET_REFERENCE(:ref_name, :ref_or_alias);
+--       WHEN 'REMOVE' THEN
+--         SELECT SYSTEM$REMOVE_REFERENCE(:ref_name);
+--       WHEN 'CLEAR' THEN
+--         SELECT SYSTEM$REMOVE_REFERENCE(:ref_name);
+--       ELSE
+--         RETURN 'Unknown operation: ' || operation;
+--     END CASE;
+--     RETURN 'Operation ' || operation || ' for ' || ref_name || ' succeeded.';
+--   END;
+-- $$;
+-- GRANT USAGE ON PROCEDURE v1.register_external_access(STRING, STRING, STRING) TO APPLICATION ROLE app_admin;
+
+-- -- Configuration callback for External Access Integration
+-- CREATE OR REPLACE PROCEDURE v1.configure_external_access(ref_name STRING)
+-- RETURNS STRING
+-- LANGUAGE SQL
+-- AS
+-- $$
+--   BEGIN
+--     CASE (UPPER(ref_name))
+--       WHEN 'CORTEX_REST_EAI' THEN
+--         RETURN OBJECT_CONSTRUCT(
+--           'type', 'CONFIGURATION',
+--           'payload', OBJECT_CONSTRUCT(
+--             'host_ports', ARRAY_CONSTRUCT('*.snowflakecomputing.com'),
+--             'allowed_secrets', 'NONE')
+--         )::STRING;
+--       ELSE
+--         RETURN '';
+--     END CASE;
+--   END;
+-- $$;
+-- GRANT USAGE ON PROCEDURE v1.configure_external_access(STRING) TO APPLICATION ROLE app_admin;
+
 
 CREATE OR REPLACE PROCEDURE app_public.start_app(poolname VARCHAR, whname VARCHAR)
     RETURNS string
@@ -92,4 +119,3 @@ BEGIN
 END
 $$;
 GRANT USAGE ON PROCEDURE app_public.get_service_status() TO APPLICATION ROLE app_admin;
-

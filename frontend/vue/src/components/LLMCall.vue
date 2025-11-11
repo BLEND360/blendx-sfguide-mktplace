@@ -11,7 +11,7 @@
             :loading="loading"
             :disabled="loading"
           >
-            Call LLM Endpoint
+            RUN CREW
           </v-btn>
         </v-col>
       </v-row>
