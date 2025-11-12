@@ -15,24 +15,7 @@ from snowflake.sqlalchemy import URL
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-
-try:
-    from src.settings import get_settings
-except ModuleNotFoundError:
-    # Fallback for Docker container execution where files are copied to /app
-    try:
-        from settings import get_settings
-    except ModuleNotFoundError:
-        # Fallback for direct script execution
-        import sys
-        from pathlib import Path
-        sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-        from src.settings import get_settings
+from settings import get_settings
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -67,7 +50,6 @@ def create_snowflake_engine_with_private_key():
 
     private_key_raw = settings.snowflake_private_key_raw
     private_key_path = settings.snowflake_private_key_path
-    print(f"private_key_path={private_key_path}")
 
     if private_key_raw:
         # GitHub Actions case - key is provided as content
@@ -141,11 +123,10 @@ def create_snowflake_engine():
 
     auth_method = (settings.snowflake_authmethod or "").lower()
     env = settings.environment.upper()
-    allowed_envs = {"DEVELOPMENT", "STAGING", "PRODUCTION", "UAT"}
+    allowed_envs = {"DEVELOPMENT", "SHARED", "STAGING", "PRODUCTION", "UAT"}
     use_oauth = auth_method == "oauth" and env in allowed_envs
 
-    logger.info(f"Creating Snowflake engine - Auth method: {auth_method}, Environment: {env}, Using OAuth: {use_oauth}")
-    logger.info(f"Connection details - Account: {settings.snowflake_account}, Warehouse: {settings.snowflake_warehouse}, Database: {settings.snowflake_database}, Schema: {settings.snowflake_schema}, Role: {settings.snowflake_role or 'default'}")
+    logger.info(f"Using oauth value: {use_oauth}")
 
     if use_oauth:
         logger.info("Creating Snowflake engine with fresh OAuth token")
