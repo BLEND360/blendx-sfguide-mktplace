@@ -77,14 +77,26 @@ use role nac_test;
 create database if not exists nac_test_db;
 create schema if not exists nac_test_db.data;
 use schema nac_test_db.data;
-create view if not exists orders as select * from snowflake_sample_data.tpch_sf10.orders;
 
 use role naspcs_role;
 show image repositories in schema spcs_app.napp;
 
+-- Create External Access Integration for Snowflake API access
+use role accountadmin;
+CREATE OR REPLACE NETWORK RULE snowflake_api_network_rule
+  MODE = EGRESS
+  TYPE = HOST_PORT
+  VALUE_LIST = ('*.snowflakecomputing.com:443');
+
+CREATE OR REPLACE EXTERNAL ACCESS INTEGRATION snowflake_api_access_integration
+  ALLOWED_NETWORK_RULES = (snowflake_api_network_rule)
+  ENABLED = true;
+
+GRANT USAGE ON INTEGRATION snowflake_api_access_integration TO ROLE naspcs_role;
+
 use role naspcs_role;
 create application package spcs_app_pkg_test;
-alter application package spcs_app_pkg_test register version v1 using @spcs_app_test.napp.app_stage; 
+alter application package spcs_app_pkg_test register version v1 using @spcs_app_test.napp.app_stage;
 alter application package spcs_app_pkg_test modify release channel default add version v1;
 grant install, develop on application package spcs_app_pkg_test to role nac_test;
 
@@ -101,8 +113,6 @@ create  compute pool pool_nac for application spcs_app_instance_test
 grant usage on compute pool pool_nac to application spcs_app_instance_test;
 grant usage on warehouse wh_nac to application spcs_app_instance_test;
 grant bind service endpoint on account to application spcs_app_instance_test;
-CALL spcs_app_instance_test.v1.register_single_callback(
-  'ORDERS_TABLE' , 'ADD', SYSTEM$REFERENCE('VIEW', 'NAC_TEST.DATA.ORDERS', 'PERSISTENT', 'SELECT'));
 
 call spcs_app_instance_test.app_public.start_app('POOL_NAC', 'WH_NAC');
 

@@ -41,7 +41,6 @@ use role nac;
 create database if not exists nac_test;
 create schema if not exists nac_test.data;
 use schema nac_test.data;
-create view if not exists orders as select * from snowflake_sample_data.tpch_sf10.orders;
 
 --Step 5.1 - Get Image Repository URL
 --once we've created the database to store our images and na files we can find the image repository url
@@ -61,6 +60,27 @@ grant install, develop on application package spcs_app_pkg to role nac;
 use role nac;
 create application spcs_app_instance from application package spcs_app_pkg using version v1;
 
+--Step 7.1.1 - Create External Access Integration for Cortex API
+--create network rule to allow HTTPS access to Snowflake domains (for Cortex API calls)
+use role accountadmin;
+create or replace network rule cortex_network_rule
+  mode = egress
+  type = host_port
+  value_list = ('*.snowflakecomputing.com');
+
+--create external access integration using the network rule
+create or replace external access integration cortex_rest_eai
+  allowed_network_rules = (cortex_network_rule)
+  enabled = true;
+
+--grant usage on the integration to the consumer role
+grant usage on integration cortex_rest_eai to role nac;
+
+--Step 7.1.2 - Associate External Access Integration with Application
+--the consumer needs to provide the external access integration reference to the application
+use role nac;
+call system$set_reference('CORTEX_REST_EAI', 'cortex_rest_eai');
+
 --Step 7.2 - Create Compute Pool and Grant Privileges
 --after succesfully installing the application we need to create a compute pool that the application will use to run the container images 
 create  compute pool pool_nac for application spcs_app_instance
@@ -73,30 +93,13 @@ grant usage on warehouse wh_nac to application spcs_app_instance;
 grant bind service endpoint on account to application spcs_app_instance;
 
 --Step 7.3 - Start App Service
---finally we can use the store procedure shipped with the application to start the app 
---we pass in the pool_nac compute pool where the images will run and the wh_nac warehouse which the app will use to execute queries on snowflake
-call spcs_app_instance.app_public.start_app('pool_nac', 'wh_nac');
+--NOTE: The deploy.sh script automatically calls start_app() after upgrading the application
+--You only need to run this manually if you're not using deploy.sh
+--Uncomment the lines below if you want to start the app manually:
 
---it takes a few minutes to get the app up and running but you can use the following function to find the app url when it is fully deployed
-call spcs_app_instance.app_public.app_url();
+-- call spcs_app_instance.app_public.start_app('pool_nac', 'wh_nac');
+--
+-- --it takes a few minutes to get the app up and running but you can use the following function to find the app url when it is fully deployed
+-- call spcs_app_instance.app_public.app_url();
 
-
---Step 8.1 - Clean Up
---clean up consumer objects
-use role nac;
-drop application spcs_app_instance;
-drop warehouse wh_nac;
-drop compute pool pool_nac;
-drop database nac_test;
-
---clean up provider objects
-use role naspcs_role;
-drop application package spcs_app_pkg;
-drop database spcs_app;
-drop warehouse wh_nap;
-
---clean up prep objects
-use role accountadmin;
-drop role naspcs_role;
-drop role nac;
 

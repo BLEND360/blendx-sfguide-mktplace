@@ -1,5 +1,5 @@
 #version identifier
-manifest_version: 1
+manifest_version: 2
 
 version:
   name: V1
@@ -24,15 +24,19 @@ privileges:
       description: "Enables application to expose service endpoints"
  - CREATE WAREHOUSE:
       description: "Enables application to create its own warehouse(s)"
+ - EXECUTE MANAGED TASK:
+      description: "Enables application to execute Snowflake Cortex functions"
+ - IMPORTED PRIVILEGES ON SNOWFLAKE DB:
+      description: "Enables application to use Snowflake Cortex AI functions"
 
+# references:
+#  - CORTEX_REST_EAI:
+#     label: "Allows REST API connection for CORTEX"
+#     object_type: EXTERNAL_ACCESS_INTEGRATION
+#     description: "Allows the container service to reach Cortex REST API"
+#     configuration_callback: v1.configure_external_access
+#     register_callback: v1.register_external_access
+#     required_at_setup: true
+#     privileges:
+#     - USAGE
 
-references:
-  - ORDERS_TABLE:
-      label: "Orders View"
-      description: "View created on Orders table from TPC-H samples"
-      privileges:
-        - SELECT
-      object_type: VIEW
-      multi_valued: false
-      register_callback: v1.register_single_callback
-  

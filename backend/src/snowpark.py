@@ -1,36 +1,73 @@
+from http.client import HTTPException
 from flask import Blueprint, request, abort, make_response, jsonify
-import datetime
-import snowflake.snowpark.functions as f
 
-from spcs_helpers.connection import session as snow_session
-session = snow_session()
+import datetime
+import logging
+from sqlalchemy import text
+
+from database.db import get_new_db_session
+from lite_llm_handler import get_llm
+from example_crew import run_crew
 
 # Make the API endpoints
 snowpark = Blueprint('snowpark', __name__)
+logger = logging.getLogger(__name__)
 
-dateformat = '%Y-%m-%d'
+@snowpark.route('/llm-call')
+def llm_call():
+    try:
+        with get_new_db_session() as session:
+            # Test DB connection
+            session.execute(text("SELECT 1"))
+            logger.info('DB Connection - OK')
 
-## Top clerks in date range
-@snowpark.route('/top_clerks')
-def top_clerks():
-    # Validate arguments
-    sdt_str = request.args.get('start_range') or '1995-01-01'
-    edt_str = request.args.get('end_range') or '1995-03-31'
-    topn_str = request.args.get('topn') or '10'
-    try:
-        sdt = datetime.datetime.strptime(sdt_str, dateformat)
-        edt = datetime.datetime.strptime(edt_str, dateformat)
-        topn = int(topn_str)
-    except:
-        abort(400, "Invalid arguments.")
-    try:
-        df = session.sql("SELECT * FROM Reference('ORDERS_TABLE')") \
-                .filter(f.col('O_ORDERDATE') >= sdt) \
-                .filter(f.col('O_ORDERDATE') <= edt) \
-                .group_by(f.col('O_CLERK')) \
-                .agg(f.sum(f.col('O_TOTALPRICE')).as_('CLERK_TOTAL')) \
-                .order_by(f.col('CLERK_TOTAL').desc()) \
-                .limit(topn)
-        return make_response(jsonify([x.as_dict() for x in df.to_local_iterator()]))
-    except:
-        abort(500, "Error reading from Snowflake. Check the logs for details.")
+            # Get current session info for debugging
+            try:
+                current_user = session.execute(text("SELECT CURRENT_USER()")).fetchone()[0]
+                current_role = session.execute(text("SELECT CURRENT_ROLE()")).fetchone()[0]
+                current_warehouse = session.execute(text("SELECT CURRENT_WAREHOUSE()")).fetchone()[0]
+                logger.info(f"Session info - User: {current_user}, Role: {current_role}, Warehouse: {current_warehouse}")
+            except Exception as info_ex:
+                logger.warning(f"Could not get session info: {info_ex}")
+
+            # Try to call LLM
+            # llm_query = "SELECT SNOWFLAKE.CORTEX.COMPLETE('llama3-8b', 'hello')"
+            # logger.info(f"Executing LLM query: {llm_query}")
+
+            # result = session.execute(text(llm_query))
+            # response = result.fetchone()[0]
+            # logger.info(f"LLM call successful. Response: {response}")
+
+            # Try to use LiteLLM handler
+            try:
+                llm = get_llm(provider='snowflake', model='mistral-large')
+                #logger.info("Calling LLM..")
+                #response = llm.call([({"role": "user", "content": "Hello"})])
+                #logger.info(f"Get response from LLM {response}")
+
+                # Run Crew
+                logger.info("Running Crew")
+                crew_output = run_crew(llm)
+                logging.info("FINISH")
+
+                # Convert CrewOutput to JSON-serializable format
+                if hasattr(crew_output, 'json_dict') and crew_output.json_dict:
+                    response = crew_output.json_dict
+                elif hasattr(crew_output, 'raw'):
+                    response = crew_output.raw
+                else:
+                    response = str(crew_output)
+
+            except Exception as e:
+                logger.error(f"Failed to create LLM: {str(e)}", exc_info=True)
+                return make_response(jsonify({"error": str(e)}), 500)
+
+            return make_response(jsonify({"response": response}))
+
+    except Exception as ex:
+        logger.error(f"ERROR in llm_call endpoint: {str(ex)}", exc_info=True)
+        abort(500, f"Error calling LLM: {str(ex)}")
+        
+
+
+    

@@ -4,3 +4,10 @@ pandas
 numpy
 datetime
 flask
+flask-cors
+litellm
+sqlalchemy
+snowflake-sqlalchemy
+pydantic_settings
+crewai-tools>=0.0.1
+crewai>=0.28.0
