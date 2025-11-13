@@ -1,7 +1,6 @@
 from http.client import HTTPException
-from flask import Blueprint, request, abort, make_response, jsonify
+from flask import Blueprint, abort, make_response, jsonify
 
-import datetime
 import logging
 from sqlalchemy import text
 
@@ -40,7 +39,7 @@ def llm_call():
 
             # Try to use LiteLLM handler
             try:
-                llm = get_llm(provider='snowflake', model='mistral-large')
+                llm = get_llm(provider='snowflake', model='claude-3-5-sonnet')
                 logger.info("Calling LLM..")
                 response = llm.call([({"role": "user", "content": "Hello"})])
                 logger.info(f"Get response from LLM {response}")

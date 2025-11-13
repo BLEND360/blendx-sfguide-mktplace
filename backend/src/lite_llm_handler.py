@@ -19,7 +19,7 @@ from crewai.llm import LLM
 from litellm import CustomLLM
 from snowflake.snowpark import Session
 
-from settings import  Settings, get_settings
+from settings import Settings, get_settings
 # from app.services.llm_tracking_service import (
 #     get_llm_tracking_service,
 #     setup_litellm_tracking,
@@ -41,7 +41,7 @@ class TrackedLLM(LLM):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-      #  self._tracking_service = get_llm_tracking_service()
+        # self._tracking_service = get_llm_tracking_service()
 
     def _extract_provider_from_model(self, model: str) -> str:
         """Extract provider from model name"""
@@ -140,7 +140,7 @@ class SnowflakeLitellmService(CustomLLM):
         self.generate_id_function = generate_id_function
         self.response_format = response_format
         self.kwargs = kwargs
-  #      self._tracking_service = get_llm_tracking_service()
+        self._tracking_service = get_llm_tracking_service()
 
         super().__init__()
         self._validate_environment()
@@ -234,8 +234,10 @@ class SnowflakeLitellmService(CustomLLM):
             )
 
     def _process_sync_response(self, response: requests.Response):
-        """Process streaming response. HTTP API only supports streaming."""
+        """Process streaming response with tool_use support. HTTP API only supports streaming."""
         accumulated_content = ""
+        tool_uses = []  # Collect tool_use blocks
+        current_tool_use = None  # Track ongoing tool_use being streamed
         total_prompt_tokens = 0
         total_completion_tokens = 0
 
@@ -255,6 +257,9 @@ class SnowflakeLitellmService(CustomLLM):
                         try:
                             parsed_data = json.loads(event_data)
 
+                            # Log the raw parsed data for debugging tool calls
+                            logger.debug(f"Parsed SSE data: {json.dumps(parsed_data)}")
+
                             # Extract content from 'choices' and accumulate it
                             if (
                                 "choices" in parsed_data
@@ -264,14 +269,91 @@ class SnowflakeLitellmService(CustomLLM):
 
                                 # Handle both 'delta' (streaming) and 'message' formats
                                 if "delta" in choice:
-                                    content = choice["delta"].get("content", "")
-                                elif "message" in choice:
-                                    content = choice["message"].get("content", "")
-                                else:
-                                    content = ""
+                                    delta = choice["delta"]
+                                    delta_type = delta.get("type", "")
 
-                                if content:
-                                    accumulated_content += content
+                                    # Handle tool_use streaming
+                                    if delta_type == "tool_use":
+                                        # Check if this is the start of a new tool_use (has tool_use_id and name)
+                                        if "tool_use_id" in delta and "name" in delta:
+                                            # Start new tool_use
+                                            current_tool_use = {
+                                                "id": delta.get("tool_use_id"),
+                                                "type": "function",
+                                                "function": {
+                                                    "name": delta.get("name"),
+                                                    "arguments": "",  # Will accumulate
+                                                },
+                                            }
+                                            logger.info(
+                                                f"🔧 Started tool_use: {current_tool_use['function']['name']}"
+                                            )
+
+                                        # Accumulate input (arguments) for current tool_use
+                                        if "input" in delta and current_tool_use:
+                                            current_tool_use["function"][
+                                                "arguments"
+                                            ] += delta.get("input", "")
+
+                                    # Handle text content
+                                    elif delta_type == "text":
+                                        # If we were building a tool_use, finalize it
+                                        if current_tool_use:
+                                            tool_uses.append(current_tool_use)
+                                            logger.info(
+                                                f"✅ Completed tool_use: {current_tool_use['function']['name']} with args: {current_tool_use['function']['arguments']}"
+                                            )
+                                            current_tool_use = None
+
+                                        # Accumulate text content
+                                        content = delta.get("content", "")
+                                        if content:
+                                            accumulated_content += content
+
+                                elif "message" in choice:
+                                    message = choice["message"]
+                                    content = message.get("content", "")
+
+                                    # Handle message format (non-streaming)
+                                    if isinstance(content, list):
+                                        for content_block in content:
+                                            if isinstance(content_block, dict):
+                                                if (
+                                                    content_block.get("type")
+                                                    == "tool_use"
+                                                ):
+                                                    tool_use = {
+                                                        "id": content_block.get(
+                                                            "id", ""
+                                                        ),
+                                                        "type": "function",
+                                                        "function": {
+                                                            "name": content_block.get(
+                                                                "name", ""
+                                                            ),
+                                                            "arguments": json.dumps(
+                                                                content_block.get(
+                                                                    "input", {}
+                                                                )
+                                                            ),
+                                                        },
+                                                    }
+                                                    tool_uses.append(tool_use)
+                                                    logger.info(
+                                                        f"🔧 Detected tool_use: {tool_use['function']['name']}"
+                                                    )
+                                                elif (
+                                                    content_block.get("type") == "text"
+                                                ):
+                                                    text_content = content_block.get(
+                                                        "text", ""
+                                                    )
+                                                    if text_content:
+                                                        accumulated_content += (
+                                                            text_content
+                                                        )
+                                    elif isinstance(content, str):
+                                        accumulated_content += content
 
                             # Update token usage
                             if "usage" in parsed_data:
@@ -286,13 +368,80 @@ class SnowflakeLitellmService(CustomLLM):
         except Exception as e:
             logger.error(f"Error processing response: {e}")
 
+        # If we have a pending tool_use at the end, add it
+        if current_tool_use:
+            tool_uses.append(current_tool_use)
+            logger.info(
+                f"✅ Completed final tool_use: {current_tool_use['function']['name']} with args: {current_tool_use['function']['arguments']}"
+            )
+
         final_response = accumulated_content.strip()
         logger.info(f"Final response length: {len(final_response)}")
-        return total_prompt_tokens, total_completion_tokens, final_response
+        logger.info(f"Tool uses detected: {len(tool_uses)}")
 
-    def _create_payload(self, model, messages) -> dict:
+        # Return tool_uses as well
+        return total_prompt_tokens, total_completion_tokens, final_response, tool_uses
+
+    def _convert_openai_tools_to_snowflake(
+        self, tools: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+        """
+        Convert OpenAI tool format to Snowflake native format.
+
+        OpenAI format:
+        {
+            "type": "function",
+            "function": {
+                "name": "get_weather",
+                "description": "...",
+                "parameters": {...}
+            }
+        }
+
+        Snowflake format:
+        {
+            "tool_spec": {
+                "type": "generic",
+                "name": "get_weather",
+                "description": "...",
+                "input_schema": {...}
+            }
+        }
+        """
+        snowflake_tools = []
+
+        for tool in tools:
+            if tool.get("type") == "function" and "function" in tool:
+                func = tool["function"]
+                tool_spec = {
+                    "type": "generic",
+                    "name": func.get("name"),
+                    "input_schema": func.get("parameters", {}),
+                }
+                # Add description if present
+                if "description" in func:
+                    tool_spec["description"] = func["description"]
+
+                # Wrap in tool_spec object as required by Snowflake
+                snowflake_tools.append({"tool_spec": tool_spec})
+            elif tool.get("type") == "generic":
+                # Already in Snowflake format, but needs tool_spec wrapper if not present
+                if "tool_spec" not in tool:
+                    snowflake_tools.append({"tool_spec": tool})
+                else:
+                    snowflake_tools.append(tool)
+            else:
+                logger.warning(f"Unsupported tool type: {tool.get('type')}")
+
+        return snowflake_tools
+
+    def _create_payload(self, model, messages, tools=None) -> dict:
         """Creates payload based on input parameters"""
-        payload = {"model": model, "messages": self._execute_pre_callback(messages)}
+        payload = {
+            "model": model,
+            "messages": self._execute_pre_callback(messages),
+            "stream": True,  # Snowflake native endpoint requires streaming
+        }
 
         if self.top_p:
             payload["top_p"] = self.top_p
@@ -310,6 +459,12 @@ class SnowflakeLitellmService(CustomLLM):
                 "schema": self.response_format,
             }
 
+        # Add tools if provided (convert from OpenAI format to Snowflake format)
+        if tools:
+            snowflake_tools = self._convert_openai_tools_to_snowflake(tools)
+            payload["tools"] = snowflake_tools
+            logger.info(f"🔧 Added {len(snowflake_tools)} tools to payload")
+
         return payload
 
     def _create_response(
@@ -318,12 +473,30 @@ class SnowflakeLitellmService(CustomLLM):
         formatted_answer: Any,
         total_prompt_tokens: int,
         total_completion_tokens: int,
+        tool_calls: Optional[List[Dict[str, Any]]] = None,
     ):
         identifier = ""
         if self.generate_id_function:
             identifier = self.generate_id_function()
         else:
             identifier = str(int(time.time() * 1000))
+
+        # Build message object
+        message = {
+            "content": (
+                str(formatted_answer)
+                if not tool_calls
+                else (str(formatted_answer) if formatted_answer else None)
+            ),
+            "role": "assistant",
+        }
+
+        # Add tool_calls if present
+        if tool_calls:
+            message["tool_calls"] = tool_calls
+            finish_reason = "tool_calls"
+        else:
+            finish_reason = "stop"
 
         json_response = {
             "id": f"chatcmpl-{identifier}",
@@ -332,12 +505,9 @@ class SnowflakeLitellmService(CustomLLM):
             "model": model,
             "choices": [
                 {
-                    "finish_reason": "stop",
+                    "finish_reason": finish_reason,
                     "index": 0,
-                    "message": {
-                        "content": str(formatted_answer),
-                        "role": "assistant",
-                    },
+                    "message": message,
                 }
             ],
             "usage": {
@@ -363,15 +533,41 @@ class SnowflakeLitellmService(CustomLLM):
         messages: list = [],
         headers: Optional[Dict[str, str]] = None,
         logging_obj=None,
+        optional_params: Optional[Dict[str, Any]] = None,
+        tools: Optional[List[Dict[str, Any]]] = None,
+        tool_choice: Optional[Union[str, Dict[str, Any]]] = None,
         **kwargs,
     ) -> litellm.ModelResponse:
-        """Handle completion request"""
+        """Handle completion request with optional tool calling support
+
+        Note: tool_choice parameter is accepted for API compatibility but not sent to Snowflake,
+        as the native endpoint doesn't support this parameter.
+        """
+        # LiteLLM passes tools in optional_params
+        if optional_params:
+            if not tools and "tools" in optional_params:
+                tools = optional_params.get("tools")
+            if not tool_choice and "tool_choice" in optional_params:
+                tool_choice = optional_params.get("tool_choice")
+
+        # Also check kwargs as fallback
+        if not tools and "tools" in kwargs:
+            tools = kwargs.pop("tools")
+
         logger.info(
-            f"🚀 Snowflake LLM Request - Model: {model}, Messages: {len(messages)}"
+            f"🚀 Snowflake LLM Request - Model: {model}, Messages: {len(messages)}, Tools: {len(tools) if tools else 0}"
         )
 
         try:
-            payload = self._create_payload(model, messages)
+            payload = self._create_payload(model, messages, tools=tools)
+
+            # Note: tool_choice is not supported by Snowflake native endpoint
+            # The parameter is accepted for API compatibility but ignored
+            if tool_choice:
+                logger.debug(
+                    f"🔧 Tool choice '{tool_choice}' specified (ignored by Snowflake native endpoint)"
+                )
+
             logger.debug(f"Payload: {payload}")
 
             if not headers:
@@ -410,6 +606,7 @@ class SnowflakeLitellmService(CustomLLM):
                     message=f"HTTP {response.status_code}: {error_text}",
                 )
 
+            tool_uses = []  # Initialize tool_uses
             try:
                 # Check if the response is a valid event-stream
                 response_content_type = response.headers.get("Content-Type")
@@ -417,9 +614,12 @@ class SnowflakeLitellmService(CustomLLM):
                     response_content_type
                     and "text/event-stream" in response_content_type
                 ):
-                    total_prompt_tokens, total_completion_tokens, final_response = (
-                        self._process_sync_response(response)
-                    )
+                    (
+                        total_prompt_tokens,
+                        total_completion_tokens,
+                        final_response,
+                        tool_uses,
+                    ) = self._process_sync_response(response)
                 else:
                     # Handle non-event-stream responses
                     try:
@@ -465,17 +665,17 @@ class SnowflakeLitellmService(CustomLLM):
                 if clean_model.startswith("custom-cortex-llm/"):
                     clean_model = clean_model[18:]  # Remove "custom-cortex-llm/" prefix
 
-                self._tracking_service.track_llm_call(
-                    model=clean_model,
-                    provider="snowflake",
-                    input_tokens=total_prompt_tokens,
-                    output_tokens=total_completion_tokens,
-                    call_type="completion",
-                    cost_usd=None,  # Snowflake doesn't provide cost info
-                    chat_id=None,  # Will be set by specific services
-                    message_id=None,  # Will be set by specific services
-                    feature=None,  # Will be set by specific services
-                )
+                # self._tracking_service.track_llm_call(
+                #     model=clean_model,
+                #     provider="snowflake",
+                #     input_tokens=total_prompt_tokens,
+                #     output_tokens=total_completion_tokens,
+                #     call_type="completion",
+                #     cost_usd=None,  # Snowflake doesn't provide cost info
+                #     chat_id=None,  # Will be set by specific services
+                #     message_id=None,  # Will be set by specific services
+                #     feature=None,  # Will be set by specific services
+                # )
             except Exception as tracking_error:
                 logger.error(f"Failed to track Snowflake LLM call: {tracking_error}")
 
@@ -484,6 +684,7 @@ class SnowflakeLitellmService(CustomLLM):
                 formatted_answer=final_response,
                 total_prompt_tokens=total_prompt_tokens,
                 total_completion_tokens=total_completion_tokens,
+                tool_calls=tool_uses if tool_uses else None,
             )
 
         except Exception as e:
@@ -536,10 +737,10 @@ class UnifiedLLMService:
         self.settings = settings
         self._snowflake_session = None
         self._snowflake_service = None
-  #      self._tracking_service = get_llm_tracking_service()
+        # self._tracking_service = get_llm_tracking_service()
 
         # Setup LiteLLM tracking
-      #  setup_litellm_tracking()
+        # setup_litellm_tracking()
 
     def _get_snowflake_session(self) -> Session:
         """Get or create Snowflake session"""
@@ -553,11 +754,11 @@ class UnifiedLLMService:
             ]:
                 # OAuth authentication for containers
                 try:
-                    logger.info("Attempting OAuth authentication for Snowflake session")
                     with open("/snowflake/session/token", "r") as token_file:
                         oauth_token = token_file.read().strip()
 
                     session_config = {
+                        "account": self.settings.snowflake_account,
                         "authenticator": "oauth",
                         "token": oauth_token,
                         "warehouse": self.settings.snowflake_warehouse,
@@ -565,27 +766,12 @@ class UnifiedLLMService:
                         "schema": self.settings.snowflake_schema,
                     }
 
-                    # Only include account/host if explicitly set (for local testing)
-                    # In SPCS containers, omit these to avoid DNS resolution
-                    if self.settings.snowflake_account and self.settings.snowflake_account.strip():
-                        session_config["account"] = self.settings.snowflake_account
-                        logger.info(f"Including account in session config: {self.settings.snowflake_account}")
-                    else:
-                        logger.info("Account not set - using OAuth token implicit account (SPCS mode)")
-
-                    if self.settings.snowflake_host and self.settings.snowflake_host.strip():
-                        session_config["host"] = self.settings.snowflake_host
-                        logger.info(f"Including host in session config: {self.settings.snowflake_host}")
-
                     if self.settings.snowflake_role:
                         session_config["role"] = self.settings.snowflake_role
 
-                    logger.info(f"Creating Snowflake session with config keys: {list(session_config.keys())}")
                     self._snowflake_session = Session.builder.configs(
                         session_config
                     ).create()
-                    logger.info("✅ Successfully created Snowflake OAuth session")
-
                 except FileNotFoundError:
                     logger.info(
                         "OAuth token file not found, using password authentication"
@@ -660,16 +846,16 @@ class UnifiedLLMService:
         agent_execution_id: Optional[str] = None,
     ):
         """Set the current execution context for LLM tracking"""
-        self._tracking_service.set_execution_context(
-            execution_group_id=execution_group_id,
-            flow_execution_id=flow_execution_id,
-            crew_execution_id=crew_execution_id,
-            agent_execution_id=agent_execution_id,
-        )
+        # self._tracking_service.set_execution_context(
+        #     execution_group_id=execution_group_id,
+        #     flow_execution_id=flow_execution_id,
+        #     crew_execution_id=crew_execution_id,
+        #     agent_execution_id=agent_execution_id,
+        # )
 
     def clear_execution_context(self):
         """Clear the current execution context"""
-        self._tracking_service.clear_execution_context()
+        # self._tracking_service.clear_execution_context()
 
     def log_llm_summary(
         self,
@@ -777,150 +963,118 @@ class UnifiedLLMService:
             raise ValueError(f"Unsupported provider: {provider}")
 
     def _get_snowflake_llm(self, model: str, **kwargs) -> TrackedLLM:
-        """Create Snowflake Cortex LLM instance"""
-        # Get or create the Snowflake service instance
-        if self._snowflake_service is None:
-            # Try to get from settings first, fallback to SQL query
-            account = self.settings.snowflake_account
-            user = self.settings.snowflake_service_user or self.settings.snowflake_user
-            host = self.settings.snowflake_host
+        """
+        Create Snowflake Cortex LLM instance using OpenAI-compatible endpoint.
 
-            # If account or user not set in settings, get from Snowflake session
-            if not account or not user:
-                try:
-                    logger.info("Account or user not set in settings, retrieving from Snowflake session")
-                    logger.info(f"Current values - account={account}, user={user}, host={host}")
+        This uses Snowflake's OpenAI-compatible endpoint (/api/v2/cortex/v1)
+        which supports native function calling and works seamlessly with CrewAI.
+        """
+        host = self.settings.snowflake_host
+        user = self.settings.snowflake_service_user or self.settings.snowflake_user
+        account = self.settings.snowflake_account
 
-                    # Try to get snowflake session
-                    logger.info("Attempting to get Snowflake session...")
-                    session = self._get_snowflake_session()
-                    logger.info("✅ Successfully obtained Snowflake session")
+        # Use Snowflake's OpenAI-compatible endpoint
+        base_url = f"https://{host}/api/v2/cortex/v1"
+        logger.info(f"🔧 Using Snowflake OpenAI-compatible endpoint: {base_url}")
 
-                    logger.info("Querying account info...")
-                    account_info = session.sql("SELECT CURRENT_ACCOUNT(), CURRENT_USER(), CURRENT_REGION()").collect()
-                    logger.info(f"✅ account_info={account_info}")
+        # Determine auth method
+        authmethod = getattr(self.settings, "snowflake_authmethod", "oauth")
 
-                    if not account:
-                        account = account_info[0][0]  # CURRENT_ACCOUNT()
-                        logger.info(f"Set account from query: {account}")
-                    if not user:
-                        user = account_info[0][1]     # CURRENT_USER()
-                        logger.info(f"Set user from query: {user}")
+        # Normalize authmethod: "private_key" is an alias for "jwt"
+        if authmethod == "private_key":
+            authmethod = "jwt"
 
-                    # Construct host from account and region if not set
-                    if not host:
-                        region = account_info[0][2]   # CURRENT_REGION()
-                        host = f"{account}.{region}.snowflakecomputing.com"
-                        logger.info(f"Constructed host from region: {host}")
+        # Get private key if using JWT
+        private_key = None
 
-                    logger.info(f"✅ Retrieved from Snowflake - Account: {account}, User: {user}, Host: {host}")
+        # Check if OAuth token file exists
+        oauth_available = os.path.exists("/snowflake/session/token")
 
-                except Exception as e:
-                    logger.error(f"❌ Failed to get account info from Snowflake session: {e}")
-                    logger.exception("Full traceback:")
-                    raise ValueError(f"Could not retrieve Snowflake account info: {e}")
-
-            # Use SNOWFLAKE_URL if provided (respecting HTTP/HTTPS as configured)
-            if hasattr(self.settings, "snowflake_url") and self.settings.snowflake_url:
-                base_url = self.settings.snowflake_url
-                logger.info(f"Using configured SNOWFLAKE_URL: {base_url}")
-            else:
-                # Default construction - use HTTPS unless specifically configured otherwise
-                base_url = f"https://{host}/api/v2/cortex/inference:complete"
-                logger.info(f"Using constructed URL: {base_url}")
-
-            # Determine auth method
-            authmethod = getattr(self.settings, "snowflake_authmethod", "oauth")
-
-            # Normalize authmethod: "private_key" is an alias for "jwt"
-            if authmethod == "private_key":
-                authmethod = "jwt"
-
-            # Get private key if using JWT
-            private_key = None
-
-            # Check if OAuth token file exists
-            oauth_available = os.path.exists("/snowflake/session/token")
-
-            # For local development without token file, try to use JWT if private key is available
-            if authmethod == "oauth" and not oauth_available:
-                # Check if we have a private key available for JWT fallback
-                has_private_key = (
-                    hasattr(self.settings, "private_key") and self.settings.private_key
-                ) or (
-                    hasattr(self.settings, "snowflake_private_key_path")
-                    and self.settings.snowflake_private_key_path
-                )
-
-                if has_private_key:
-                    authmethod = "jwt"
-                    logger.info(
-                        "OAuth requested but no token file found, using JWT for local development"
-                    )
-                else:
-                    raise ValueError(
-                        "OAuth token file not found at /snowflake/session/token and no private key "
-                        "configured for JWT authentication. Please set SNOWFLAKE_PRIVATE_KEY_PATH "
-                        "or ensure the OAuth token file exists."
-                    )
-
-            if authmethod == "jwt":
-                if hasattr(self.settings, "private_key") and self.settings.private_key:
-                    private_key = self.settings.private_key
-                elif (
-                    hasattr(self.settings, "snowflake_private_key_path")
-                    and self.settings.snowflake_private_key_path
-                ):
-                    try:
-                        with open(self.settings.snowflake_private_key_path, "r") as f:
-                            private_key = f.read()
-                        logger.info(
-                            f"✅ Loaded private key from {self.settings.snowflake_private_key_path}"
-                        )
-                    except Exception as e:
-                        logger.error(f"Failed to load private key: {e}")
-                        raise ValueError(
-                            "JWT authentication requires a valid private key"
-                        )
-                else:
-                    raise ValueError(
-                        "JWT authentication requires SNOWFLAKE_PRIVATE_KEY_PATH or private_key setting"
-                    )
-
-            # Create the Snowflake service instance once and reuse it
-            self._snowflake_service = SnowflakeLitellmService(
-                base_url=base_url,
-                snowflake_account=account,
-                snowflake_service_user=user,
-                snowflake_authmethod=authmethod,
-                api_key=private_key,
-                privatekey_password=getattr(
-                    self.settings, "snowflake_privatekey_password", None
-                ),
-                temperature=kwargs.get("temperature", 0.2),
-                max_tokens=kwargs.get("max_tokens", 1024),
+        # For local development without token file, try to use JWT if private key is available
+        if authmethod == "oauth" and not oauth_available:
+            # Check if we have a private key available for JWT fallback
+            has_private_key = (
+                hasattr(self.settings, "private_key") and self.settings.private_key
+            ) or (
+                hasattr(self.settings, "snowflake_private_key_path")
+                and self.settings.snowflake_private_key_path
             )
 
-            # Register custom provider with LiteLLM ONLY ONCE
-            litellm.custom_provider_map = [
-                {
-                    "provider": "custom-cortex-llm",
-                    "custom_handler": self._snowflake_service,
-                }
-            ]
-            logger.info("✅ Registered Snowflake custom provider with LiteLLM")
+            if has_private_key:
+                authmethod = "jwt"
+                logger.info(
+                    "OAuth requested but no token file found, using JWT for local development"
+                )
+            else:
+                raise ValueError(
+                    "OAuth token file not found at /snowflake/session/token and no private key "
+                    "configured for JWT authentication. Please set SNOWFLAKE_PRIVATE_KEY_PATH "
+                    "or ensure the OAuth token file exists."
+                )
 
-        # Return LLM instance that uses the registered custom provider
+        # Generate JWT token for authentication
+        if authmethod == "jwt":
+            if hasattr(self.settings, "private_key") and self.settings.private_key:
+                private_key = self.settings.private_key
+            elif (
+                hasattr(self.settings, "snowflake_private_key_path")
+                and self.settings.snowflake_private_key_path
+            ):
+                try:
+                    with open(self.settings.snowflake_private_key_path, "r") as f:
+                        private_key = f.read()
+                    logger.info(
+                        f"✅ Loaded private key from {self.settings.snowflake_private_key_path}"
+                    )
+                except Exception as e:
+                    logger.error(f"Failed to load private key: {e}")
+                    raise ValueError("JWT authentication requires a valid private key")
+            else:
+                raise ValueError(
+                    "JWT authentication requires SNOWFLAKE_PRIVATE_KEY_PATH or private_key setting"
+                )
+
+            # Generate JWT token
+            jwt_token = JWTGenerator(
+                account=account,
+                user=user,
+                private_key_string=private_key,
+                passphrase=getattr(
+                    self.settings, "snowflake_privatekey_password", None
+                ),
+            ).get_token()
+            logger.info("✅ JWT token generated successfully")
+        else:
+            # Use OAuth token
+            try:
+                with open("/snowflake/session/token", "r") as f:
+                    jwt_token = f.read().strip()
+                logger.info("✅ Using OAuth token from container")
+            except FileNotFoundError:
+                raise ValueError(
+                    "OAuth token file not found at /snowflake/session/token"
+                )
+
+        # Return LLM instance using OpenAI handler with Snowflake endpoint
+        # Note: Snowflake's OpenAI-compatible endpoint doesn't support max_tokens parameter
+        # It uses max_completion_tokens internally, but we don't set it explicitly
         llm_params = {
-            "model": f"custom-cortex-llm/{model}",
+            "model": f"openai/{model}",  # Use OpenAI handler
+            "api_key": jwt_token,  # Snowflake JWT token
+            "base_url": base_url,  # Snowflake OpenAI-compatible endpoint
             "temperature": kwargs.get("temperature", 0.2),
-            "max_tokens": kwargs.get("max_tokens", 1024),
         }
+
+        # Note: We intentionally don't add max_tokens for Snowflake
+        # The endpoint handles token limits internally via max_completion_tokens
 
         # Add response_format if provided for structured output
         if "response_format" in kwargs:
             llm_params["response_format"] = kwargs["response_format"]
 
+        logger.info(
+            f"✅ Created Snowflake LLM with OpenAI-compatible endpoint (temperature={llm_params['temperature']})"
+        )
         return TrackedLLM(**llm_params)
 
     def _get_openai_llm(self, model: str, **kwargs) -> TrackedLLM:
