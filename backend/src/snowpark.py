@@ -1,7 +1,6 @@
 from http.client import HTTPException
-from flask import Blueprint, request, abort, make_response, jsonify
+from flask import Blueprint, abort, make_response, jsonify
 
-import datetime
 import logging
 from sqlalchemy import text
 
@@ -31,19 +30,19 @@ def llm_call():
                 logger.warning(f"Could not get session info: {info_ex}")
 
             # Try to call LLM
-            # llm_query = "SELECT SNOWFLAKE.CORTEX.COMPLETE('llama3-8b', 'hello')"
-            # logger.info(f"Executing LLM query: {llm_query}")
+            llm_query = "SELECT SNOWFLAKE.CORTEX.COMPLETE('llama3-8b', 'hello')"
+            logger.info(f"Executing LLM query: {llm_query}")
 
-            # result = session.execute(text(llm_query))
-            # response = result.fetchone()[0]
-            # logger.info(f"LLM call successful. Response: {response}")
+            result = session.execute(text(llm_query))
+            response = result.fetchone()[0]
+            logger.info(f"LLM call successful. Response: {response}")
 
             # Try to use LiteLLM handler
             try:
-                llm = get_llm(provider='snowflake', model='mistral-large')
-                #logger.info("Calling LLM..")
-                #response = llm.call([({"role": "user", "content": "Hello"})])
-                #logger.info(f"Get response from LLM {response}")
+                llm = get_llm(provider='snowflake', model='claude-3-5-sonnet')
+                logger.info("Calling LLM..")
+                response = llm.call([({"role": "user", "content": "Hello"})])
+                logger.info(f"Get response from LLM {response}")
 
                 # Run Crew
                 logger.info("Running Crew")

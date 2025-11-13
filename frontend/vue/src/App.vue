@@ -7,7 +7,7 @@
     >
     <v-app-bar-nav-icon></v-app-bar-nav-icon>
 
-    <v-toolbar-title>Simple App</v-toolbar-title>
+    <v-toolbar-title>BlendX</v-toolbar-title>
   </v-app-bar>
 
     <v-main>
