@@ -16,9 +16,10 @@ GRANT USAGE ON SCHEMA app_data TO APPLICATION ROLE app_user;
 
 
 -- Create table to store Crew execution results
-CREATE TABLE IF NOT EXISTS app_data.crew_execution_results (
+CREATE OR REPLACE TABLE app_data.crew_execution_results (
     id VARCHAR(36) PRIMARY KEY,
     execution_timestamp TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP(),
+    updated_at TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP(),
     crew_name VARCHAR(255),
     raw_output VARIANT,
     result_text TEXT,
@@ -103,6 +104,7 @@ CREATE OR REPLACE PROCEDURE app_public.get_last_crew_execution()
     RETURNS TABLE (
         id VARCHAR,
         execution_timestamp TIMESTAMP_NTZ,
+        updated_at TIMESTAMP_NTZ,
         crew_name VARCHAR,
         raw_output VARIANT,
         result_text TEXT,
@@ -118,6 +120,7 @@ BEGIN
         SELECT
             id,
             execution_timestamp,
+            updated_at,
             crew_name,
             raw_output,
             result_text,
@@ -139,6 +142,7 @@ CREATE OR REPLACE PROCEDURE app_public.get_recent_crew_executions(num_results NU
     RETURNS TABLE (
         id VARCHAR,
         execution_timestamp TIMESTAMP_NTZ,
+        updated_at TIMESTAMP_NTZ,
         crew_name VARCHAR,
         raw_output VARIANT,
         result_text TEXT,
@@ -154,6 +158,7 @@ BEGIN
         SELECT
             id,
             execution_timestamp,
+            updated_at,
             crew_name,
             raw_output,
             result_text,
