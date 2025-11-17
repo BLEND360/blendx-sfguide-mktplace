@@ -139,8 +139,8 @@ def create_snowflake_engine():
         # Only pass account/host if they're explicitly set (for local testing)
         url_params = {
             "warehouse": settings.snowflake_warehouse,
-            "database": settings.snowflake_database,
-            "schema": settings.snowflake_schema,
+            # "database": settings.snowflake_database,
+            # "schema": settings.snowflake_schema,
             "authenticator": "oauth",
             "token": oauth_token,
         }
@@ -153,6 +153,7 @@ def create_snowflake_engine():
             url_params["host"] = settings.snowflake_host
 
         logger.info(f"Creating OAuth connection with params: {list(url_params.keys())}")
+        logger.info(f"Database: {url_params.get('database')}, Schema: {url_params.get('schema')}, Warehouse: {url_params.get('warehouse')}")
 
         engine = create_engine(
             URL(**url_params),
