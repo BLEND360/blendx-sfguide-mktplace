@@ -7,12 +7,28 @@
           <v-btn
             color="primary"
             large
-            @click="llm_call"
+            @click="startCrew"
             :loading="loading"
             :disabled="loading"
           >
             RUN CREW
           </v-btn>
+        </v-col>
+      </v-row>
+
+      <v-row v-if="status && loading" class="mt-6">
+        <v-col cols="12">
+          <v-card outlined>
+            <v-card-text class="text-center">
+              <v-progress-circular
+                indeterminate
+                color="primary"
+                class="mb-3"
+              ></v-progress-circular>
+              <div>{{ statusMessage }}</div>
+              <div class="text-caption mt-2">Execution ID: {{ executionId }}</div>
+            </v-card-text>
+          </v-card>
         </v-col>
       </v-row>
 
@@ -48,26 +64,98 @@ export default {
     response: null,
     loading: false,
     error: null,
+    executionId: null,
+    status: null,
+    statusMessage: 'Starting crew execution...',
+    pollingInterval: null,
+    pollingAttempts: 0,
+    maxPollingAttempts: 120, // 10 minutes (5 seconds * 120)
   }),
 
   methods: {
-    llm_call() {
+    async startCrew() {
       this.loading = true
       this.error = null
       this.response = null
+      this.status = null
+      this.executionId = null
+      this.pollingAttempts = 0
 
       const baseUrl = process.env.VUE_APP_API_URL
-      axios.get(baseUrl + "/llm-call")
-        .then(r => {
-          this.response = r.data.response
+
+      try {
+        // Step 1: Start crew execution
+        const startResponse = await axios.post(baseUrl + "/crew/start")
+        this.executionId = startResponse.data.execution_id
+        this.status = startResponse.data.status
+        this.statusMessage = 'Crew is processing...'
+
+        console.log('Crew started with ID:', this.executionId)
+
+        // Step 2: Start polling for results
+        this.startPolling()
+      } catch (error) {
+        console.error("Error starting crew:", error)
+        this.error = "Error starting crew: " + (error.response?.data?.detail || error.message)
+        this.loading = false
+      }
+    },
+
+    startPolling() {
+      this.pollingInterval = setInterval(async () => {
+        await this.checkStatus()
+      }, 5000) // Poll every 5 seconds
+    },
+
+    stopPolling() {
+      if (this.pollingInterval) {
+        clearInterval(this.pollingInterval)
+        this.pollingInterval = null
+      }
+    },
+
+    async checkStatus() {
+      this.pollingAttempts++
+
+      if (this.pollingAttempts > this.maxPollingAttempts) {
+        this.stopPolling()
+        this.error = "Polling timeout after 10 minutes. The crew may still be processing."
+        this.loading = false
+        return
+      }
+
+      const baseUrl = process.env.VUE_APP_API_URL
+
+      try {
+        const statusResponse = await axios.get(baseUrl + `/crew/status/${this.executionId}`)
+        const data = statusResponse.data
+
+        console.log(`Polling attempt ${this.pollingAttempts}:`, data.status)
+
+        if (data.status === 'COMPLETED') {
+          this.stopPolling()
+          this.response = data.result?.raw || JSON.stringify(data.result, null, 2)
           this.loading = false
-        })
-        .catch(error => {
-          console.log("Error reading llm-call", error)
-          this.error = "Error calling LLM endpoint: " + (error.response?.data?.message || error.message)
+          this.statusMessage = 'Crew execution completed!'
+        } else if (data.status === 'ERROR') {
+          this.stopPolling()
+          this.error = data.error || 'Unknown error occurred'
           this.loading = false
-        })
+        } else if (data.status === 'PROCESSING') {
+          this.statusMessage = `Crew is processing... (${this.pollingAttempts * 5}s elapsed)`
+        }
+      } catch (error) {
+        console.error("Error checking status:", error)
+        this.stopPolling()
+        this.error = "Error checking status: " + (error.response?.data?.detail || error.message)
+        this.loading = false
+      }
     }
+  },
+
+  beforeUnmount() {
+    // Clean up polling interval if component is destroyed
+    this.stopPolling()
   }
 }
 </script>

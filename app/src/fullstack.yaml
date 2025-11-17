@@ -3,7 +3,7 @@ spec:
     - name: eap-frontend
       image: /spcs_app/napp/img_repo/eap_frontend
       env:
-        VUE_APP_API_URL: /api/snowpark
+        VUE_APP_API_URL: /api
     - name: eap-backend
       image: /spcs_app/napp/img_repo/eap_backend
       env:

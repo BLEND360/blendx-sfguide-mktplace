@@ -743,72 +743,106 @@ class UnifiedLLMService:
         # setup_litellm_tracking()
 
     def _get_snowflake_session(self) -> Session:
-        """Get or create Snowflake session"""
+        """Get or create Snowflake session using OAuth or JWT authentication"""
         if self._snowflake_session is None:
-            if self.settings.environment.upper() in [
-                "DEVELOPMENT",
-                "SHARED",
-                "STAGING",
-                "PRODUCTION",
-                "UAT",
-            ]:
-                # OAuth authentication for containers
+            # Determine auth method
+            authmethod = getattr(self.settings, "snowflake_authmethod", "oauth")
+
+            # Normalize authmethod: "private_key" is an alias for "jwt"
+            if authmethod == "private_key":
+                authmethod = "jwt"
+
+            # Check if OAuth token file exists
+            oauth_available = os.path.exists("/snowflake/session/token")
+
+            # For local development without token file, try to use JWT if private key is available
+            if authmethod == "oauth" and not oauth_available:
+                # Check if we have a private key available for JWT fallback
+                has_private_key = (
+                    hasattr(self.settings, "private_key") and self.settings.private_key
+                ) or (
+                    hasattr(self.settings, "snowflake_private_key_path")
+                    and self.settings.snowflake_private_key_path
+                )
+
+                if has_private_key:
+                    authmethod = "jwt"
+                    logger.info(
+                        "OAuth requested but no token file found, using JWT for local development"
+                    )
+                else:
+                    raise ValueError(
+                        "OAuth token file not found at /snowflake/session/token and no private key "
+                        "configured for JWT authentication. Please set SNOWFLAKE_PRIVATE_KEY_PATH "
+                        "or ensure the OAuth token file exists."
+                    )
+
+            # Build session config based on auth method
+            session_config = {
+                "account": self.settings.snowflake_account,
+                "warehouse": self.settings.snowflake_warehouse,
+                "database": self.settings.snowflake_database,
+                "schema": self.settings.snowflake_schema,
+            }
+
+            if self.settings.snowflake_role:
+                session_config["role"] = self.settings.snowflake_role
+
+            if authmethod == "jwt":
+                # Use JWT (key pair) authentication
+                user = self.settings.snowflake_service_user or self.settings.snowflake_user
+
+                # Get private key
+                private_key = None
+                if hasattr(self.settings, "private_key") and self.settings.private_key:
+                    private_key = self.settings.private_key
+                elif (
+                    hasattr(self.settings, "snowflake_private_key_path")
+                    and self.settings.snowflake_private_key_path
+                ):
+                    try:
+                        with open(self.settings.snowflake_private_key_path, "r") as f:
+                            private_key = f.read()
+                        logger.info(
+                            f"✅ Loaded private key from {self.settings.snowflake_private_key_path}"
+                        )
+                    except Exception as e:
+                        logger.error(f"Failed to load private key: {e}")
+                        raise ValueError("JWT authentication requires a valid private key")
+                else:
+                    raise ValueError(
+                        "JWT authentication requires SNOWFLAKE_PRIVATE_KEY_PATH or private_key setting"
+                    )
+
+                # Generate JWT token
+                jwt_token = JWTGenerator(
+                    account=self.settings.snowflake_account,
+                    user=user,
+                    private_key_string=private_key,
+                    passphrase=getattr(
+                        self.settings, "snowflake_privatekey_password", None
+                    ),
+                ).get_token()
+
+                session_config["user"] = user
+                session_config["authenticator"] = "oauth"
+                session_config["token"] = jwt_token
+                logger.info("✅ Using JWT authentication for Snowflake session")
+            else:
+                # Use OAuth authentication (from container token file)
                 try:
                     with open("/snowflake/session/token", "r") as token_file:
                         oauth_token = token_file.read().strip()
 
-                    session_config = {
-                        "account": self.settings.snowflake_account,
-                        "authenticator": "oauth",
-                        "token": oauth_token,
-                        "warehouse": self.settings.snowflake_warehouse,
-                        "database": self.settings.snowflake_database,
-                        "schema": self.settings.snowflake_schema,
-                    }
-
-                    if self.settings.snowflake_role:
-                        session_config["role"] = self.settings.snowflake_role
-
-                    self._snowflake_session = Session.builder.configs(
-                        session_config
-                    ).create()
+                    session_config["authenticator"] = "oauth"
+                    session_config["token"] = oauth_token
+                    logger.info("✅ Using OAuth token from container for Snowflake session")
                 except FileNotFoundError:
-                    logger.info(
-                        "OAuth token file not found, using password authentication"
+                    raise ValueError(
+                        "OAuth token file not found at /snowflake/session/token"
                     )
-                    # Fall back to password auth for local development
-                    session_config = {
-                        "account": self.settings.snowflake_account,
-                        "user": self.settings.snowflake_user,
-                        "password": self.settings.snowflake_password,
-                        "warehouse": self.settings.snowflake_warehouse,
-                        "database": self.settings.snowflake_database,
-                        "schema": self.settings.snowflake_schema,
-                    }
 
-                    if self.settings.snowflake_role:
-                        session_config["role"] = self.settings.snowflake_role
-
-                    self._snowflake_session = Session.builder.configs(
-                        session_config
-                    ).create()
-            else:
-                # Username/password authentication for local development
-                session_config = {
-                    "account": self.settings.snowflake_account,
-                    "user": self.settings.snowflake_user,
-                    "password": self.settings.snowflake_password,
-                    "warehouse": self.settings.snowflake_warehouse,
-                    "database": self.settings.snowflake_database,
-                    "schema": self.settings.snowflake_schema,
-                }
-
-                if self.settings.snowflake_role:
-                    session_config["role"] = self.settings.snowflake_role
-
-                self._snowflake_session = Session.builder.configs(
-                    session_config
-                ).create()
+            self._snowflake_session = Session.builder.configs(session_config).create()
 
         return self._snowflake_session
 

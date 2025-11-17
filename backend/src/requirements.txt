@@ -3,11 +3,12 @@ snowflake-snowpark-python
 pandas
 numpy
 datetime
-flask
-flask-cors
+fastapi
+uvicorn[standard]
 litellm
 sqlalchemy
 snowflake-sqlalchemy
+pydantic
 pydantic_settings
 crewai-tools>=0.0.1
 crewai>=0.28.0
