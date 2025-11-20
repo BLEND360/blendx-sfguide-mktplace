@@ -10,5 +10,5 @@ sqlalchemy
 snowflake-sqlalchemy
 pydantic
 pydantic_settings
-crewai-tools>=0.0.1
 crewai>=0.28.0
+crewai-tools>=0.0.1

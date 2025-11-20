@@ -28,3 +28,25 @@ privileges:
       description: "Enables application to execute Snowflake Cortex functions"
  - IMPORTED PRIVILEGES ON SNOWFLAKE DB:
       description: "Enables application to use Snowflake Cortex AI functions"
+
+references:
+  - serper_api_key:
+      label: "Serper API Key Secret"
+      description: "Secret containing the API key for Serper search tool"
+      privileges:
+        - USAGE
+      object_type: SECRET
+      register_callback: config.register_single_reference
+      configuration_callback: config.get_config_for_ref
+  - serper_external_access:
+      label: "External Access Integration for Serper API"
+      description: "External access integration to allow network requests to serper.dev API"
+      privileges:
+        - USAGE
+      object_type: EXTERNAL ACCESS INTEGRATION
+      register_callback: config.register_single_reference
+      configuration_callback: config.get_config_for_ref
+
+configuration:
+  log_level: INFO
+  trace_level: OFF

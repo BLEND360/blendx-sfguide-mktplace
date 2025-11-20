@@ -1,0 +1,18 @@
+USE ROLE ACCOUNTADMIN;
+
+CREATE APPLICATION PACKAGE spcs_app_pkg_test;
+
+GRANT USAGE ON APPLICATION PACKAGE spcs_app_pkg_test TO ROLE naspcs_role;
+GRANT MODIFY ON APPLICATION PACKAGE spcs_app_pkg_test TO ROLE naspcs_role;
+
+
+ALTER APPLICATION PACKAGE spcs_app_pkg_test
+  REGISTER VERSION v1
+  USING '@spcs_app_test.napp.app_stage' 
+  LABEL = 'Version 1';
+
+ALTER APPLICATION PACKAGE spcs_app_pkg_test
+  MODIFY RELEASE CHANNEL DEFAULT
+  ADD VERSION v1;
+
+  

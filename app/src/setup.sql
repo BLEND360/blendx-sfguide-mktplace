@@ -2,10 +2,51 @@ CREATE SCHEMA IF NOT EXISTS config;
 CREATE APPLICATION ROLE IF NOT EXISTS app_admin;
 CREATE APPLICATION ROLE IF NOT EXISTS app_user;
 CREATE SCHEMA IF NOT EXISTS app_public;
+-- Register references for external access and secret
+-- NOTE: references must be declared in the APPLICATION PACKAGE (provider).
+-- Grants on those REFERENCES must also be applied in the provider script where the references are created.
+
+
 GRANT USAGE ON SCHEMA config TO APPLICATION ROLE app_admin;
 
 GRANT USAGE ON SCHEMA app_public TO APPLICATION ROLE app_admin;
 GRANT USAGE ON SCHEMA app_public TO APPLICATION ROLE app_user;
+
+-- Create callback procedure for reference bindings
+CREATE PROCEDURE CONFIG.REGISTER_SINGLE_REFERENCE(ref_name STRING, operation STRING, ref_or_alias STRING)
+  RETURNS STRING
+  LANGUAGE SQL
+  AS $$
+    BEGIN
+      CASE (operation)
+        WHEN 'ADD' THEN
+          SELECT SYSTEM$SET_REFERENCE(:ref_name, :ref_or_alias);
+        WHEN 'REMOVE' THEN
+          SELECT SYSTEM$REMOVE_REFERENCE(:ref_name, :ref_or_alias);
+        WHEN 'CLEAR' THEN
+          SELECT SYSTEM$REMOVE_ALL_REFERENCES(:ref_name);
+      ELSE
+        RETURN 'unknown operation: ' || operation;
+      END CASE;
+      RETURN NULL;
+    END;
+  $$;
+
+GRANT USAGE ON PROCEDURE config.REGISTER_SINGLE_REFERENCE(STRING, STRING, STRING) TO APPLICATION ROLE app_admin;
+
+-- Callback to fetch reference configuration
+CREATE OR REPLACE PROCEDURE config.get_config_for_ref(ref_name STRING)
+  RETURNS VARIANT
+  LANGUAGE SQL
+AS
+$$
+BEGIN
+  RETURN SYSTEM$GET_REFERENCE(:ref_name);
+END;
+$$;
+
+GRANT USAGE ON PROCEDURE config.get_config_for_ref(STRING) TO APPLICATION ROLE app_admin;
+GRANT USAGE ON PROCEDURE config.get_config_for_ref(STRING) TO APPLICATION ROLE app_user;
 CREATE OR ALTER VERSIONED SCHEMA v1;
 GRANT USAGE ON SCHEMA v1 TO APPLICATION ROLE app_admin;
 
@@ -41,7 +82,8 @@ BEGIN
         EXECUTE IMMEDIATE 'CREATE SERVICE IF NOT EXISTS app_public.st_spcs
             IN COMPUTE POOL Identifier(''' || poolname || ''')
             FROM SPECIFICATION_FILE=''' || '/fullstack.yaml' || '''
-            QUERY_WAREHOUSE=''' || whname || '''';
+            QUERY_WAREHOUSE=''' || whname || '''
+            EXTERNAL_ACCESS_INTEGRATIONS = (REFERENCE(''serper_external_access''))';
 GRANT USAGE ON SERVICE app_public.st_spcs TO APPLICATION ROLE app_user;
 GRANT SERVICE ROLE app_public.st_spcs!ALL_ENDPOINTS_USAGE TO APPLICATION ROLE app_user;
 
@@ -190,3 +232,8 @@ END;
 $$;
 GRANT USAGE ON PROCEDURE app_public.count_crew_executions() TO APPLICATION ROLE app_admin;
 GRANT USAGE ON PROCEDURE app_public.count_crew_executions() TO APPLICATION ROLE app_user;
+
+
+-- Note: References are bound externally via ALTER APPLICATION SET REFERENCES
+-- in the consumer account after installation (see initial-install.sh)
+-- Do NOT call register_single_reference here as references don't exist yet during CREATE APPLICATION

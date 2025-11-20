@@ -1,256 +1,173 @@
-# Deployment Scripts
+# BlendX Snowflake Native App Deployment Guide
 
-This directory contains scripts for deploying and managing the Snowflake Native App.
+This README explains the exact, correct, and production-safe flow for deploying a Snowflake Native App using the BlendX architecture. It clearly separates provider-side responsibilities from consumer-side execution and includes the fixed and validated scripts.
 
-## Quick Start
+⸻
 
-### 1. Setup Configuration
+🚀 Overview
 
-Copy the example environment file and customize it for your environment:
+A Snowflake Native App deployment has three phases:
+	1.	Provider – builds and publishes the Application Package.
+	2.	Consumer (Initial Install) – installs the app for the first time and pairs required references.
+	3.	Consumer (Upgrades) – upgrades the app when a new version is released.
 
-```bash
-cd scripts
-cp .env.example .env
-# Edit .env with your specific values
-```
+This document describes the required configuration, scripts, and workflow.
 
-Run external_integration.sql 
+⸻
 
-### 2. Run Deployment
+🧩 Architecture Components
 
-```bash
-./scripts/deploy.sh
-```
+Provider Account
 
-### Command Line Options
+Responsible for:
+	•	Managing the Application Package
+	•	Hosting the app code in a Snowflake stage
+	•	Publishing versions via ALTER APPLICATION PACKAGE ... ADD VERSION
+	•	Defining references in manifest.yml
 
-#### `--dry-run`
-Show what would be done without making any changes:
+Consumer Account
 
-```bash
-./scripts/deploy.sh --dry-run
-```
+Responsible for:
+	•	Creating secrets
+	•	Creating External Access Integrations (EAI)
+	•	Installing the application instance
+	•	Pairing the instance with required references
+	•	Upgrading when new versions are released
 
-#### `--skip-build`
-Skip Docker image building (use existing images):
+⸻
 
-```bash
-./scripts/deploy.sh --skip-build
-```
+📦 1. Provider Workflow
 
-#### `--skip-push`
-Skip Docker image push to registry (useful for testing configuration):
+1.1 Requirements
 
-```bash
-./scripts/deploy.sh --skip-push
-```
+Provider must:
+	•	Have a working manifest.yml defining:
+	•	references: section (SECRET + EAI)
+	•	callbacks: register_single_reference and get_config_for_ref
+	•	Have all app code uploaded to a stage
+	•	Execute with a role having:
+	•	CREATE APPLICATION PACKAGE
+	•	MODIFY permissions for new versions
 
-#### `--help`
-Show help message:
+⸻
 
-```bash
-./scripts/deploy.sh --help
-```
+1.2 Provider Script (provider.sql)
 
-### Combining Options
+Executed in the provider account:
+	•	Creates the application package (first time only)
+	•	Registers new versions
+	•	Adds versions to release channels
+	•	Sets the default release directive
 
-Options can be combined:
+This script must NOT:
+	•	Create references (these live in manifest.yml)
+	•	Add external access integrations with SQL
 
-```bash
-# Test deployment without building or pushing images
-./scripts/deploy.sh --dry-run --skip-build --skip-push
+⸻
 
-# Deploy using existing images without rebuilding
-./scripts/deploy.sh --skip-build
-```
+🏗️ 2. Consumer Initial Installation
 
-## Deployment Process
+The consumer runs initial-install.sh once per account.
 
-The `deploy.sh` script performs the following steps:
+It performs:
+	1.	Validates that:
+	•	serper_api_key SECRET exists
+	•	serper_external_access EAI exists
+	2.	Creates the application instance:
 
-1. **Build Docker Images** - Builds backend, frontend, and router images
-2. **Login to Registry** - Authenticates with Snowflake Docker registry
-3. **Push Images** - Tags and pushes images to Snowflake registry
-4. **Upload Files** - Uploads application files to Snowflake stage
-5. **Remove Old Version** - Removes previous version from release channel
-6. **Drop Old Version** - Deregisters the old version
-7. **Register New Version** - Registers the new version with Snowflake
-8. **Upgrade Application** - Upgrades the application instance
-9. **Restart Service** - Stops and starts the service
+CREATE APPLICATION <instance>
+  FROM APPLICATION PACKAGE <package>
+  USING VERSION <version>;
 
-## Pre-requisites
 
-Before running the deployment script, ensure you have:
+	3.	Pairs references:
 
-### Required Tools
+ALTER APPLICATION <instance> SET REFERENCES = (
+  SECRET serper_api_key
+);
 
-- **Docker** - For building and pushing container images
-- **Snowflake CLI** (`snow`) - For interacting with Snowflake
 
-Verify installation:
+	4.	Pairs external access integrations:
 
-```bash
-docker --version
-snow --version
-```
+ALTER APPLICATION <instance> SET EXTERNAL_ACCESS_INTEGRATIONS = (
+  serper_external_access
+);
 
-### Snowflake Setup
 
-1. **Connection configured** - Create a Snowflake CLI connection:
-   ```bash
-   snow connection add
-   ```
+	5.	Grants permissions:
+	•	Warehouse
+	•	Compute Pool
 
-2. **Roles and permissions** - Ensure you have:
-   - A role with permissions to manage application packages (e.g., `naspcs_role`)
-   - A role for installing/using the application (e.g., `nac_test`)
+This script must NOT:
+	•	Alter the application package
+	•	Add internal references
+	•	Add EAIs via SQL
 
-3. **Resources created** - The following must exist:
-   - Database and schema for the application package
-   - Image repository for Docker images
-   - Compute pool for running services
-   - Warehouse for queries
+⸻
 
-## Useful Commands
+🔁 3. Consumer Upgrade Flow
 
-After deployment, use these commands to manage your application:
+The consumer runs deploy.sh to:
+	1.	Register the new package version (provider must have published it)
+	2.	Add the version to the release channel (DEFAULT)
+	3.	Set the default release directive
+	4.	Upgrade the installed application instance
 
-### View Service Logs
+This allows smooth upgrades without reinstalling.
 
-```bash
-snow sql -q "USE ROLE nac_test; CALL spcs_app_instance_test.app_public.get_service_logs('eap-backend', 200);" --connection mkt_blendx_demo
-```
+⸻
 
-### Check Service Status
+📄 Required Files Summary
 
-```bash
-snow sql -q "USE ROLE nac_test; CALL spcs_app_instance_test.app_public.get_service_status();" --connection mkt_blendx_demo
-```
+1. manifest.yml (Provider)
 
-### Get Application URL
+Contains:
+	•	References definitions
+	•	Object types (SECRET, EXTERNAL ACCESS INTEGRATION)
+	•	Callbacks
 
-```bash
-snow sql -q "USE ROLE nac_test; CALL spcs_app_instance_test.app_public.app_url();" --connection mkt_blendx_demo
-```
+2. setup.sql (Provider – executed inside app)
 
-### Stop Service
+Contains:
+	•	Internal app schema/role setup
+	•	Registration callbacks (register_single_reference)
+	•	Configuration callbacks (get_config_for_ref)
 
-```bash
-snow sql -q "USE ROLE nac_test; CALL spcs_app_instance_test.app_public.stop_app();" --connection mkt_blendx_demo
-```
+3. provider.sql (Provider)
 
-### Start Service
+Responsible for:
+	•	Creating the app package
+	•	Adding versions
+	•	Publishing to release channels
 
-```bash
-snow sql -q "USE ROLE nac_test; CALL spcs_app_instance_test.app_public.start_app('POOL_NAC', 'WH_NAC');" --connection mkt_blendx_demo
-```
+4. initial-install.sh (Consumer)
 
-## Troubleshooting
+Responsible for:
+	•	Initial creation of the app instance
+	•	Pairing references + external access
 
-### Connection Issues
+5. deploy.sh (Consumer)
 
-If the script fails to connect to Snowflake:
+Responsible for:
+	•	Upgrades
+	•	Adding new versions to release channels
+	•	Setting release directives
 
-1. Verify your connection:
-   ```bash
-   snow connection test --connection mkt_blendx_demo
-   ```
+⸻
 
-2. Check your credentials are up to date
-3. Ensure you have network access to Snowflake
+🧪 Testing the App
 
-### Docker Build Failures
+After installation, test the application by:
+	•	Invoking the public procedures
+	•	Triggering containers in compute pools
+	•	Ensuring EAIs work (requests in Python should succeed)
 
-If Docker builds fail:
+⸻
 
-1. Check Docker is running: `docker ps`
-2. Verify you have enough disk space
-3. Check the Dockerfiles in `backend/`, `frontend/`, and `router/` directories
+✔ Final Notes
+	•	All reference creation and EAI creation must be done in the consumer account, not the provider.
+	•	All reference declaration must occur in manifest.yml, not setup.sql or deploy scripts.
+	•	Package modification is provider-only.
+	•	initial-install.sh should never try to modify the package.
 
-### Registry Push Failures
-
-If pushing to the Snowflake registry fails:
-
-1. Ensure you're logged in: `snow spcs image-registry login --connection mkt_blendx_demo`
-2. Verify the registry URL in your `.env` file
-3. Check you have permissions to push to the repository
-
-### Service Start Failures
-
-If the service fails to start:
-
-1. Check service logs:
-   ```bash
-   snow sql -q "USE ROLE nac_test; CALL spcs_app_instance_test.app_public.get_service_logs('eap-backend', 500);" --connection mkt_blendx_demo
-   ```
-
-2. Verify the compute pool is running:
-   ```bash
-   snow sql -q "SHOW COMPUTE POOLS;" --connection mkt_blendx_demo
-   ```
-
-3. Check that the warehouse exists and is accessible
-
-## Environment-Specific Configurations
-
-### Development
-
-For local development, you might want to:
-
-```bash
-# Use a dev-specific .env
-cp .env.example .env.dev
-# Edit .env.dev with dev values
-
-# Deploy using dev config
-export $(cat .env.dev | xargs) && ./scripts/deploy.sh
-```
-
-### Production
-
-For production deployments:
-
-1. Use a separate `.env.prod` with production values
-2. Use version tags instead of `v1` (e.g., `v1.0.0`)
-3. Consider using CI/CD pipelines instead of manual deployment
-
-## CI/CD Integration
-
-To use this script in CI/CD pipelines:
-
-### GitHub Actions Example
-
-```yaml
-- name: Deploy to Snowflake
-  env:
-    SNOW_CONNECTION: ${{ secrets.SNOW_CONNECTION }}
-    SNOWFLAKE_REGISTRY: ${{ secrets.SNOWFLAKE_REGISTRY }}
-  run: |
-    ./scripts/deploy.sh --skip-push  # If images are built separately
-```
-
-### Environment Variables
-
-All configuration can be set via environment variables instead of using a `.env` file, making it suitable for CI/CD:
-
-```bash
-export SNOW_CONNECTION=mkt_blendx_demo
-export APP_VERSION=v1.2.3
-./scripts/deploy.sh
-```
-
-## Additional Scripts
-
-### Lab_Script.sql
-
-Contains SQL commands for initial setup and testing.
-
-### Docker_Commands.txt
-
-Contains reference Docker commands for manual operations.
-
-## Getting Help
-
-- Run `./scripts/deploy.sh --help` for usage information
-- Check the main project README for architecture overview
-- Review Snowflake Native Apps documentation at https://docs.snowflake.com/en/developer-guide/native-apps/native-apps-about
+This README provides the correct and complete workflow for Snowflake Native Apps following Snowflake’s latest API and packaging rules.

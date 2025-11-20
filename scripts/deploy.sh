@@ -234,11 +234,27 @@ else
 fi
 
 # ============================================
-# Step 4: Upload Application Files
+# Step 4: Create Application Package (if not exists)
 # ============================================
 
 echo "=========================================="
-echo "[4/9] Uploading application files to Snowflake stage..."
+echo "[4/9] Creating application package (if not exists)..."
+echo "=========================================="
+
+run_command "Creating application package" \
+    "snow sql -q \"USE ROLE ${APP_PACKAGE_ROLE}; CREATE APPLICATION PACKAGE IF NOT EXISTS ${APP_PACKAGE_NAME};\" --connection ${SNOW_CONNECTION}"
+
+run_command "Enabling release channels (if needed)" \
+    "snow sql -q \"USE ROLE ${APP_PACKAGE_ROLE}; ALTER APPLICATION PACKAGE ${APP_PACKAGE_NAME} SET ENABLE_RELEASE_CHANNELS = TRUE;\" --connection ${SNOW_CONNECTION} || echo 'Release channels already enabled (OK)'"
+
+echo ""
+
+# ============================================
+# Step 5: Upload Application Files
+# ============================================
+
+echo "=========================================="
+echo "[5/9] Uploading application files to Snowflake stage..."
 echo "=========================================="
 
 APP_SRC_PATH="$PROJECT_ROOT/app/src"
@@ -248,67 +264,79 @@ run_command "Uploading files to stage" \
 echo ""
 
 # ============================================
-# Step 5: Remove Old Version from Release Channel
+# Step 6: Register/Update Version
 # ============================================
 
 echo "=========================================="
-echo "[5/9] Removing old version from release channel..."
+echo "[6/9] Registering/updating version ${APP_VERSION}..."
 echo "=========================================="
 
-run_command "Removing version from release channel" \
-    "snow sql -q \"USE ROLE ${APP_PACKAGE_ROLE}; ALTER APPLICATION PACKAGE ${APP_PACKAGE_NAME} MODIFY RELEASE CHANNEL default DROP VERSION ${APP_VERSION};\" --connection ${SNOW_CONNECTION} || echo 'Version not in channel (OK)'"
+# Note: For development, we allow the version to already exist
+# In production, use unique version numbers (v1, v2, v3, etc.)
+run_command "Registering version (or using existing)" \
+    "snow sql -q \"USE ROLE ${APP_PACKAGE_ROLE}; ALTER APPLICATION PACKAGE ${APP_PACKAGE_NAME} REGISTER VERSION ${APP_VERSION} USING @${APP_DATABASE}.${APP_SCHEMA}.${APP_STAGE};\" --connection ${SNOW_CONNECTION} || echo 'Version already exists, will use existing version (OK)'"
 
 echo ""
 
 # ============================================
-# Step 6: Drop Old Version
+# Step 7: Set Default Release Directive
 # ============================================
 
 echo "=========================================="
-echo "[6/9] Dropping old version..."
+echo "[7/9] Setting default release directive to ${APP_VERSION}..."
 echo "=========================================="
 
-run_command "Deregistering old version" \
-    "snow sql -q \"USE ROLE ${APP_PACKAGE_ROLE}; ALTER APPLICATION PACKAGE ${APP_PACKAGE_NAME} DEREGISTER VERSION ${APP_VERSION};\" --connection ${SNOW_CONNECTION} || echo 'Version does not exist (OK)'"
+run_command "Adding version to DEFAULT release channel" \
+    "snow sql -q \"USE ROLE ${APP_PACKAGE_ROLE}; ALTER APPLICATION PACKAGE ${APP_PACKAGE_NAME} MODIFY RELEASE CHANNEL DEFAULT ADD VERSION ${APP_VERSION};\" --connection ${SNOW_CONNECTION} || echo 'Version already added to channel (OK)'"
+
+run_command "Setting default release directive" \
+    "snow sql -q \"USE ROLE ${APP_PACKAGE_ROLE}; ALTER APPLICATION PACKAGE ${APP_PACKAGE_NAME} MODIFY RELEASE CHANNEL DEFAULT SET DEFAULT RELEASE DIRECTIVE VERSION = ${APP_VERSION} PATCH = 0;\" --connection ${SNOW_CONNECTION}"
 
 echo ""
 
 # ============================================
-# Step 7: Register New Version
+# Step 8: Check if Application Exists
 # ============================================
 
 echo "=========================================="
-echo "[7/9] Registering new version ${APP_VERSION}..."
+echo "[8/9] Checking if application instance exists..."
 echo "=========================================="
 
-run_command "Registering new version" \
-    "snow sql -q \"USE ROLE ${APP_PACKAGE_ROLE}; ALTER APPLICATION PACKAGE ${APP_PACKAGE_NAME} REGISTER VERSION ${APP_VERSION} USING @${APP_DATABASE}.${APP_SCHEMA}.${APP_STAGE};\" --connection ${SNOW_CONNECTION}"
+if [ "$DRY_RUN" = false ]; then
+    APP_EXISTS=$(snow sql -q "USE ROLE ${APP_CONSUMER_ROLE}; SHOW APPLICATIONS LIKE '${APP_INSTANCE_NAME}';" --connection ${SNOW_CONNECTION} 2>&1 | grep -i "${APP_INSTANCE_NAME}" | grep -v "statement executed" | wc -l || true)
 
-run_command "Adding version to release channel" \
-    "snow sql -q \"USE ROLE ${APP_PACKAGE_ROLE}; ALTER APPLICATION PACKAGE ${APP_PACKAGE_NAME} MODIFY RELEASE CHANNEL default ADD VERSION ${APP_VERSION};\" --connection ${SNOW_CONNECTION}"
+    if [ "$APP_EXISTS" -eq 0 ]; then
+        echo -e "${YELLOW}Application ${APP_INSTANCE_NAME} does not exist yet.${NC}"
+        echo ""
+        echo "Package and version have been created successfully!"
+        echo ""
+        echo "To create the application instance, run:"
+        echo "  ./scripts/initial-install.sh"
+        echo ""
+        exit 0
+    else
+        echo -e "${GREEN}Application exists, proceeding with upgrade...${NC}"
+    fi
+else
+    echo -e "${BLUE}[DRY RUN]${NC} Would check if application exists"
+fi
 
 echo ""
 
 # ============================================
-# Step 8: Upgrade Application
+# Step 9: Upgrade Application and Restart Service
 # ============================================
 
 echo "=========================================="
-echo "[8/9] Upgrading application..."
+echo "[9/9] Upgrading application and restarting service..."
 echo "=========================================="
 
+# Note: References must be set during CREATE APPLICATION (see initial-install.sh)
+# They cannot be modified after the application is created
 run_command "Upgrading application instance" \
     "snow sql -q \"USE ROLE ${APP_CONSUMER_ROLE}; ALTER APPLICATION ${APP_INSTANCE_NAME} UPGRADE USING VERSION ${APP_VERSION};\" --connection ${SNOW_CONNECTION}"
 
 echo ""
-
-# ============================================
-# Step 9: Restart Service
-# ============================================
-
-echo "=========================================="
-echo "[9/9] Restarting service..."
-echo "=========================================="
 
 run_command "Stopping service" \
     "snow sql -q \"USE ROLE ${APP_CONSUMER_ROLE}; CALL ${APP_INSTANCE_NAME}.app_public.stop_app();\" --connection ${SNOW_CONNECTION} || echo 'Service not running (OK)'"
