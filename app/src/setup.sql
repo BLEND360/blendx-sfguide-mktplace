@@ -32,16 +32,24 @@ CREATE OR REPLACE TABLE app_data.crew_execution_results (
 GRANT SELECT ON TABLE app_data.crew_execution_results TO APPLICATION ROLE app_user;
 GRANT SELECT, INSERT, UPDATE ON TABLE app_data.crew_execution_results TO APPLICATION ROLE app_admin;
 
-
 CREATE OR REPLACE PROCEDURE app_public.start_app(poolname VARCHAR, whname VARCHAR)
     RETURNS string
     LANGUAGE sql
     AS $$
 BEGIN
+        -- First, create compute pool if it doesn't exist
+        EXECUTE IMMEDIATE 'CREATE COMPUTE POOL IF NOT EXISTS ' || poolname || '
+            MIN_NODES = 1
+            MAX_NODES = 3
+            INSTANCE_FAMILY = CPU_X64_M
+            AUTO_RESUME = TRUE';
+
+        -- Then create the service
         EXECUTE IMMEDIATE 'CREATE SERVICE IF NOT EXISTS app_public.st_spcs
-            IN COMPUTE POOL Identifier(''' || poolname || ''')
+            IN COMPUTE POOL ' || poolname || '
             FROM SPECIFICATION_FILE=''' || '/fullstack.yaml' || '''
-            QUERY_WAREHOUSE=''' || whname || '''';
+            QUERY_WAREHOUSE=' || whname;
+
 GRANT USAGE ON SERVICE app_public.st_spcs TO APPLICATION ROLE app_user;
 GRANT SERVICE ROLE app_public.st_spcs!ALL_ENDPOINTS_USAGE TO APPLICATION ROLE app_user;
 
@@ -190,3 +198,45 @@ END;
 $$;
 GRANT USAGE ON PROCEDURE app_public.count_crew_executions() TO APPLICATION ROLE app_admin;
 GRANT USAGE ON PROCEDURE app_public.count_crew_executions() TO APPLICATION ROLE app_user;
+
+
+CREATE OR REPLACE PROCEDURE config.get_config_for_ref(reference_name STRING)
+  RETURNS VARIANT
+  LANGUAGE SQL
+AS
+$$
+BEGIN
+    
+    RETURN OBJECT_CONSTRUCT('reference', reference_name);
+END;
+$$;
+GRANT USAGE ON PROCEDURE config.get_config_for_ref(STRING) TO APPLICATION ROLE app_admin;
+
+CREATE OR REPLACE PROCEDURE CONFIG.REGISTER_SINGLE_REFERENCE(
+  ref_name STRING, operation STRING, ref_or_alias STRING)
+  RETURNS STRING
+  LANGUAGE SQL
+  EXECUTE AS OWNER
+  AS $$
+    DECLARE
+      result STRING;
+    BEGIN
+      CASE (operation)
+        WHEN 'ADD' THEN
+          result := SYSTEM$SET_REFERENCE(:ref_name, :ref_or_alias);
+        WHEN 'REMOVE' THEN
+          result := SYSTEM$REMOVE_REFERENCE(:ref_name);
+        WHEN 'CLEAR' THEN
+          result := SYSTEM$REMOVE_REFERENCE(:ref_name);
+      ELSE
+        RETURN 'unknown operation: ' || operation;
+      END CASE;
+      RETURN 'Reference ' || :ref_name || ' ' || :operation || ' successful: ' || result;
+    END;
+  $$;
+
+GRANT USAGE
+  ON PROCEDURE CONFIG.REGISTER_SINGLE_REFERENCE(STRING, STRING, STRING)
+  TO APPLICATION ROLE APP_ADMIN;
+
+  

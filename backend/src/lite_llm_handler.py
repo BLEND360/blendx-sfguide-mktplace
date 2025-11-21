@@ -140,7 +140,7 @@ class SnowflakeLitellmService(CustomLLM):
         self.generate_id_function = generate_id_function
         self.response_format = response_format
         self.kwargs = kwargs
-        self._tracking_service = get_llm_tracking_service()
+        # self._tracking_service = get_llm_tracking_service()
 
         super().__init__()
         self._validate_environment()
@@ -998,21 +998,36 @@ class UnifiedLLMService:
 
     def _get_snowflake_llm(self, model: str, **kwargs) -> TrackedLLM:
         """
-        Create Snowflake Cortex LLM instance using OpenAI-compatible endpoint.
+        Create Snowflake Cortex LLM instance.
 
-        This uses Snowflake's OpenAI-compatible endpoint (/api/v2/cortex/v1)
-        which supports native function calling and works seamlessly with CrewAI.
+        For SPCS with OAuth: Uses native Cortex endpoint (/api/v2/cortex/inference:complete)
+        For local/JWT: Uses OpenAI-compatible endpoint (/api/v2/cortex/v1)
         """
         host = self.settings.snowflake_host
         user = self.settings.snowflake_service_user or self.settings.snowflake_user
         account = self.settings.snowflake_account
 
-        # Use Snowflake's OpenAI-compatible endpoint
+        # Check if OAuth token file exists (SPCS environment)
+        oauth_available = os.path.exists("/snowflake/session/token")
+
+        # Determine which endpoint to use based on environment
+        authmethod = getattr(self.settings, "snowflake_authmethod", "oauth")
+        is_spcs_oauth = oauth_available and authmethod == "oauth"
+
+        # TEMPORARY: Force OpenAI-compatible endpoint for testing
+        logger.info("⚠️ TESTING: Forcing OpenAI-compatible endpoint for all environments")
         base_url = f"https://{host}/api/v2/cortex/v1"
         logger.info(f"🔧 Using Snowflake OpenAI-compatible endpoint: {base_url}")
 
-        # Determine auth method
-        authmethod = getattr(self.settings, "snowflake_authmethod", "oauth")
+        # Original logic (commented for testing):
+        # if is_spcs_oauth:
+        #     # Use native Cortex endpoint for SPCS with OAuth (works with container token)
+        #     base_url = f"https://{host}/api/v2/cortex/inference:complete"
+        #     logger.info(f"🔧 Using Snowflake native Cortex endpoint for SPCS: {base_url}")
+        # else:
+        #     # Use OpenAI-compatible endpoint for local/JWT (better function calling support)
+        #     base_url = f"https://{host}/api/v2/cortex/v1"
+        #     logger.info(f"🔧 Using Snowflake OpenAI-compatible endpoint: {base_url}")
 
         # Normalize authmethod: "private_key" is an alias for "jwt"
         if authmethod == "private_key":
@@ -1021,8 +1036,35 @@ class UnifiedLLMService:
         # Get private key if using JWT
         private_key = None
 
-        # Check if OAuth token file exists
-        oauth_available = os.path.exists("/snowflake/session/token")
+        # TEMPORARY: Disable custom handler for testing - use OpenAI handler directly
+        # For SPCS with OAuth, use custom LiteLLM handler
+        if False and is_spcs_oauth:
+            litellm.register_model({
+                "custom-cortex-llm": {
+                    "provider": "custom",
+                    "mode": "chat",
+                }
+            })
+
+            self._snowflake_service = SnowflakeLitellmService(
+                base_url=base_url,
+                snowflake_account=account,
+                snowflake_service_user=user,
+                snowflake_authmethod="oauth",
+                snowflake_token_path="/snowflake/session/token",
+                temperature=kwargs.get("temperature", 0.2),
+                max_tokens=kwargs.get("max_tokens", 4096),
+                response_format=kwargs.get("response_format"),
+            )
+
+            litellm.register_provider("custom-cortex-llm", self._snowflake_service)
+
+            logger.info(f"✅ Registered custom Cortex LLM handler for SPCS")
+
+            return TrackedLLM(
+                model=f"custom-cortex-llm/{model}",
+                temperature=kwargs.get("temperature", 0.2),
+            )
 
         # For local development without token file, try to use JWT if private key is available
         if authmethod == "oauth" and not oauth_available:

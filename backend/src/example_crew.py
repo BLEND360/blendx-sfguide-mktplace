@@ -45,5 +45,5 @@ class YourCrewName:
         )
     
     
-def run_crew(llm):
-    return YourCrewName(llm).crew().kickoff(inputs={"any": "input here"})
+async def run_crew(llm):
+    return await YourCrewName(llm).crew().kickoff_async(inputs={"any": "input here"})

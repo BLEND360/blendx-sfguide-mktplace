@@ -1,17 +1,66 @@
 <template>
   <v-card class="mx-auto ma-10 pa-4" elevation="2" max-width="950">
-    <v-card-title>LLM Call</v-card-title>
+    <v-card-title>Test checks</v-card-title>
     <v-container>
       <v-row justify="center" class="my-4">
-        <v-col cols="12" class="text-center">
+        <v-col cols="12" md="3" class="text-center">
+          <v-btn
+            color="secondary"
+            large
+            @click="testCortex"
+            :loading="testingCortex"
+            :disabled="loading || testingCortex || testingLitellm || testingSecrets"
+            block
+          >
+            TEST CORTEX
+          </v-btn>
+        </v-col>
+        <v-col cols="12" md="3" class="text-center">
+          <v-btn
+            color="info"
+            large
+            @click="testLitellm"
+            :loading="testingLitellm"
+            :disabled="loading || testingCortex || testingLitellm || testingSecrets"
+            block
+          >
+            TEST LITELLM
+          </v-btn>
+        </v-col>
+        <v-col cols="12" md="3" class="text-center">
+          <v-btn
+            color="warning"
+            large
+            @click="testSecrets"
+            :loading="testingSecrets"
+            :disabled="loading || testingCortex || testingLitellm || testingSecrets"
+            block
+          >
+            TEST SECRETS
+          </v-btn>
+        </v-col>
+        <v-col cols="12" md="3" class="text-center">
           <v-btn
             color="primary"
             large
             @click="startCrew"
             :loading="loading"
-            :disabled="loading"
+            :disabled="loading || testingCortex || testingLitellm || testingSecrets || listingCrews"
+            block
           >
             RUN CREW
+          </v-btn>
+        </v-col>
+        <v-col cols="12" md="3" class="text-center">
+          <v-btn
+            color="success"
+            large
+            @click="listCrews"
+            :loading="listingCrews"
+            :disabled="loading || testingCortex || testingLitellm || testingSecrets || listingCrews"
+            block
+          >
+            LIST CREWS
           </v-btn>
         </v-col>
       </v-row>
@@ -27,6 +76,46 @@
               ></v-progress-circular>
               <div>{{ statusMessage }}</div>
               <div class="text-caption mt-2">Execution ID: {{ executionId }}</div>
+            </v-card-text>
+          </v-card>
+        </v-col>
+      </v-row>
+
+      <v-row v-if="crewExecutions" class="mt-6">
+        <v-col cols="12">
+          <v-card outlined>
+            <v-card-subtitle>Crew Executions:</v-card-subtitle>
+            <v-card-text>
+              <v-simple-table>
+                <template v-slot:default>
+                  <thead>
+                    <tr>
+                      <th class="text-left">Execution ID</th>
+                      <th class="text-left">Crew Name</th>
+                      <th class="text-left">Status</th>
+                      <th class="text-left">Started At</th>
+                      <th class="text-left">Updated At</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="exec in crewExecutions" :key="exec.execution_id">
+                      <td class="text-monospace">{{ exec.execution_id.substring(0, 8) }}...</td>
+                      <td>{{ exec.crew_name }}</td>
+                      <td>
+                        <v-chip
+                          small
+                          :color="getStatusColor(exec.status)"
+                          dark
+                        >
+                          {{ exec.status }}
+                        </v-chip>
+                      </td>
+                      <td>{{ formatDate(exec.execution_timestamp) }}</td>
+                      <td>{{ formatDate(exec.updated_at) }}</td>
+                    </tr>
+                  </tbody>
+                </template>
+              </v-simple-table>
             </v-card-text>
           </v-card>
         </v-col>
@@ -70,9 +159,113 @@ export default {
     pollingInterval: null,
     pollingAttempts: 0,
     maxPollingAttempts: 120, // 10 minutes (5 seconds * 120)
+    testingCortex: false,
+    testingLitellm: false,
+    testingSecrets: false,
+    listingCrews: false,
+    crewExecutions: null,
   }),
 
   methods: {
+    async testCortex() {
+      this.testingCortex = true
+      this.error = null
+      this.response = null
+
+      const baseUrl = process.env.VUE_APP_API_URL
+
+      try {
+        console.log('Testing Cortex via SQL...')
+        const response = await axios.get(baseUrl + "/test-cortex")
+
+        if (response.data.status === 'success') {
+          this.response = `✅ Cortex Test Successful!\n\nMethod: ${response.data.method}\nModel: ${response.data.model}\n\nResponse:\n${response.data.response}`
+        } else {
+          this.error = `❌ Cortex Test Failed: ${response.data.message}`
+        }
+      } catch (error) {
+        console.error("Error testing Cortex:", error)
+        this.error = "Error testing Cortex: " + (error.response?.data?.detail || error.message)
+      } finally {
+        this.testingCortex = false
+      }
+    },
+
+    async testLitellm() {
+      this.testingLitellm = true
+      this.error = null
+      this.response = null
+
+      const baseUrl = process.env.VUE_APP_API_URL
+
+      try {
+        console.log('Testing LiteLLM...')
+        const response = await axios.get(baseUrl + "/test-litellm")
+
+        if (response.data.status === 'success') {
+          this.response = `✅ LiteLLM Test Successful!\n\nMethod: ${response.data.method}\nModel: ${response.data.model}\nLLM Type: ${response.data.llm_type}\n\nResponse:\n${response.data.response}`
+        } else {
+          let errorMsg = `❌ LiteLLM Test Failed: ${response.data.message}`
+          if (response.data.error_type) {
+            errorMsg += `\n\nError Type: ${response.data.error_type}`
+          }
+          if (response.data.status_code) {
+            errorMsg += `\nStatus Code: ${response.data.status_code}`
+          }
+          if (response.data.api_response) {
+            errorMsg += `\n\nAPI Response: ${response.data.api_response}`
+          }
+          this.error = errorMsg
+        }
+      } catch (error) {
+        console.error("Error testing LiteLLM:", error)
+        let errorMsg = "Error testing LiteLLM: " + (error.response?.data?.detail || error.message)
+        if (error.response?.data) {
+          errorMsg += "\n\nDetails: " + JSON.stringify(error.response.data, null, 2)
+        }
+        this.error = errorMsg
+      } finally {
+        this.testingLitellm = false
+      }
+    },
+
+    async testSecrets() {
+      this.testingSecrets = true
+      this.error = null
+      this.response = null
+
+      const baseUrl = process.env.VUE_APP_API_URL
+
+      try {
+        console.log('Testing Secrets...')
+        const response = await axios.get(baseUrl + "/test-secrets")
+
+        let output = `Secrets Test Results\n${'='.repeat(50)}\n\n`
+        output += `Status: ${response.data.status === 'success' ? '✅' : '⚠️'} ${response.data.status.toUpperCase()}\n`
+
+        // Environment Variables
+        output += `Environment Variables:\n${'-'.repeat(50)}\n`
+        if (response.data.environment_variables?.SERPER_API_KEY) {
+          const serperEnv = response.data.environment_variables.SERPER_API_KEY
+          if (serperEnv.found) {
+            output += `✅ SERPER_API_KEY: Found (${serperEnv.preview})\n`
+            output += `   Length: ${serperEnv.length} characters\n`
+          } else {
+            output += `❌ SERPER_API_KEY: Not found\n`
+          }
+        }
+        output += `\n`
+
+        this.response = output
+
+      } catch (error) {
+        console.error("Error testing Secrets:", error)
+        this.error = "Error testing Secrets: " + (error.response?.data?.detail || error.message)
+      } finally {
+        this.testingSecrets = false
+      }
+    },
+
     async startCrew() {
       this.loading = true
       this.error = null
@@ -150,6 +343,51 @@ export default {
         this.error = "Error checking status: " + (error.response?.data?.detail || error.message)
         this.loading = false
       }
+    },
+
+    async listCrews() {
+      this.listingCrews = true
+      this.error = null
+      this.response = null
+      this.crewExecutions = null
+
+      const baseUrl = process.env.VUE_APP_API_URL
+
+      try {
+        console.log('Fetching crew executions...')
+        const response = await axios.get(baseUrl + "/crew/executions?limit=20")
+
+        if (response.data.executions) {
+          this.crewExecutions = response.data.executions
+          console.log(`Found ${this.crewExecutions.length} crew executions`)
+        } else {
+          this.error = "No executions found"
+        }
+      } catch (error) {
+        console.error("Error listing crews:", error)
+        this.error = "Error listing crews: " + (error.response?.data?.detail || error.message)
+      } finally {
+        this.listingCrews = false
+      }
+    },
+
+    getStatusColor(status) {
+      switch (status) {
+        case 'COMPLETED':
+          return 'success'
+        case 'PROCESSING':
+          return 'info'
+        case 'ERROR':
+          return 'error'
+        default:
+          return 'grey'
+      }
+    },
+
+    formatDate(dateString) {
+      if (!dateString) return 'N/A'
+      const date = new Date(dateString)
+      return date.toLocaleString()
     }
   },
 
@@ -168,5 +406,10 @@ export default {
   background-color: #f5f5f5;
   padding: 16px;
   border-radius: 4px;
+}
+
+.text-monospace {
+  font-family: monospace;
+  font-size: 0.9em;
 }
 </style>
