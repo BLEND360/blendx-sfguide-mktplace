@@ -4,7 +4,33 @@ This directory contains scripts for deploying and managing the Snowflake Native 
 
 ## Quick Start
 
-### 1. Setup Configuration
+### First-Time Setup (Complete Deployment)
+
+For a complete deployment from scratch, use the `complete-setup.sh` script:
+
+```bash
+./scripts/complete-setup.sh
+```
+
+This script will:
+1. Create the Application Package
+2. Grant necessary permissions
+3. Setup secret infrastructure
+4. Build and deploy Docker images
+5. Create the application instance
+6. Configure secret references
+7. Grant warehouse access
+8. Start the SPCS service
+
+### Subsequent Deployments (Code Changes Only)
+
+For code updates after initial setup:
+
+```bash
+./scripts/deploy.sh
+```
+
+### Configuration
 
 Copy the example environment file and customize it for your environment:
 
@@ -12,14 +38,6 @@ Copy the example environment file and customize it for your environment:
 cd scripts
 cp .env.example .env
 # Edit .env with your specific values
-```
-
-Run external_integration.sql 
-
-### 2. Run Deployment
-
-```bash
-./scripts/deploy.sh
 ```
 
 ### Command Line Options
@@ -64,9 +82,63 @@ Options can be combined:
 ./scripts/deploy.sh --skip-build
 ```
 
-## Deployment Process
+## Deployment Scripts Overview
 
-The `deploy.sh` script performs the following steps:
+### `cleanup.sh` - Clean Up Resources
+
+The `cleanup.sh` script removes all resources created during deployment:
+
+1. **Stop Service** - Stops and drops the SPCS service
+2. **Drop Application Instance** - Removes the application instance
+3. **Drop Compute Pools** - Removes both pool_nac
+4. **Drop Application Package** - Removes the application package
+5. **Clean Secrets** (optional) - Removes the secrets database
+
+**Use this script for:**
+- Cleaning up after failed deployments
+- Starting completely fresh
+- Removing leftover resources
+- Resolving compute pool conflicts
+
+**Command line options:**
+- `--dry-run` - Show what would be deleted without making changes
+- `--clean-secrets` - Also delete the secrets database (WARNING: destructive)
+- `--help` - Show help message
+
+**Examples:**
+```bash
+# See what would be deleted
+./scripts/cleanup.sh --dry-run
+
+# Clean up all resources except secrets
+./scripts/cleanup.sh
+
+# Clean up everything including secrets
+./scripts/cleanup.sh --clean-secrets
+```
+
+### `complete-setup.sh` - Complete Initial Setup
+
+The `complete-setup.sh` script performs a full deployment from scratch:
+
+1. **Create Application Package** - Creates the application package in Snowflake
+2. **Grant Permissions** - Grants INSTALL and DEVELOP privileges to consumer role
+3. **Setup Secret Infrastructure** - Creates database, schema, and secret for Serper API
+4. **Build and Deploy** - Runs the `deploy.sh` script to build and push images
+5. **Create Application Instance** - Creates or upgrades the application instance
+6. **Configure Secret References** - Sets up secret references and permissions
+7. **Grant Warehouse Access** - Grants warehouse usage to the application
+8. **Start SPCS Service** - Starts the service with automatic compute pool creation
+9. **Check Service Status** - Displays initial service status
+
+**Use this script for:**
+- First-time deployment
+- Setting up a new environment
+- Recovering from a corrupted state
+
+### `deploy.sh` - Code Updates Only
+
+The `deploy.sh` script performs incremental updates:
 
 1. **Build Docker Images** - Builds backend, frontend, and router images
 2. **Login to Registry** - Authenticates with Snowflake Docker registry
@@ -77,6 +149,12 @@ The `deploy.sh` script performs the following steps:
 7. **Register New Version** - Registers the new version with Snowflake
 8. **Upgrade Application** - Upgrades the application instance
 9. **Restart Service** - Stops and starts the service
+
+**Use this script for:**
+- Code changes and updates
+- Bug fixes
+- Feature additions
+- Any changes after initial setup
 
 ## Pre-requisites
 
@@ -142,8 +220,10 @@ snow sql -q "USE ROLE nac_test; CALL spcs_app_instance_test.app_public.stop_app(
 ### Start Service
 
 ```bash
-snow sql -q "USE ROLE nac_test; CALL spcs_app_instance_test.app_public.start_app('POOL_NAC', 'WH_NAC');" --connection mkt_blendx_demo
+snow sql -q "USE ROLE nac_test; CALL spcs_app_instance_test.app_public.start_app('pool_nac', 'WH_BLENDX_DEMO_PROVIDER');" --connection mkt_blendx_demo
 ```
+
+**Note:** The compute pool will be created automatically by the `start_app` procedure if it doesn't exist.
 
 ## Troubleshooting
 

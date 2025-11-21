@@ -1,53 +1,82 @@
-# Build a Native App with SPCS
+# Instructions
 
-## Overview
+## Prerequisites
 
-In this guide you will learn how to incorporate Snowpark Container Services into a Native App allowing you to deploy a variety of new capabilities to Native App consumers.
+1. Install Docker
+    - [Windows](https://docs.docker.com/desktop/install/windows-install/)
+    - [Mac](https://docs.docker.com/desktop/install/mac-install/)
+    - [Linux](https://docs.docker.com/desktop/install/linux-install/)
 
-## Step-By-Step Guide
 
-For prerequisites, environment setup, step-by-step guide and instructions, please refer to the [QuickStart Guide](https://quickstarts.snowflake.com/guide/build-a-native-app-with-spcs/index.html).
+## Set your SnowCLI connection (optional)
 
-## Connecting with token 
+We use your default connection to connect to Snowflake and deploy the images / app. Set your
+default connection by modifying your `config.toml` file or by exporting the following environment variable:
 
-### Create the connection
-
-```bash
-snow connection add --connection-name mkt_blendx_admin \
-    --account c2gpartners.us-east-1 \
-    --user MIKAELA.PISANI@BLEND360.COM \
-    --role accountadmin \
-    --warehouse wh_nap \
-    --database spcs_app_test \
-    --schema napp \
-    --host c2gpartners.us-east-1.snowflakecomputing.com \
-    --port 443 \
-    --region us-east-1 \
-    --authenticator SNOWFLAKE_JWT \
-    --private-key-file /Users/mikaelapisani/Projects/blendx-sfguide-mktplace/keys/rsa_key.p8 \
-    --no-interactive
-
-```
-### Test the connection
-```bash
-snow connection test --connection mkt_blendx_admin
+```sh
+export SNOWFLAKE_DEFAULT_CONNECTION_NAME=<your connection name>
 ```
 
-### Docker login with token 
+## Create image repository, build and push your local service image
 
+The [service/](service/) directory contains a [Dockerfile](service/Dockerfile) that builds a
+simple Python server that responds to GET health checks, a GET for `/index.html`, as well as
+POSTing to `/echo` in the Snowflake External Function payload format. You can build it and
+push it to an image repository called `SPCS_NA.PUBLIC.IMAGES` in your account like so:
 
-### Configure image reposotory
-
-```bash
-./configure 
+```sh
+./build-and-push.sh
 ```
 
-### Build docker images and push
-```bash
-make all
+This command will always use your default SnowCLI connection.
+
+## Deploy the application
+
+Deploy the app package and instance as such:
+
+```sh
+snow app run
 ```
 
-### Remove existing app and deploy new one
-```bash
-./deploy.sh
+> Take note of the name of the application, which is based on the name you chose when you initialized this project. The application object and package are, by default, automatically suffixed by your (local) user name (i.e. `$USER`).
+
+## Setup the application
+
+When the application is opened for the first time, you will be prompted to grant the following account-level privileges to it:
+
+- CREATE COMPUTE POOL
+- BIND SERVICE ENDPOINT
+
+Click on the `Grant` button to proceed.
+
+## Activate the application
+
+Once privileges are granted, a new `Activate` button should appear. Click the button and wait until the application is fully activated.
+The `Activate` button invokes the `grant_callback` defined in the [manifest.yml](app/manifest.yml) file, which then creates the `COMPUTE POOL` and `SERVICE` needed to launch the application.
+
+## Launch the application
+
+Once all services and pools are created, you will be able to launch the app by clicking on the `Launch App` button. This will navigate to the URL provided by the `Service` and `Endpoint` defined in the `default_web_endpoint` in the [manifest.yml](app/manifest.yml). You will see the contents of [index.html](service/index.html) as served by the application container.
+
+## Test out the echo service
+
+```sh
+snow sql -q "select <app name>.services.echo('Hello world!')"
 ```
+
+You should see the same text back (Hello world!).
+
+## Clean up
+
+You can stop the service and drop the compute pool without dropping the application by running the following statement:
+
+```sh
+snow sql -q "call <app name>.setup.drop_service_and_pool()"
+```
+
+Optionally, you can remove the app + package altogether afterwards:
+
+```sh
+snow app teardown --cascade
+```
+> Version `2.4.0+` of Snowflake CLI should be installed in order to execute `--cascade` command.

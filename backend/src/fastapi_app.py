@@ -177,6 +177,19 @@ async def start_crew_execution(background_tasks: BackgroundTasks, db: Session = 
     4. Retorna el ID inmediatamente
     """
     try:
+
+        # Retrieve Serper API key - try environment variable first, then Snowflake secret
+        import os
+        serper_key = os.getenv('SERPER_API_KEY')
+
+        if serper_key:
+            logger.info(f"Using Serper API key from environment variable: {serper_key[:4]}****")
+        else:
+            logger.info("SERPER_API_KEY not in environment, attempting to retrieve from Snowflake secret...")
+            logger.warning("Note: Direct secret access from SPCS containers is limited.")
+            logger.warning("Recommended: Set SERPER_API_KEY as environment variable in fullstack.yaml")
+            # For now, the crew will run without the Serper API key
+            # You may need to configure the crew to work without it or use alternative search methods
         # 1. Generate unique ID
         execution_id = str(uuid.uuid4())
         logger.info(f"Starting new crew execution with ID: {execution_id}")

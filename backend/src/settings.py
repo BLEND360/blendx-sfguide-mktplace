@@ -58,8 +58,23 @@ class Settings(BaseSettings):
         None,
         description="Raw private key content (for GitHub Actions). If set, this takes precedence over the path.",
     )
+    private_key: Optional[str] = Field(
+        None,
+        description="Private key content loaded from file or raw. Used by lite_llm_handler."
+    )
 
-   
+    def model_post_init(self, __context) -> None:
+        """Load private key after model initialization"""
+        if self.snowflake_private_key_raw:
+            self.private_key = self.snowflake_private_key_raw
+        elif self.snowflake_private_key_path and os.path.exists(self.snowflake_private_key_path):
+            try:
+                with open(self.snowflake_private_key_path, 'r') as f:
+                    self.private_key = f.read()
+            except Exception as e:
+                print(f"Warning: Could not load private key from {self.snowflake_private_key_path}: {e}")
+
+
 @lru_cache()
 def get_settings() -> Settings:
     """Get cached settings instance"""

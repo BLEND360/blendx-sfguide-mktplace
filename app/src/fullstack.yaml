@@ -9,12 +9,16 @@ spec:
       env:
         ENVIRONMENT: PRODUCTION
         SNOWFLAKE_AUTHMETHOD: oauth
-        SNOWFLAKE_WAREHOUSE: WH_NAC
+        SNOWFLAKE_WAREHOUSE: WH_BLENDX_DEMO_PROVIDER
         SNOWFLAKE_DATABASE: NAC_TEST_DB
         SNOWFLAKE_SCHEMA: DATA
         CREWAI_DISABLE_TELEMETRY: true
         OTEL_SDK_DISABLED: true
-
+      secrets:
+        - snowflakeSecret:
+            objectName: secrets_db.app_secrets.serper_api_key
+          envVarName: SERPER_API_KEY
+          secretKeyRef: secret_string
     - name: eap-router
       image: /spcs_app/napp/img_repo/eap_router
       env:
