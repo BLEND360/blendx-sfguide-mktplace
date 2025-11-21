@@ -41,11 +41,12 @@ APP_PACKAGE_NAME=${APP_PACKAGE_NAME:-"spcs_app_pkg_test"}
 APP_INSTANCE_NAME=${APP_INSTANCE_NAME:-"spcs_app_instance_test"}
 APP_VERSION=${APP_VERSION:-"v1"}
 COMPUTE_POOL=${COMPUTE_POOL:-"pool_nac"}
-WAREHOUSE=${WAREHOUSE:-"wh_nac"}
+WAREHOUSE=${WAREHOUSE:-"WH_BLENDX_DEMO_PROVIDER"}
 SKIP_BUILD=${SKIP_BUILD:-false}
 SKIP_PUSH=${SKIP_PUSH:-false}
 SERVICE_START_WAIT=${SERVICE_START_WAIT:-30}
 DRY_RUN=false
+SETUP_MODE=false
 
 # Load .env file if it exists
 if [ -f "$SCRIPT_DIR/.env" ]; then
@@ -74,6 +75,11 @@ while [[ $# -gt 0 ]]; do
             echo -e "${YELLOW}Skipping Docker push${NC}"
             shift
             ;;
+        --setup-mode)
+            SETUP_MODE=true
+            echo -e "${YELLOW}Running in SETUP MODE - skipping upgrade and service restart${NC}"
+            shift
+            ;;
         --help|-h)
             echo "Usage: $0 [OPTIONS]"
             echo ""
@@ -81,6 +87,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --dry-run      Show what would be done without making changes"
             echo "  --skip-build   Skip Docker image building"
             echo "  --skip-push    Skip Docker image push to registry"
+            echo "  --setup-mode   Setup mode: skip upgrade and service restart (for initial setup)"
             echo "  --help, -h     Show this help message"
             echo ""
             echo "Configuration can be set via .env file in the scripts/ directory."
@@ -293,55 +300,87 @@ echo ""
 # Step 8: Upgrade Application
 # ============================================
 
-echo "=========================================="
-echo "[8/9] Upgrading application..."
-echo "=========================================="
+if [ "$SETUP_MODE" = false ]; then
+    echo "=========================================="
+    echo "[8/9] Upgrading application..."
+    echo "=========================================="
 
-run_command "Upgrading application instance" \
-    "snow sql -q \"USE ROLE ${APP_CONSUMER_ROLE}; ALTER APPLICATION ${APP_INSTANCE_NAME} UPGRADE USING VERSION ${APP_VERSION};\" --connection ${SNOW_CONNECTION}"
+    # Check if application exists before upgrading
+    APP_EXISTS=$(snow sql -q "USE ROLE ${APP_CONSUMER_ROLE}; SHOW APPLICATIONS LIKE '${APP_INSTANCE_NAME}';" --connection ${SNOW_CONNECTION} 2>&1 | grep -v "SHOW APPLICATIONS" | grep -c "${APP_INSTANCE_NAME}" || echo "0")
 
-echo ""
+    if [ "$APP_EXISTS" -gt "0" ]; then
+        run_command "Upgrading application instance" \
+            "snow sql -q \"USE ROLE ${APP_CONSUMER_ROLE}; ALTER APPLICATION ${APP_INSTANCE_NAME} UPGRADE USING VERSION ${APP_VERSION};\" --connection ${SNOW_CONNECTION}"
+    else
+        echo "Application instance does not exist yet - needs to be created by complete-setup.sh"
+        echo "Skipping upgrade step..."
+    fi
+
+    echo ""
+else
+    echo "=========================================="
+    echo "[8/9] Skipping upgrade (setup mode)"
+    echo "=========================================="
+    echo "Application will be created by complete-setup.sh"
+    echo ""
+fi
 
 # ============================================
 # Step 9: Restart Service
 # ============================================
 
-echo "=========================================="
-echo "[9/9] Restarting service..."
-echo "=========================================="
+if [ "$SETUP_MODE" = false ]; then
+    echo "=========================================="
+    echo "[9/9] Restarting service..."
+    echo "=========================================="
 
-run_command "Stopping service" \
-    "snow sql -q \"USE ROLE ${APP_CONSUMER_ROLE}; CALL ${APP_INSTANCE_NAME}.app_public.stop_app();\" --connection ${SNOW_CONNECTION} || echo 'Service not running (OK)'"
+    # Only restart service if application exists
+    if [ "$APP_EXISTS" -gt "0" ]; then
+        run_command "Stopping service" \
+            "snow sql -q \"USE ROLE ${APP_CONSUMER_ROLE}; CALL ${APP_INSTANCE_NAME}.app_public.stop_app();\" --connection ${SNOW_CONNECTION} || echo 'Service not running (OK)'"
 
-run_command "Starting service" \
-    "snow sql -q \"USE ROLE ${APP_CONSUMER_ROLE}; CALL ${APP_INSTANCE_NAME}.app_public.start_app('${COMPUTE_POOL}', '${WAREHOUSE}');\" --connection ${SNOW_CONNECTION}"
+        run_command "Starting service" \
+            "snow sql -q \"USE ROLE ${APP_CONSUMER_ROLE}; CALL ${APP_INSTANCE_NAME}.app_public.start_app('${COMPUTE_POOL}', '${WAREHOUSE}');\" --connection ${SNOW_CONNECTION}"
+    else
+        echo "Application instance does not exist yet - service will be started by complete-setup.sh"
+        echo "Skipping service restart step..."
+    fi
 
-echo ""
+    echo ""
 
-if [ "$DRY_RUN" = false ]; then
-    echo "Waiting ${SERVICE_START_WAIT} seconds for service to start..."
-    sleep $SERVICE_START_WAIT
+    if [ "$DRY_RUN" = false ]; then
+        echo "Waiting ${SERVICE_START_WAIT} seconds for service to start..."
+        sleep $SERVICE_START_WAIT
+    fi
+else
+    echo "=========================================="
+    echo "[9/9] Skipping service restart (setup mode)"
+    echo "=========================================="
+    echo "Service will be started by complete-setup.sh"
+    echo ""
 fi
 
 # ============================================
 # Post-Deployment Status
 # ============================================
 
-echo ""
-echo "=========================================="
-echo "Checking service status..."
-echo "=========================================="
+if [ "$SETUP_MODE" = false ]; then
+    echo ""
+    echo "=========================================="
+    echo "Checking service status..."
+    echo "=========================================="
 
-run_command "Showing services" \
-    "snow sql -q \"USE ROLE ${APP_CONSUMER_ROLE}; SHOW SERVICES IN APPLICATION ${APP_INSTANCE_NAME};\" --connection ${SNOW_CONNECTION}"
+    run_command "Showing services" \
+        "snow sql -q \"USE ROLE ${APP_CONSUMER_ROLE}; SHOW SERVICES IN APPLICATION ${APP_INSTANCE_NAME};\" --connection ${SNOW_CONNECTION}"
 
-echo ""
-echo "=========================================="
-echo "Getting application URL..."
-echo "=========================================="
+    echo ""
+    echo "=========================================="
+    echo "Getting application URL..."
+    echo "=========================================="
 
-run_command "Getting app URL" \
-    "snow sql -q \"USE ROLE ${APP_CONSUMER_ROLE}; CALL ${APP_INSTANCE_NAME}.app_public.app_url();\" --connection ${SNOW_CONNECTION}"
+    run_command "Getting app URL" \
+        "snow sql -q \"USE ROLE ${APP_CONSUMER_ROLE}; CALL ${APP_INSTANCE_NAME}.app_public.app_url();\" --connection ${SNOW_CONNECTION}"
+fi
 
 # ============================================
 # Completion Message
