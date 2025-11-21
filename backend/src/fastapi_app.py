@@ -60,7 +60,7 @@ async def run_crew_background(execution_id: str):
 
             # Run Crew
             logger.info(f"Running crew for execution {execution_id}")
-            crew_output = run_crew(llm)
+            crew_output = await run_crew(llm)
             logger.info(f"Crew execution completed for {execution_id}")
 
             # Prepare data for saving
@@ -165,6 +165,186 @@ async def health():
     return health_info
 
 
+@app.get("/test-cortex")
+async def test_cortex(db: Session = Depends(get_db)):
+    """
+    Test Cortex connection using direct SQL call.
+    This bypasses LiteLLM to diagnose connection/permission issues.
+    """
+    logger.info("Testing Cortex connection via SQL")
+
+    try:
+        # Simple test prompt
+        test_prompt = "Say 'Hello, Cortex is working!' in exactly those words."
+
+        # Use SNOWFLAKE.CORTEX.COMPLETE directly
+        query = text("""
+            SELECT SNOWFLAKE.CORTEX.COMPLETE(
+                'claude-3-5-sonnet',
+                :prompt
+            ) as response
+        """)
+
+        logger.info(f"Executing Cortex SQL query with prompt: {test_prompt}")
+        result = db.execute(query, {"prompt": test_prompt}).fetchone()
+
+        if result and result[0]:
+            response_text = result[0]
+            logger.info(f"✅ Cortex response received: {response_text[:100]}...")
+
+            return {
+                "status": "success",
+                "message": "Cortex is working correctly via SQL",
+                "response": response_text,
+                "method": "SNOWFLAKE.CORTEX.COMPLETE",
+                "model": "claude-3-5-sonnet"
+            }
+        else:
+            logger.error("❌ Empty response from Cortex")
+            return {
+                "status": "error",
+                "message": "Received empty response from Cortex",
+                "response": None
+            }
+
+    except Exception as e:
+        logger.error(f"❌ Cortex test failed: {str(e)}", exc_info=True)
+        return {
+            "status": "error",
+            "message": f"Failed to call Cortex: {str(e)}",
+            "error_type": type(e).__name__,
+            "response": None
+        }
+
+
+@app.get("/test-secrets")
+async def test_secrets(db: Session = Depends(get_db)):
+    """
+    Test Snowflake secrets access.
+    Validates that secrets can be retrieved from Snowflake.
+    """
+    logger.info("Testing Snowflake secrets access")
+
+    try:
+        import os
+
+        results = {
+            "status": "success",
+            "secrets": {},
+            "environment_variables": {},
+            "recommendations": []
+        }
+
+        # Check SERPER_API_KEY
+        serper_env = os.getenv('SERPER_API_KEY')
+        if serper_env:
+            results["environment_variables"]["SERPER_API_KEY"] = {
+                "found": True,
+                "length": len(serper_env),
+                "preview": f"{serper_env[:4]}****" if len(serper_env) > 4 else "****"
+            }
+            logger.info(f"✅ SERPER_API_KEY found in environment: {serper_env[:4]}****")
+        
+       
+    except Exception as secret_error:
+        results["secrets"]["serper_api_key"] = {
+            "found": False,
+            "error": str(secret_error),
+            "error_type": type(secret_error).__name__
+        }
+        logger.error(f"❌ Failed to retrieve secret from Snowflake: {str(secret_error)}")
+        results["recommendations"].append(
+            "Ensure the secret 'serper_api_key' is created and accessible to the service"
+        )
+
+       
+        # Overall status
+        has_serper = (
+            results["environment_variables"]["SERPER_API_KEY"]["found"] or
+            results["secrets"]["serper_api_key"].get("found", False)
+        )
+
+        if not has_serper:
+            results["status"] = "warning"
+            results["message"] = "SERPER_API_KEY not found in environment or secrets"
+        else:
+            results["message"] = "Secrets configuration validated successfully"
+
+        return results
+
+    except Exception as e:
+        logger.error(f"❌ Secrets test failed: {str(e)}", exc_info=True)
+        return {
+            "status": "error",
+            "message": f"Failed to test secrets: {str(e)}",
+            "error_type": type(e).__name__
+        }
+
+
+@app.get("/test-litellm")
+async def test_litellm():
+    """
+    Test LiteLLM connection using LLM handler.
+    This tests the complete LiteLLM/REST API path.
+    """
+    logger.info("Testing LiteLLM connection")
+
+    try:
+        # Get LLM instance
+        llm = get_llm(provider='snowflake', model='claude-3-5-sonnet')
+        logger.info(f"✅ LLM instance created: {llm}")
+
+        # Simple test prompt
+        test_prompt = "Say 'Hello, LiteLLM is working!' in exactly those words."
+
+        logger.info(f"Calling LLM with prompt: {test_prompt}")
+
+        # Call LLM using call() method (CrewAI compatible)
+        response = llm.call([{"role": "user", "content": test_prompt}])
+
+        logger.info(f"✅ LiteLLM response received {response}")
+
+        # Extract response text
+        if hasattr(response, 'content'):
+            response_text = response.content
+        elif isinstance(response, dict) and 'content' in response:
+            response_text = response['content']
+        elif hasattr(response, 'choices') and len(response.choices) > 0:
+            response_text = response.choices[0].message.content
+        else:
+            response_text = str(response)
+
+        logger.info(f"Response text: {response_text[:100]}...")
+
+        return {
+            "status": "success",
+            "message": "LiteLLM is working correctly",
+            "response": response_text,
+            "method": "LiteLLM (lite_llm_handler)",
+            "model": "claude-3-5-sonnet",
+            "llm_type": str(type(llm).__name__)
+        }
+
+    except Exception as e:
+        logger.error(f"❌ LiteLLM test failed: {str(e)}", exc_info=True)
+
+        # Get more detailed error info
+        error_details = {
+            "status": "error",
+            "message": f"Failed to call LiteLLM: {str(e)}",
+            "error_type": type(e).__name__,
+            "response": None
+        }
+
+        # Add more context if it's an API error
+        if hasattr(e, 'status_code'):
+            error_details['status_code'] = e.status_code
+        if hasattr(e, 'response'):
+            error_details['api_response'] = str(e.response)[:500]
+
+        return error_details
+
+
 @app.post("/crew/start", response_model=CrewStartResponse)
 async def start_crew_execution(background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     """
@@ -177,19 +357,6 @@ async def start_crew_execution(background_tasks: BackgroundTasks, db: Session = 
     4. Retorna el ID inmediatamente
     """
     try:
-
-        # Retrieve Serper API key - try environment variable first, then Snowflake secret
-        import os
-        serper_key = os.getenv('SERPER_API_KEY')
-
-        if serper_key:
-            logger.info(f"Using Serper API key from environment variable: {serper_key[:4]}****")
-        else:
-            logger.info("SERPER_API_KEY not in environment, attempting to retrieve from Snowflake secret...")
-            logger.warning("Note: Direct secret access from SPCS containers is limited.")
-            logger.warning("Recommended: Set SERPER_API_KEY as environment variable in fullstack.yaml")
-            # For now, the crew will run without the Serper API key
-            # You may need to configure the crew to work without it or use alternative search methods
         # 1. Generate unique ID
         execution_id = str(uuid.uuid4())
         logger.info(f"Starting new crew execution with ID: {execution_id}")

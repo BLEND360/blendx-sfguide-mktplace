@@ -140,7 +140,7 @@ class SnowflakeLitellmService(CustomLLM):
         self.generate_id_function = generate_id_function
         self.response_format = response_format
         self.kwargs = kwargs
-        self._tracking_service = get_llm_tracking_service()
+        # self._tracking_service = get_llm_tracking_service()
 
         super().__init__()
         self._validate_environment()
@@ -1014,14 +1014,20 @@ class UnifiedLLMService:
         authmethod = getattr(self.settings, "snowflake_authmethod", "oauth")
         is_spcs_oauth = oauth_available and authmethod == "oauth"
 
-        if is_spcs_oauth:
-            # Use native Cortex endpoint for SPCS with OAuth (works with container token)
-            base_url = f"https://{host}/api/v2/cortex/inference:complete"
-            logger.info(f"🔧 Using Snowflake native Cortex endpoint for SPCS: {base_url}")
-        else:
-            # Use OpenAI-compatible endpoint for local/JWT (better function calling support)
-            base_url = f"https://{host}/api/v2/cortex/v1"
-            logger.info(f"🔧 Using Snowflake OpenAI-compatible endpoint: {base_url}")
+        # TEMPORARY: Force OpenAI-compatible endpoint for testing
+        logger.info("⚠️ TESTING: Forcing OpenAI-compatible endpoint for all environments")
+        base_url = f"https://{host}/api/v2/cortex/v1"
+        logger.info(f"🔧 Using Snowflake OpenAI-compatible endpoint: {base_url}")
+
+        # Original logic (commented for testing):
+        # if is_spcs_oauth:
+        #     # Use native Cortex endpoint for SPCS with OAuth (works with container token)
+        #     base_url = f"https://{host}/api/v2/cortex/inference:complete"
+        #     logger.info(f"🔧 Using Snowflake native Cortex endpoint for SPCS: {base_url}")
+        # else:
+        #     # Use OpenAI-compatible endpoint for local/JWT (better function calling support)
+        #     base_url = f"https://{host}/api/v2/cortex/v1"
+        #     logger.info(f"🔧 Using Snowflake OpenAI-compatible endpoint: {base_url}")
 
         # Normalize authmethod: "private_key" is an alias for "jwt"
         if authmethod == "private_key":
@@ -1030,8 +1036,9 @@ class UnifiedLLMService:
         # Get private key if using JWT
         private_key = None
 
+        # TEMPORARY: Disable custom handler for testing - use OpenAI handler directly
         # For SPCS with OAuth, use custom LiteLLM handler
-        if is_spcs_oauth:
+        if False and is_spcs_oauth:
             litellm.register_model({
                 "custom-cortex-llm": {
                     "provider": "custom",

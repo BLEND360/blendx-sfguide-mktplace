@@ -54,6 +54,25 @@ Click on the `Grant` button to proceed.
 Once privileges are granted, a new `Activate` button should appear. Click the button and wait until the application is fully activated.
 The `Activate` button invokes the `grant_callback` defined in the [manifest.yml](app/manifest.yml) file, which then creates the `COMPUTE POOL` and `SERVICE` needed to launch the application.
 
+## Grant Snowflake Cortex Permissions
+
+**IMPORTANT**: After activating the application, you must grant Cortex permissions for the application to access LLMs:
+
+```sql
+-- Grant Cortex user role to the application
+GRANT DATABASE ROLE SNOWFLAKE.CORTEX_USER TO APPLICATION <your_app_name>;
+
+-- Grant imported privileges on Snowflake database
+-- Required for REST API access to Cortex
+GRANT IMPORTED PRIVILEGES ON DATABASE SNOWFLAKE TO APPLICATION <your_app_name>;
+```
+
+Replace `<your_app_name>` with your actual application name (e.g., `spcs_app_instance_test`).
+
+These grants enable:
+- Access to Cortex LLM functions via SQL (`SNOWFLAKE.CORTEX.COMPLETE`)
+- Access to Cortex REST API endpoints for CrewAI integration
+
 ## Launch the application
 
 Once all services and pools are created, you will be able to launch the app by clicking on the `Launch App` button. This will navigate to the URL provided by the `Service` and `Endpoint` defined in the `default_web_endpoint` in the [manifest.yml](app/manifest.yml). You will see the contents of [index.html](service/index.html) as served by the application container.

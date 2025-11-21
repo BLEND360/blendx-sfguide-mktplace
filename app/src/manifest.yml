@@ -26,6 +26,8 @@ privileges:
       description: "Enables application to create its own warehouse(s)"
  - EXECUTE MANAGED TASK:
       description: "Enables application to execute Snowflake Cortex functions"
+ - IMPORTED PRIVILEGES ON SNOWFLAKE DB:
+      description: "Access to Snowflake Cortex AI functions and models"
 
 references:
  - serper_api_key:
