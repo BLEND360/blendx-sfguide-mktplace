@@ -334,3 +334,13 @@ Contains reference Docker commands for manual operations.
 - Run `./scripts/deploy.sh --help` for usage information
 - Check the main project README for architecture overview
 - Review Snowflake Native Apps documentation at https://docs.snowflake.com/en/developer-guide/native-apps/native-apps-about
+
+
+
+## Notes 
+Sometimes the deploy script fails but if you execute the stop and start commands manually, the service starts working again.
+
+snow sql -q "USE ROLE nac_test; CALL spcs_app_instance_test.app_public.stop_app();" --connection mkt_blendx_demo                                      
+
+
+snow sql -q "USE ROLE nac_test; CALL spcs_app_instance_test.app_public.start_app('pool_nac', 'WH_BLENDX_DEMO_PROVIDER');" --connection mkt_blendx_demo

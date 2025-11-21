@@ -242,7 +242,6 @@ export default {
 
         let output = `Secrets Test Results\n${'='.repeat(50)}\n\n`
         output += `Status: ${response.data.status === 'success' ? '✅' : '⚠️'} ${response.data.status.toUpperCase()}\n`
-        output += `Message: ${response.data.message}\n\n`
 
         // Environment Variables
         output += `Environment Variables:\n${'-'.repeat(50)}\n`
@@ -256,45 +255,6 @@ export default {
           }
         }
         output += `\n`
-
-        // Snowflake Secrets
-        output += `Snowflake Secrets:\n${'-'.repeat(50)}\n`
-        if (response.data.secrets?.serper_api_key) {
-          const serperSecret = response.data.secrets.serper_api_key
-          if (serperSecret.found) {
-            output += `✅ serper_api_key: Found (${serperSecret.preview})\n`
-            output += `   Length: ${serperSecret.length} characters\n`
-          } else {
-            output += `❌ serper_api_key: Not found\n`
-            if (serperSecret.error) {
-              output += `   Error: ${serperSecret.error}\n`
-            }
-          }
-        }
-        output += `\n`
-
-        // OAuth Token
-        output += `OAuth Token:\n${'-'.repeat(50)}\n`
-        if (response.data.oauth_token) {
-          if (response.data.oauth_token.found) {
-            output += `✅ OAuth Token: Found\n`
-            output += `   Length: ${response.data.oauth_token.length} characters\n`
-          } else {
-            output += `❌ OAuth Token: Not found\n`
-          }
-          if (response.data.oauth_token.error) {
-            output += `   Error: ${response.data.oauth_token.error}\n`
-          }
-        }
-        output += `\n`
-
-        // Recommendations
-        if (response.data.recommendations && response.data.recommendations.length > 0) {
-          output += `Recommendations:\n${'-'.repeat(50)}\n`
-          response.data.recommendations.forEach((rec, idx) => {
-            output += `${idx + 1}. ${rec}\n`
-          })
-        }
 
         this.response = output
 

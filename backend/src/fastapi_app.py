@@ -218,7 +218,7 @@ async def test_cortex(db: Session = Depends(get_db)):
 
 
 @app.get("/test-secrets")
-async def test_secrets(db: Session = Depends(get_db)):
+async def test_secrets():
     """
     Test Snowflake secrets access.
     Validates that secrets can be retrieved from Snowflake.
@@ -231,11 +231,10 @@ async def test_secrets(db: Session = Depends(get_db)):
         results = {
             "status": "success",
             "secrets": {},
-            "environment_variables": {},
-            "recommendations": []
+            "environment_variables": {}
         }
 
-        # Check SERPER_API_KEY
+        # Check SERPER_API_KEY environment variable
         serper_env = os.getenv('SERPER_API_KEY')
         if serper_env:
             results["environment_variables"]["SERPER_API_KEY"] = {
@@ -244,34 +243,13 @@ async def test_secrets(db: Session = Depends(get_db)):
                 "preview": f"{serper_env[:4]}****" if len(serper_env) > 4 else "****"
             }
             logger.info(f"✅ SERPER_API_KEY found in environment: {serper_env[:4]}****")
-        
-       
-    except Exception as secret_error:
-        results["secrets"]["serper_api_key"] = {
-            "found": False,
-            "error": str(secret_error),
-            "error_type": type(secret_error).__name__
-        }
-        logger.error(f"❌ Failed to retrieve secret from Snowflake: {str(secret_error)}")
-        results["recommendations"].append(
-            "Ensure the secret 'serper_api_key' is created and accessible to the service"
-        )
-
-       
-        # Overall status
-        has_serper = (
-            results["environment_variables"]["SERPER_API_KEY"]["found"] or
-            results["secrets"]["serper_api_key"].get("found", False)
-        )
-
-        if not has_serper:
-            results["status"] = "warning"
-            results["message"] = "SERPER_API_KEY not found in environment or secrets"
         else:
-            results["message"] = "Secrets configuration validated successfully"
-
+            results["environment_variables"]["SERPER_API_KEY"] = {
+                "found": False
+            }
+            logger.warning("❌ SERPER_API_KEY not found in environment variables")
         return results
-
+    
     except Exception as e:
         logger.error(f"❌ Secrets test failed: {str(e)}", exc_info=True)
         return {
