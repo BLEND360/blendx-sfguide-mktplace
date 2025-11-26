@@ -229,8 +229,6 @@ log_info "Warehouse access granted"
 
 echo ""
 log_info "Secret configuration complete"
-log_info "The application will access the secret directly using SYSTEM\$REFERENCE at runtime"
-log_info "No additional binding step required - permissions are already granted"   
 
 # ============================================
 # Step 8: Start SPCS Service
@@ -280,7 +278,7 @@ echo ""
 
 # See logs 
 echo "Check status of the service until is READY"
-echo snow sql -q "USE ROLE nac_test; CALL spcs_app_instance_test.app_public.get_service_status();" --connection mkt_blendx_demo"
+echo "snow sql -q \"USE ROLE nac_test; CALL spcs_app_instance_test.app_public.get_service_status();\" --connection mkt_blendx_demo"
 
 echo "Once the service is ready, see the logs"
-echo "snow sql -q "USE ROLE nac_test; CALL spcs_app_instance_test.app_public.app_url();" --connection mkt_blendx_demo"
+echo "snow sql -q \"USE ROLE nac_test; CALL spcs_app_instance_test.app_public.app_url();\" --connection mkt_blendx_demo"

@@ -15,7 +15,7 @@ spec:
         CREWAI_DISABLE_TELEMETRY: true
         OTEL_SDK_DISABLED: true
       secrets:
-        - snowflakeSecret: 
+        - snowflakeSecret:
             objectName: secrets_db.app_secrets.serper_api_key
           envVarName: SERPER_API_KEY
           secretKeyRef: secret_string

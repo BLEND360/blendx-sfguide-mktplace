@@ -9,7 +9,7 @@
             large
             @click="testCortex"
             :loading="testingCortex"
-            :disabled="loading || testingCortex || testingLitellm || testingSecrets"
+            :disabled="loading || testingCortex || testingLitellm || testingSecrets || testingSerper"
             block
           >
             TEST CORTEX
@@ -21,7 +21,7 @@
             large
             @click="testLitellm"
             :loading="testingLitellm"
-            :disabled="loading || testingCortex || testingLitellm || testingSecrets"
+            :disabled="loading || testingCortex || testingLitellm || testingSecrets || testingSerper"
             block
           >
             TEST LITELLM
@@ -33,7 +33,7 @@
             large
             @click="testSecrets"
             :loading="testingSecrets"
-            :disabled="loading || testingCortex || testingLitellm || testingSecrets"
+            :disabled="loading || testingCortex || testingLitellm || testingSecrets || testingSerper"
             block
           >
             TEST SECRETS
@@ -41,23 +41,50 @@
         </v-col>
         <v-col cols="12" md="3" class="text-center">
           <v-btn
+            color="orange"
+            large
+            @click="testSerper"
+            :loading="testingSerper"
+            :disabled="loading || testingCortex || testingLitellm || testingSecrets || testingSerper"
+            block
+          >
+            TEST SERPER
+          </v-btn>
+        </v-col>
+      </v-row>
+      <v-row justify="center" class="my-4">
+        <v-col cols="12" md="3" class="text-center">
+          <v-btn
             color="primary"
             large
             @click="startCrew"
             :loading="loading"
-            :disabled="loading || testingCortex || testingLitellm || testingSecrets || listingCrews"
+            :disabled="loading || testingCortex || testingLitellm || testingSecrets || testingSerper || listingCrews || loadingExternal"
             block
           >
             RUN CREW
           </v-btn>
         </v-col>
-        <v-col cols="12" md="3" class="text-center">
+        <v-col cols="12" md="4" class="text-center">
+          <v-btn
+            color="purple"
+            large
+            @click="startExternalToolCrew"
+            :loading="loadingExternal"
+            :disabled="loading || testingCortex || testingLitellm || testingSecrets || testingSerper || listingCrews || loadingExternal"
+            block
+            class="external-tool-btn"
+          >
+            RUN CREW WITH EXTERNAL TOOL
+          </v-btn>
+        </v-col>
+        <v-col cols="12" md="4" class="text-center">
           <v-btn
             color="success"
             large
             @click="listCrews"
             :loading="listingCrews"
-            :disabled="loading || testingCortex || testingLitellm || testingSecrets || listingCrews"
+            :disabled="loading || testingCortex || testingLitellm || testingSecrets || testingSerper || listingCrews || loadingExternal"
             block
           >
             LIST CREWS
@@ -76,6 +103,22 @@
               ></v-progress-circular>
               <div>{{ statusMessage }}</div>
               <div class="text-caption mt-2">Execution ID: {{ executionId }}</div>
+            </v-card-text>
+          </v-card>
+        </v-col>
+      </v-row>
+
+      <v-row v-if="statusExternal && loadingExternal" class="mt-6">
+        <v-col cols="12">
+          <v-card outlined>
+            <v-card-text class="text-center">
+              <v-progress-circular
+                indeterminate
+                color="purple"
+                class="mb-3"
+              ></v-progress-circular>
+              <div>{{ statusMessageExternal }}</div>
+              <div class="text-caption mt-2">Execution ID: {{ executionIdExternal }}</div>
             </v-card-text>
           </v-card>
         </v-col>
@@ -162,8 +205,15 @@ export default {
     testingCortex: false,
     testingLitellm: false,
     testingSecrets: false,
+    testingSerper: false,
     listingCrews: false,
     crewExecutions: null,
+    loadingExternal: false,
+    executionIdExternal: null,
+    statusExternal: null,
+    statusMessageExternal: 'Starting external tool crew execution...',
+    pollingIntervalExternal: null,
+    pollingAttemptsExternal: 0,
   }),
 
   methods: {
@@ -263,6 +313,62 @@ export default {
         this.error = "Error testing Secrets: " + (error.response?.data?.detail || error.message)
       } finally {
         this.testingSecrets = false
+      }
+    },
+
+    async testSerper() {
+      this.testingSerper = true
+      this.error = null
+      this.response = null
+
+      const baseUrl = process.env.VUE_APP_API_URL
+
+      try {
+        console.log('Testing Serper API...')
+        const response = await axios.get(baseUrl + "/test-serper")
+
+        if (response.data.status === 'success') {
+          let output = `✅ Serper API Test Successful!\n${'='.repeat(50)}\n\n`
+          output += `Search Query: "${response.data.search_query}"\n`
+          output += `HTTP Status: ${response.data.http_status}\n`
+          output += `Results Found: ${response.data.results_count}\n\n`
+
+          if (response.data.response_preview) {
+            output += `First Result Preview:\n${'-'.repeat(50)}\n`
+            output += `Title: ${response.data.response_preview.title}\n`
+            output += `Link: ${response.data.response_preview.link}\n`
+            output += `Snippet: ${response.data.response_preview.snippet}\n\n`
+          }
+
+          output += `Full Response:\n${'-'.repeat(50)}\n`
+          output += JSON.stringify(response.data.full_response, null, 2)
+
+          this.response = output
+        } else {
+          let errorMsg = `❌ Serper API Test Failed\n${'='.repeat(50)}\n\n`
+          errorMsg += `Message: ${response.data.message}\n`
+          if (response.data.http_status) {
+            errorMsg += `HTTP Status: ${response.data.http_status}\n`
+          }
+          if (response.data.error_type) {
+            errorMsg += `Error Type: ${response.data.error_type}\n`
+          }
+          if (response.data.response) {
+            errorMsg += `\nResponse:\n${JSON.stringify(response.data.response, null, 2)}`
+          }
+          if (response.data.raw_response) {
+            errorMsg += `\nRaw Response:\n${response.data.raw_response}`
+          }
+          this.error = errorMsg
+        }
+      } catch (error) {
+        console.error("Error testing Serper:", error)
+        this.error = "Error testing Serper API: " + (error.response?.data?.detail || error.message)
+        if (error.response?.data) {
+          this.error += "\n\nDetails: " + JSON.stringify(error.response.data, null, 2)
+        }
+      } finally {
+        this.testingSerper = false
       }
     },
 
@@ -388,12 +494,92 @@ export default {
       if (!dateString) return 'N/A'
       const date = new Date(dateString)
       return date.toLocaleString()
+    },
+
+    async startExternalToolCrew() {
+      this.loadingExternal = true
+      this.error = null
+      this.response = null
+      this.statusExternal = null
+      this.executionIdExternal = null
+      this.pollingAttemptsExternal = 0
+
+      const baseUrl = process.env.VUE_APP_API_URL
+
+      try {
+        // Step 1: Start external tool crew execution
+        const startResponse = await axios.post(baseUrl + "/crew/start-external-tool")
+        this.executionIdExternal = startResponse.data.execution_id
+        this.statusExternal = startResponse.data.status
+        this.statusMessageExternal = 'External tool crew is processing...'
+
+        console.log('External tool crew started with ID:', this.executionIdExternal)
+
+        // Step 2: Start polling for results
+        this.startPollingExternal()
+      } catch (error) {
+        console.error("Error starting external tool crew:", error)
+        this.error = "Error starting external tool crew: " + (error.response?.data?.detail || error.message)
+        this.loadingExternal = false
+      }
+    },
+
+    startPollingExternal() {
+      this.pollingIntervalExternal = setInterval(async () => {
+        await this.checkStatusExternal()
+      }, 5000) // Poll every 5 seconds
+    },
+
+    stopPollingExternal() {
+      if (this.pollingIntervalExternal) {
+        clearInterval(this.pollingIntervalExternal)
+        this.pollingIntervalExternal = null
+      }
+    },
+
+    async checkStatusExternal() {
+      this.pollingAttemptsExternal++
+
+      if (this.pollingAttemptsExternal > this.maxPollingAttempts) {
+        this.stopPollingExternal()
+        this.error = "Polling timeout after 10 minutes. The external tool crew may still be processing."
+        this.loadingExternal = false
+        return
+      }
+
+      const baseUrl = process.env.VUE_APP_API_URL
+
+      try {
+        const statusResponse = await axios.get(baseUrl + `/crew/status/${this.executionIdExternal}`)
+        const data = statusResponse.data
+
+        console.log(`External tool polling attempt ${this.pollingAttemptsExternal}:`, data.status)
+
+        if (data.status === 'COMPLETED') {
+          this.stopPollingExternal()
+          this.response = data.result?.raw || JSON.stringify(data.result, null, 2)
+          this.loadingExternal = false
+          this.statusMessageExternal = 'External tool crew execution completed!'
+        } else if (data.status === 'ERROR') {
+          this.stopPollingExternal()
+          this.error = data.error || 'Unknown error occurred in external tool crew'
+          this.loadingExternal = false
+        } else if (data.status === 'PROCESSING') {
+          this.statusMessageExternal = `External tool crew is processing... (${this.pollingAttemptsExternal * 5}s elapsed)`
+        }
+      } catch (error) {
+        console.error("Error checking external tool status:", error)
+        this.stopPollingExternal()
+        this.error = "Error checking external tool status: " + (error.response?.data?.detail || error.message)
+        this.loadingExternal = false
+      }
     }
   },
 
   beforeUnmount() {
-    // Clean up polling interval if component is destroyed
+    // Clean up polling intervals if component is destroyed
     this.stopPolling()
+    this.stopPollingExternal()
   }
 }
 </script>
@@ -411,5 +597,11 @@ export default {
 .text-monospace {
   font-family: monospace;
   font-size: 0.9em;
+}
+
+.external-tool-btn {
+  font-size: 0.85rem !important;
+  line-height: 1.2 !important;
+  padding: 12px 8px !important;
 }
 </style>

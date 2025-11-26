@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from database.db import get_db, get_new_db_session
 from lite_llm_handler import get_llm
 from example_crew import run_crew
+from external_tool_crew import run_external_tool_crew
 
 # Configure logging
 logging.basicConfig(
@@ -112,6 +113,97 @@ async def run_crew_background(execution_id: str):
 
     except Exception as e:
         logger.error(f"Error in crew execution {execution_id}: {str(e)}", exc_info=True)
+
+        # Update record with ERROR status
+        try:
+            with get_new_db_session() as session:
+                table_name = "spcs_app_instance_test.app_data.crew_execution_results"
+                error_query = text(f"""
+                    UPDATE {table_name}
+                    SET
+                        status = :status,
+                        result_text = :error_message,
+                        updated_at = CURRENT_TIMESTAMP()
+                    WHERE id = :id
+                """)
+
+                session.execute(error_query, {
+                    "id": execution_id,
+                    "status": "ERROR",
+                    "error_message": str(e)
+                })
+                session.commit()
+        except Exception as db_error:
+            logger.error(f"Failed to update error status for {execution_id}: {str(db_error)}")
+
+
+async def run_external_tool_crew_background(execution_id: str):
+    """
+    Background task que ejecuta la crew con herramientas externas y guarda el resultado en la BD.
+    """
+    logger.info(f"Starting external tool crew execution for ID: {execution_id}")
+
+    try:
+        with get_new_db_session() as session:
+            # Get LLM
+            llm = get_llm(provider='snowflake', model='claude-3-5-sonnet')
+            logger.info(f"LLM initialized for external tool crew execution {execution_id}")
+
+            # Run External Tool Crew
+            logger.info(f"Running external tool crew for execution {execution_id}")
+            crew_output = await run_external_tool_crew(llm)
+            logger.info(f"External tool crew execution completed for {execution_id}")
+
+            # Prepare data for saving
+            result_text = None
+            raw_output = None
+
+            if hasattr(crew_output, 'json_dict') and crew_output.json_dict:
+                raw_output = crew_output.json_dict
+                result_text = str(crew_output.json_dict)
+            elif hasattr(crew_output, 'raw'):
+                result_text = crew_output.raw
+                raw_output = {"raw": crew_output.raw}
+            else:
+                result_text = str(crew_output)
+                raw_output = {"output": result_text}
+
+            table_name = "spcs_app_instance_test.app_data.crew_execution_results"
+
+            # Prepare JSON strings
+            raw_output_json = json.dumps(raw_output)
+            metadata_json = json.dumps({
+                "model": "claude-3-5-sonnet",
+                "provider": "snowflake",
+                "crew_type": "external_tool",
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            })
+
+            # Update record with SUCCESS status
+            update_query = text(f"""
+                UPDATE {table_name}
+                SET
+                    raw_output = PARSE_JSON(:raw_output),
+                    result_text = :result_text,
+                    status = :status,
+                    metadata = PARSE_JSON(:metadata),
+                    updated_at = CURRENT_TIMESTAMP()
+                WHERE id = :id
+            """)
+
+            session.execute(update_query, {
+                "id": execution_id,
+                "raw_output": raw_output_json,
+                "result_text": result_text,
+                "status": "COMPLETED",
+                "metadata": metadata_json
+            })
+            session.commit()
+
+            logger.info(f"External tool crew result saved successfully for {execution_id}")
+
+    except Exception as e:
+        logger.error(f"Error in external tool crew execution {execution_id}: {str(e)}", exc_info=True)
 
         # Update record with ERROR status
         try:
@@ -249,13 +341,101 @@ async def test_secrets():
             }
             logger.warning("❌ SERPER_API_KEY not found in environment variables")
         return results
-    
+
     except Exception as e:
         logger.error(f"❌ Secrets test failed: {str(e)}", exc_info=True)
         return {
             "status": "error",
             "message": f"Failed to test secrets: {str(e)}",
             "error_type": type(e).__name__
+        }
+
+
+@app.get("/test-serper")
+async def test_serper():
+    """
+    Test Serper API connection directly.
+    Makes a simple search request to verify the external access integration is working.
+    """
+    logger.info("Testing Serper API connection")
+
+    try:
+        import os
+        import http.client
+
+        # Get API key from environment
+        api_key = os.getenv('SERPER_API_KEY')
+
+        if not api_key:
+            logger.error("❌ SERPER_API_KEY not found in environment variables")
+            return {
+                "status": "error",
+                "message": "SERPER_API_KEY not found in environment variables",
+                "response": None
+            }
+
+        logger.info(f"✅ API Key found: {api_key[:4]}****")
+
+        # Make request to Serper
+        conn = http.client.HTTPSConnection("google.serper.dev")
+        payload = json.dumps({
+            "q": "artificial intelligence"
+        })
+        headers = {
+            'X-API-KEY': api_key,
+            'Content-Type': 'application/json'
+        }
+
+        logger.info("Sending request to Serper API...")
+        conn.request("POST", "/search", payload, headers)
+        res = conn.getresponse()
+        data = res.read()
+        response_text = data.decode("utf-8")
+
+        logger.info(f"✅ Serper API responded with status: {res.status}")
+
+        # Parse response
+        try:
+            response_json = json.loads(response_text)
+
+            if res.status == 200:
+                # Extract summary info
+                results_count = len(response_json.get('organic', []))
+                logger.info(f"✅ Serper search successful! Found {results_count} results")
+
+                return {
+                    "status": "success",
+                    "message": "Serper API is working correctly",
+                    "http_status": res.status,
+                    "results_count": results_count,
+                    "search_query": "artificial intelligence",
+                    "response_preview": response_json.get('organic', [])[0] if results_count > 0 else None,
+                    "full_response": response_json
+                }
+            else:
+                logger.error(f"❌ Serper API returned error status: {res.status}")
+                return {
+                    "status": "error",
+                    "message": f"Serper API returned error status: {res.status}",
+                    "http_status": res.status,
+                    "response": response_json
+                }
+        except json.JSONDecodeError as je:
+            logger.error(f"❌ Failed to parse Serper response as JSON: {str(je)}")
+            return {
+                "status": "error",
+                "message": "Failed to parse Serper response as JSON",
+                "http_status": res.status,
+                "raw_response": response_text[:500]
+            }
+
+    except Exception as e:
+        logger.error(f"❌ Serper test failed: {str(e)}", exc_info=True)
+        return {
+            "status": "error",
+            "message": f"Failed to call Serper API: {str(e)}",
+            "error_type": type(e).__name__,
+            "response": None
         }
 
 
@@ -458,6 +638,69 @@ async def get_crew_status(execution_id: str, db: Session = Depends(get_db)):
     except Exception as e:
         logger.error(f"Error retrieving crew status for {execution_id}: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to retrieve status: {str(e)}")
+
+
+@app.post("/crew/start-external-tool", response_model=CrewStartResponse)
+async def start_external_tool_crew_execution(background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+    """
+    Inicia la ejecución de la crew con herramientas externas (Serper) en background.
+
+    Steps:
+    1. Genera un UUID único
+    2. Crea un registro en la BD con status='PROCESSING'
+    3. Lanza la tarea en background
+    4. Retorna el ID inmediatamente
+    """
+    try:
+        # 1. Generate unique ID
+        execution_id = str(uuid.uuid4())
+        logger.info(f"Starting new external tool crew execution with ID: {execution_id}")
+
+        # 2. Create initial record in database with PROCESSING status
+        table_name = "spcs_app_instance_test.app_data.crew_execution_results"
+
+        metadata_json = json.dumps({
+            "model": "claude-3-5-sonnet",
+            "provider": "snowflake",
+            "crew_type": "external_tool",
+            "started_at": datetime.now(timezone.utc).isoformat()
+        })
+
+        insert_query = text(f"""
+            INSERT INTO {table_name}
+            (id, crew_name, status, metadata, result_text)
+            SELECT
+                :id,
+                :crew_name,
+                :status,
+                PARSE_JSON(:metadata),
+                :result_text
+        """)
+
+        db.execute(insert_query, {
+            "id": execution_id,
+            "crew_name": "ExternalToolCrew",
+            "status": "PROCESSING",
+            "metadata": metadata_json,
+            "result_text": "Processing..."
+        })
+        db.commit()
+
+        logger.info(f"Initial record created for external tool crew {execution_id}")
+
+        # 3. Add background task
+        background_tasks.add_task(run_external_tool_crew_background, execution_id)
+
+        # 4. Return ID immediately
+        return CrewStartResponse(
+            execution_id=execution_id,
+            status="PROCESSING",
+            message="External tool crew execution started successfully"
+        )
+
+    except Exception as e:
+        logger.error(f"Error starting external tool crew execution: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to start external tool crew execution: {str(e)}")
 
 
 @app.get("/crew/executions")

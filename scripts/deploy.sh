@@ -306,7 +306,12 @@ if [ "$SETUP_MODE" = false ]; then
     echo "=========================================="
 
     # Check if application exists before upgrading
-    APP_EXISTS=$(snow sql -q "USE ROLE ${APP_CONSUMER_ROLE}; SHOW APPLICATIONS LIKE '${APP_INSTANCE_NAME}';" --connection ${SNOW_CONNECTION} 2>&1 | grep -v "SHOW APPLICATIONS" | grep -c "${APP_INSTANCE_NAME}" || echo "0")
+    APP_EXISTS=$(snow sql -q "USE ROLE ${APP_CONSUMER_ROLE}; SHOW APPLICATIONS LIKE '${APP_INSTANCE_NAME}';" --connection ${SNOW_CONNECTION} 2>&1 | grep "${APP_INSTANCE_NAME}" | wc -l | tr -d ' ')
+
+    # Ensure APP_EXISTS is a valid number
+    if [ -z "$APP_EXISTS" ] || ! [[ "$APP_EXISTS" =~ ^[0-9]+$ ]]; then
+        APP_EXISTS=0
+    fi
 
     if [ "$APP_EXISTS" -gt "0" ]; then
         run_command "Upgrading application instance" \
