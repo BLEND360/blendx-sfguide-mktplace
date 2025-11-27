@@ -291,20 +291,34 @@ export default {
         const response = await axios.get(baseUrl + "/test-secrets")
 
         let output = `Secrets Test Results\n${'='.repeat(50)}\n\n`
-        output += `Status: ${response.data.status === 'success' ? '✅' : '⚠️'} ${response.data.status.toUpperCase()}\n`
+        output += `Status: ${response.data.status === 'success' ? '✅' : '⚠️'} ${response.data.status.toUpperCase()}\n\n`
 
-        // Environment Variables
-        output += `Environment Variables:\n${'-'.repeat(50)}\n`
-        if (response.data.environment_variables?.SERPER_API_KEY) {
-          const serperEnv = response.data.environment_variables.SERPER_API_KEY
-          if (serperEnv.found) {
-            output += `✅ SERPER_API_KEY: Found (${serperEnv.preview})\n`
-            output += `   Length: ${serperEnv.length} characters\n`
+        // Secrets
+        output += `Secrets:\n${'-'.repeat(50)}\n`
+        if (response.data.secrets?.SERPER_API_KEY) {
+          const serperSecret = response.data.secrets.SERPER_API_KEY
+          if (serperSecret.found) {
+            output += `✅ SERPER_API_KEY: Found (${serperSecret.preview})\n`
+            output += `   Source: ${serperSecret.source}\n`
+            output += `   Length: ${serperSecret.length} characters\n`
           } else {
             output += `❌ SERPER_API_KEY: Not found\n`
           }
+        } else {
+          output += `❌ SERPER_API_KEY: Not found\n`
         }
         output += `\n`
+
+        // Secrets Directory Info
+        if (response.data.secrets_directory) {
+          output += `Secrets Directory:\n${'-'.repeat(50)}\n`
+          if (response.data.secrets_directory.exists) {
+            output += `✅ /secrets directory exists\n`
+            output += `   Contents: ${JSON.stringify(response.data.secrets_directory.contents)}\n`
+          } else {
+            output += `❌ /secrets directory not found\n`
+          }
+        }
 
         this.response = output
 

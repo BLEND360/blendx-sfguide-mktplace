@@ -12,6 +12,7 @@ from database.db import get_db, get_new_db_session
 from lite_llm_handler import get_llm
 from example_crew import run_crew
 from external_tool_crew import run_external_tool_crew
+from spcs_helpers import get_serper_api_key
 
 # Configure logging
 logging.basicConfig(
@@ -313,33 +314,61 @@ async def test_cortex(db: Session = Depends(get_db)):
 async def test_secrets():
     """
     Test Snowflake secrets access.
-    Validates that secrets can be retrieved from Snowflake.
+    Validates that secrets can be retrieved from Snowflake SPCS or environment.
     """
     logger.info("Testing Snowflake secrets access")
 
     try:
         import os
+        from spcs_helpers import get_secret
 
         results = {
             "status": "success",
-            "secrets": {},
-            "environment_variables": {}
+            "secrets": {}
         }
 
-        # Check SERPER_API_KEY environment variable
-        serper_env = os.getenv('SERPER_API_KEY')
-        if serper_env:
-            results["environment_variables"]["SERPER_API_KEY"] = {
+        # Check SERPER_API_KEY from SPCS secrets
+        spcs_secret = get_secret("serper", "secret_string")
+        spcs_secret_exists = spcs_secret is not None
+
+        # Also check environment variable for comparison
+        env_var = os.getenv('SERPER_API_KEY')
+
+        if spcs_secret:
+            results["secrets"]["SERPER_API_KEY"] = {
                 "found": True,
-                "length": len(serper_env),
-                "preview": f"{serper_env[:4]}****" if len(serper_env) > 4 else "****"
+                "source": "SPCS secret file",
+                "length": len(spcs_secret),
+                "preview": f"{spcs_secret[:4]}****" if len(spcs_secret) > 4 else "****"
             }
-            logger.info(f"✅ SERPER_API_KEY found in environment: {serper_env[:4]}****")
+            logger.info(f"✅ SERPER_API_KEY found via SPCS secret: {spcs_secret[:4]}****")
+        elif env_var:
+            results["secrets"]["SERPER_API_KEY"] = {
+                "found": True,
+                "source": "environment variable (fallback)",
+                "length": len(env_var),
+                "preview": f"{env_var[:4]}****" if len(env_var) > 4 else "****"
+            }
+            logger.info(f"✅ SERPER_API_KEY found via environment variable: {env_var[:4]}****")
         else:
-            results["environment_variables"]["SERPER_API_KEY"] = {
-                "found": False
+            results["secrets"]["SERPER_API_KEY"] = {
+                "found": False,
+                "source": None
             }
-            logger.warning("❌ SERPER_API_KEY not found in environment variables")
+            logger.warning("❌ SERPER_API_KEY not found in SPCS secrets or environment")
+
+        # Add debug info about secrets directory
+        secrets_dir = '/secrets'
+        if os.path.exists(secrets_dir):
+            results["secrets_directory"] = {
+                "exists": True,
+                "contents": os.listdir(secrets_dir) if os.path.isdir(secrets_dir) else "not a directory"
+            }
+        else:
+            results["secrets_directory"] = {
+                "exists": False
+            }
+
         return results
 
     except Exception as e:
@@ -360,17 +389,16 @@ async def test_serper():
     logger.info("Testing Serper API connection")
 
     try:
-        import os
         import http.client
 
-        # Get API key from environment
-        api_key = os.getenv('SERPER_API_KEY')
+        # Get API key from SPCS secrets or environment
+        api_key = get_serper_api_key()
 
         if not api_key:
-            logger.error("❌ SERPER_API_KEY not found in environment variables")
+            logger.error("❌ SERPER_API_KEY not found in SPCS secrets or environment")
             return {
                 "status": "error",
-                "message": "SERPER_API_KEY not found in environment variables",
+                "message": "SERPER_API_KEY not found in SPCS secrets or environment variables",
                 "response": None
             }
 

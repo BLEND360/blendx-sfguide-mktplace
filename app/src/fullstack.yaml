@@ -16,9 +16,8 @@ spec:
         OTEL_SDK_DISABLED: true
       secrets:
         - snowflakeSecret:
-            objectName: secrets_db.app_secrets.serper_api_key
-          envVarName: SERPER_API_KEY
-          secretKeyRef: secret_string
+            objectReference: serper_api_key
+          directoryPath: /secrets/serper
     - name: eap-router
       image: /spcs_app/napp/img_repo/eap_router
       env:

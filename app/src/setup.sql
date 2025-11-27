@@ -209,7 +209,12 @@ CREATE OR REPLACE PROCEDURE config.get_config_for_ref(reference_name STRING)
 AS
 $$
 BEGIN
-    RETURN TO_JSON(OBJECT_CONSTRUCT('reference', reference_name));
+    CASE (UPPER(reference_name))
+        WHEN 'SERPER_API_KEY' THEN
+            RETURN '{"type": "CONFIGURATION", "payload": {"type": "GENERIC_STRING"}}';
+        ELSE
+            RETURN '{"type": "ERROR", "payload": {"message": "Unknown reference"}}';
+    END CASE;
 END;
 $$;
 GRANT USAGE ON PROCEDURE config.get_config_for_ref(STRING) TO APPLICATION ROLE app_admin;
