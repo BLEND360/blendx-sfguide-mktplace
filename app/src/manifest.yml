@@ -9,7 +9,7 @@ version:
 
 #artifacts that are distributed from this version of the package
 artifacts:
-  readme: readme.md
+  readme: README.md
   setup_script: setup.sql
   container_services:
     images:
@@ -18,6 +18,8 @@ artifacts:
       - /spcs_app/napp/img_repo/eap_router
 
 privileges:
+ - IMPORTED PRIVILEGES ON SNOWFLAKE DB:
+      description: "Enables application to use Cortex Functions"
  - CREATE COMPUTE POOL:
       description: "Enable application to create its own compute pool(s)"
  - BIND SERVICE ENDPOINT:
@@ -26,8 +28,6 @@ privileges:
       description: "Enables application to create its own warehouse(s)"
  - EXECUTE MANAGED TASK:
       description: "Enables application to execute Snowflake Cortex functions"
- - IMPORTED PRIVILEGES ON SNOWFLAKE DB:
-      description: "Access to Snowflake Cortex AI functions and models"
  - CREATE EXTERNAL ACCESS INTEGRATION:
       description: "Create external access integration for serper connection"
 

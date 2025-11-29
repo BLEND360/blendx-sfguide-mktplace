@@ -131,8 +131,7 @@ echo "  Provider Role: $APP_PROVIDER_ROLE"
 echo "  Consumer Role: $APP_CONSUMER_ROLE"
 echo "  Package: $APP_PACKAGE_NAME"
 echo "  Instance: $APP_INSTANCE_NAME"
-echo "  Compute Pool 1: $COMPUTE_POOL"
-echo "  Compute Pool 2: $COMPUTE_POOL_V2"
+echo "  Compute Pool: $COMPUTE_POOL"
 echo "  Secret Database: $SECRET_DATABASE"
 echo "  Dry Run: $DRY_RUN"
 echo "  Clean Secrets: $CLEAN_SECRETS"
@@ -174,16 +173,16 @@ run_sql "Dropping application instance" \
 log_info "Application instance dropped (if it existed)"
 
 # ============================================
-# Step 3: Drop Compute Pools
+# Step 3: Drop Compute Pool
 # ============================================
 
-log_step "Step 3: Drop Compute Pools"
+log_step "Step 3: Drop Compute Pool"
 
-run_sql "Dropping compute pool (v1)" \
+run_sql "Dropping compute pool" \
     "USE ROLE ${APP_CONSUMER_ROLE};
      DROP COMPUTE POOL IF EXISTS ${COMPUTE_POOL};"
 
-log_info "Compute pools dropped (if they existed)"
+log_info "Compute pool dropped (if they existed)"
 
 # ============================================
 # Step 4: Drop Application Package

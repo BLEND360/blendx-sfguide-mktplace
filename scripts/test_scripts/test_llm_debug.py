@@ -5,7 +5,7 @@ import logging
 import sys
 sys.path.insert(0, '/Users/mikaelapisani/Projects/blendx-sfguide-mktplace/backend/src')
 
-from settings import get_settings
+from backend.src.settings import get_settings
 from backend.src.lite_llm_handler import get_llm
 
 # Set up detailed logging

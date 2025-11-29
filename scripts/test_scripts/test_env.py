@@ -5,9 +5,9 @@ import sys
 from pathlib import Path
 
 # Add src to path
-sys.path.insert(0, str(Path(__file__).parent / "src"))
+sys.path.insert(0, str(Path(__file__).parent / "backend/src"))
 
-from settings import get_settings, ENV_FILE
+from backend.src.settings import get_settings, ENV_FILE
 
 print("=" * 60)
 print("ENVIRONMENT VARIABLE LOADING TEST")
