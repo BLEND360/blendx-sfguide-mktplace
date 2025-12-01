@@ -19,12 +19,12 @@ from crewai.llm import LLM
 from litellm import CustomLLM
 from snowflake.snowpark import Session
 
-from settings import Settings, get_settings
+from app.config.settings import Settings, get_settings
 # from app.services.llm_tracking_service import (
 #     get_llm_tracking_service,
 #     setup_litellm_tracking,
 # )
-from jwt_generator_service import JWTGenerator
+from app.services.jwt_generator_service import JWTGenerator
 
 # Configure logging
 logger = logging.getLogger(__name__)

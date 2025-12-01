@@ -1,0 +1,15 @@
+{
+    "type": "object",
+    "properties": {
+        "is_greeting": {
+            "type": "boolean"
+        },
+        "response": {
+            "type": "string"
+        }
+    },
+    "required": [
+        "is_greeting",
+        "response"
+    ]
+}

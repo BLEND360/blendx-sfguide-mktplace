@@ -3,7 +3,7 @@ Test script to verify OpenAI format works with lite_llm_handler1.py
 """
 
 import logging
-from backend.src.lite_llm_handler import get_llm
+from app.handlers.lite_llm_handler import get_llm
 
 # Configure logging to see what's happening
 logging.basicConfig(level=logging.INFO)

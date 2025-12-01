@@ -34,6 +34,49 @@ CREATE OR REPLACE TABLE app_data.crew_execution_results (
 GRANT SELECT ON TABLE app_data.crew_execution_results TO APPLICATION ROLE app_user;
 GRANT SELECT, INSERT, UPDATE ON TABLE app_data.crew_execution_results TO APPLICATION ROLE app_admin;
 
+-- Create table to store Crew executions (used by backend ORM)
+CREATE OR REPLACE TABLE app_data.crew_executions (
+    id VARCHAR(36) PRIMARY KEY,
+    status VARCHAR(50) NOT NULL DEFAULT 'PENDING',
+    name VARCHAR(255),
+    input TEXT,
+    output TEXT,
+    context VARIANT,
+    created_at TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP(),
+    updated_at TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP(),
+    finished_at TIMESTAMP_NTZ,
+    execution_group_id VARCHAR(36),
+    flow_execution_id VARCHAR(36)
+);
+
+-- Grant permissions for crew_executions table
+GRANT SELECT ON TABLE app_data.crew_executions TO APPLICATION ROLE app_user;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE app_data.crew_executions TO APPLICATION ROLE app_admin;
+
+-- Create table to store Workflows (execution groups and flows from NL generator)
+CREATE OR REPLACE TABLE app_data.workflows (
+    workflow_id VARCHAR(255) NOT NULL,
+    version INTEGER NOT NULL DEFAULT 1,
+    type VARCHAR(50) NOT NULL,
+    mermaid TEXT,
+    title VARCHAR(255),
+    status VARCHAR(50) NOT NULL DEFAULT 'PENDING',
+    rationale TEXT,
+    yaml_text TEXT NOT NULL,
+    chat_id VARCHAR(255),
+    message_id VARCHAR(255),
+    user_id VARCHAR(255),
+    model VARCHAR(100),
+    stable BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP(),
+    updated_at TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP(),
+    PRIMARY KEY (workflow_id, version)
+);
+
+-- Grant permissions for workflows table
+GRANT SELECT ON TABLE app_data.workflows TO APPLICATION ROLE app_user;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE app_data.workflows TO APPLICATION ROLE app_admin;
+
 CREATE OR REPLACE PROCEDURE app_public.start_app(poolname VARCHAR, whname VARCHAR)
     RETURNS string
     LANGUAGE sql

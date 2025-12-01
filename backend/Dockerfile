@@ -1,10 +1,18 @@
-FROM python:3.10
+FROM python:3.10-slim
+
+# Install uv
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+
 EXPOSE 8081
 WORKDIR /app
-COPY src/requirements.txt .
-RUN pip3 install -r requirements.txt
-RUN pip3 uninstall oscrypto -y
-RUN pip3 install oscrypto@git+https://github.com/wbond/oscrypto.git@d5f3437ed24257895ae1edd9e503cfb352e635a8
-COPY src/. .
-RUN chmod +x ./entrypoint.sh
-ENTRYPOINT [ "./entrypoint.sh" ]
+
+# Copy dependency files
+COPY pyproject.toml uv.lock* ./
+
+# Install dependencies
+RUN uv sync --frozen --no-dev
+
+# Copy application code
+COPY . /app
+
+ENTRYPOINT ["uv", "run", "gunicorn", "app.main:app", "--workers", "4", "--worker-class", "uvicorn.workers.UvicornWorker", "--threads", "4", "--timeout", "0", "--keep-alive", "650", "--bind", "0.0.0.0:8081"]

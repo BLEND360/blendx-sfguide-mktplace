@@ -1,5 +1,5 @@
 # Python
-__pycache__/
+**/__pycache__/
 *.py[cod]
 *$py.class
 *.so
@@ -47,9 +47,10 @@ Dockerfile
 docker-compose.yml
 
 # Documentation
-*.md
-README*
 docs/
+
+# uv cache
+.uv/
 
 # Logs
 *.log

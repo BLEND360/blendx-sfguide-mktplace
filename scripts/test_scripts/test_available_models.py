@@ -3,9 +3,9 @@ Test script to check available Snowflake Cortex models
 """
 import logging
 import sys
-sys.path.insert(0, '/Users/mikaelapisani/Projects/blendx-sfguide-mktplace/backend/src')
+sys.path.insert(0, '/Users/mikaelapisani/Projects/blendx-sfguide-mktplace/backend/')
 
-from backend.src.database.db import get_new_db_session
+from app.database.db import get_new_db_session
 from sqlalchemy import text
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')

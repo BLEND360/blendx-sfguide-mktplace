@@ -1,6 +1,6 @@
 from crewai import Agent, Crew, Task, Process
 from crewai_tools import SerperDevTool
-from spcs_helpers import get_serper_api_key
+from app.utils.spcs_helper import get_serper_api_key
 
 
 class ExternalToolCrew:

@@ -5,3 +5,5 @@ output/**
 __pycache__/
 keys/
 */.venv/*
+# Local secrets directory (mirrors SPCS /secrets structure)
+backend/secrets/
