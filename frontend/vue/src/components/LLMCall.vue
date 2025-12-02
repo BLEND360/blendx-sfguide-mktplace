@@ -740,7 +740,6 @@ export default {
   crews: ["News Research Crew", "Summary Crew"]
 
 execution_group_name: "AI News Analysis"
-type: "RAG"
 
 crews:
   - name: "News Research Crew"
@@ -929,10 +928,11 @@ flowchart LR
   }),
 
   computed: {
+    // Only disable test buttons when another test is running (not during workflow generation)
     anyTestLoading() {
       return this.testingCortex || this.testingLitellm || this.testingSecrets ||
              this.testingSerper || this.loading || this.loadingExternal ||
-             this.listingCrews || this.isGenerating || this.loadingHistory
+             this.listingCrews || this.loadingHistory
     }
   },
 

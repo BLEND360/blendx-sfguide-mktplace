@@ -10,7 +10,6 @@
 # Define crews that execute tasks using specified agents
 
 execution_group_name: "Default Crew Group"
-type: "RAG"  # Optional: Type of execution group (only "RAG" currently supported)
 crews:
   - name: "Investment Crew"
     process: "sequential"  # sequential or hierarchical (parallel not supported)

@@ -39,7 +39,7 @@ APP_SCHEMA=${APP_SCHEMA:-"napp"}
 APP_STAGE=${APP_STAGE:-"app_stage"}
 APP_PACKAGE_NAME=${APP_PACKAGE_NAME:-"spcs_app_pkg_test"}
 APP_INSTANCE_NAME=${APP_INSTANCE_NAME:-"spcs_app_instance_test"}
-APP_VERSION=${APP_VERSION:-"v2"}
+APP_VERSION=${APP_VERSION:-"v6"}
 COMPUTE_POOL=${COMPUTE_POOL:-"pool_nac"}
 WAREHOUSE=${WAREHOUSE:-"WH_BLENDX_DEMO_PROVIDER"}
 SKIP_BUILD=${SKIP_BUILD:-false}
@@ -255,44 +255,83 @@ run_command "Uploading files to stage" \
 echo ""
 
 # ============================================
-# Step 5: Remove Old Version from Release Channel
+# Step 5: Deregister Old Versions Not in Release Channel
 # ============================================
 
 echo "=========================================="
-echo "[5/9] Removing old version from release channel..."
+echo "[5/9] Cleaning up old versions..."
 echo "=========================================="
 
-run_command "Removing version from release channel" \
-    "snow sql -q \"USE ROLE ${APP_PACKAGE_ROLE}; ALTER APPLICATION PACKAGE ${APP_PACKAGE_NAME} MODIFY RELEASE CHANNEL default DROP VERSION ${APP_VERSION};\" --connection ${SNOW_CONNECTION} || echo 'Version not in channel (OK)'"
+# Snowflake allows max 2 versions NOT in any release channel
+# We need to deregister old versions before registering new ones
+if [ "$DRY_RUN" = false ]; then
+    echo "Checking for old versions not in any release channel..."
+
+    # Query versions and find those with "None" in release_channel_names column (not in any channel)
+    # These are candidates for deregistration
+    ORPHAN_VERSIONS=$(snow sql -q "USE ROLE ${APP_PACKAGE_ROLE}; SHOW VERSIONS IN APPLICATION PACKAGE ${APP_PACKAGE_NAME};" --connection ${SNOW_CONNECTION} 2>/dev/null | \
+        grep -E "^\|[[:space:]]*V[0-9]+" | \
+        grep -i "None" | \
+        awk -F'|' '{print $2}' | \
+        tr -d ' ' | \
+        grep -v "^${APP_VERSION}$")
+
+    if [ -n "$ORPHAN_VERSIONS" ]; then
+        echo "Found versions not in any release channel: $ORPHAN_VERSIONS"
+        for ORPHAN_VERSION in $ORPHAN_VERSIONS; do
+            if [ -n "$ORPHAN_VERSION" ] && [ "$ORPHAN_VERSION" != "${APP_VERSION}" ]; then
+                echo "Deregistering version $ORPHAN_VERSION..."
+                snow sql -q "USE ROLE ${APP_PACKAGE_ROLE}; ALTER APPLICATION PACKAGE ${APP_PACKAGE_NAME} DEREGISTER VERSION ${ORPHAN_VERSION};" --connection ${SNOW_CONNECTION} || echo "Could not deregister $ORPHAN_VERSION (OK)"
+            fi
+        done
+    else
+        echo "No orphan versions found to deregister."
+    fi
+else
+    echo "[DRY RUN] Would check and deregister old versions"
+fi
 
 echo ""
 
 # ============================================
-# Step 6: Drop Old Version
+# Step 6: Register New Version
 # ============================================
 
 echo "=========================================="
-echo "[6/9] Dropping old version..."
-echo "=========================================="
-
-run_command "Deregistering old version" \
-    "snow sql -q \"USE ROLE ${APP_PACKAGE_ROLE}; ALTER APPLICATION PACKAGE ${APP_PACKAGE_NAME} DEREGISTER VERSION ${APP_VERSION};\" --connection ${SNOW_CONNECTION} || echo 'Version does not exist (OK)'"
-
-echo ""
-
-# ============================================
-# Step 7: Register New Version
-# ============================================
-
-echo "=========================================="
-echo "[7/9] Registering new version ${APP_VERSION}..."
+echo "[6/9] Registering new version ${APP_VERSION}..."
 echo "=========================================="
 
 run_command "Registering new version" \
     "snow sql -q \"USE ROLE ${APP_PACKAGE_ROLE}; ALTER APPLICATION PACKAGE ${APP_PACKAGE_NAME} REGISTER VERSION ${APP_VERSION} USING @${APP_DATABASE}.${APP_SCHEMA}.${APP_STAGE};\" --connection ${SNOW_CONNECTION}"
 
-run_command "Adding version to release channel" \
-    "snow sql -q \"USE ROLE ${APP_PACKAGE_ROLE}; ALTER APPLICATION PACKAGE ${APP_PACKAGE_NAME} MODIFY RELEASE CHANNEL default ADD VERSION ${APP_VERSION};\" --connection ${SNOW_CONNECTION}"
+echo ""
+
+# Now drop old versions from the release channel to keep it clean
+echo ""
+echo "Checking for old versions in release channel to drop..."
+
+if [ "$DRY_RUN" = false ]; then
+    OLD_CHANNEL_VERSIONS=$(snow sql -q "USE ROLE ${APP_PACKAGE_ROLE}; SHOW VERSIONS IN APPLICATION PACKAGE ${APP_PACKAGE_NAME};" --connection ${SNOW_CONNECTION} 2>/dev/null | \
+        grep -i "DEFAULT" | \
+        awk -F'|' '{print $2}' | \
+        tr -d ' ' | \
+        grep -v "^${APP_VERSION}$")
+
+    if [ -n "$OLD_CHANNEL_VERSIONS" ]; then
+        echo "Found old versions in DEFAULT channel: $OLD_CHANNEL_VERSIONS"
+        for OLD_VERSION in $OLD_CHANNEL_VERSIONS; do
+            if [ -n "$OLD_VERSION" ] && [ "$OLD_VERSION" != "${APP_VERSION}" ]; then
+                echo "Dropping version $OLD_VERSION from release channel..."
+                snow sql -q "USE ROLE ${APP_PACKAGE_ROLE}; ALTER APPLICATION PACKAGE ${APP_PACKAGE_NAME} MODIFY RELEASE CHANNEL DEFAULT DROP VERSION ${OLD_VERSION};" --connection ${SNOW_CONNECTION} || echo "Could not drop $OLD_VERSION (OK)"
+            fi
+        done
+    else
+        echo "No old versions in release channel to drop."
+    fi
+fi
+
+run_command "Showing current versions" \
+    "snow sql -q \"USE ROLE ${APP_PACKAGE_ROLE}; SHOW VERSIONS IN APPLICATION PACKAGE ${APP_PACKAGE_NAME};\" --connection ${SNOW_CONNECTION}"
 
 echo ""
 
