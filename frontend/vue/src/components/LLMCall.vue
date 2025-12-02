@@ -1175,8 +1175,12 @@ flowchart LR
       try {
         const response = await axios.get(baseUrl + "/test-secrets")
         let output = `Secrets: ${response.data.status}\n`
-        if (response.data.secrets?.SERPER_API_KEY?.found) {
-          output += `SERPER_API_KEY: Found`
+        const serperKey = response.data.secrets?.SERPER_API_KEY
+        if (serperKey?.found) {
+          output += `SERPER_API_KEY: Found\n`
+          output += `  Source: ${serperKey.source}\n`
+          output += `  Preview: ${serperKey.preview}\n`
+          output += `  Length: ${serperKey.length}`
         } else {
           output += `SERPER_API_KEY: Not found`
         }

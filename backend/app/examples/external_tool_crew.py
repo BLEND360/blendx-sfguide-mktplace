@@ -1,3 +1,5 @@
+import os
+
 from crewai import Agent, Crew, Task, Process
 from crewai_tools import SerperDevTool
 from app.utils.spcs_helper import get_serper_api_key
@@ -10,6 +12,8 @@ class ExternalToolCrew:
         serper_api_key = get_serper_api_key()
         if not serper_api_key:
             raise ValueError("SERPER_API_KEY not found in SPCS secrets or environment variables")
+        # SerperDevTool requires the env var to be set even when passing api_key parameter
+        os.environ["SERPER_API_KEY"] = serper_api_key
         self.search_tool = SerperDevTool(api_key=serper_api_key)
 
     def researcher_agent(self) -> Agent:
