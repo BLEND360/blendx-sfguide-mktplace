@@ -767,8 +767,8 @@ agents:
       - crewai_tools: ["SerperDevTool", "WebsiteSearchTool"]
     verbose: true
     llm:
-      provider: "openai"
-      model: "gpt-4-turbo-preview"
+      provider: "snowflake"
+      model: "llama3.1-70b"
       temperature: 0.7
     allow_delegation: false
 
@@ -777,8 +777,8 @@ agents:
     backstory: "Experienced technical writer specializing in creating concise, informative summaries of complex topics"
     verbose: true
     llm:
-      provider: "openai"
-      model: "gpt-4-turbo-preview"
+      provider: "snowflake"
+      model: "llama3.1-70b"
       temperature: 0.3
     allow_delegation: false
 

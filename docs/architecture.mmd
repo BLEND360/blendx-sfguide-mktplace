@@ -1,0 +1,52 @@
+flowchart TB
+    subgraph SF["Snowflake Account"]
+        subgraph SPCS["Snowpark Container Services"]
+            subgraph APP["BlendX Native App"]
+                FE["Vue.js Frontend"]
+                BE["FastAPI Backend"]
+                CE["CrewAI Engine"]
+
+                FE -->|"REST API"| BE
+                BE -->|"Orchestrates"| CE
+            end
+        end
+
+        subgraph CORTEX["Snowflake Cortex"]
+            LLM["Claude 3.5 Sonnet\nLlama 3.1 70B\nMistral Large 2"]
+        end
+
+        subgraph STORAGE["Snowflake Storage"]
+            SECRETS[("Secrets")]
+            TABLES[("Tables")]
+        end
+
+        CE -->|"LLM Requests"| LLM
+        BE -->|"Read/Write"| TABLES
+        BE -->|"Secure Access"| SECRETS
+    end
+
+    subgraph EXT["External Services"]
+        SERPER["Serper API"]
+        WEB["Web Search"]
+    end
+
+    CE -->|"Search Queries"| SERPER
+    CE -->|"Web Scraping"| WEB
+
+    USER["User"] -->|"Browser"| FE
+
+    classDef snowflake fill:#29B5E8,stroke:#1a7494,color:#fff
+    classDef container fill:#326CE5,stroke:#1a3d7a,color:#fff
+    classDef app fill:#4CAF50,stroke:#2E7D32,color:#fff
+    classDef cortex fill:#9C27B0,stroke:#6A1B9A,color:#fff
+    classDef storage fill:#FF9800,stroke:#E65100,color:#fff
+    classDef external fill:#607D8B,stroke:#37474F,color:#fff
+    classDef user fill:#2196F3,stroke:#1565C0,color:#fff
+
+    class SF snowflake
+    class SPCS container
+    class APP,FE,BE,CE app
+    class CORTEX,LLM cortex
+    class STORAGE,SECRETS,TABLES storage
+    class EXT,SERPER,WEB external
+    class USER user
