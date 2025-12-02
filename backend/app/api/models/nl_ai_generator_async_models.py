@@ -178,3 +178,60 @@ class WorkflowGetResponse(BaseModel):
             }
         }
     }
+
+
+class WorkflowSaveRequest(BaseModel):
+    """
+    Request model for saving/updating a workflow.
+
+    Fields:
+        title: Optional new title for the workflow.
+        user_id: Optional user identifier for the workflow.
+    """
+
+    title: Optional[str] = Field(
+        None,
+        description="New title for the workflow.",
+        max_length=255,
+    )
+    user_id: Optional[str] = Field(
+        None,
+        description="User identifier for tracking purposes.",
+    )
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "title": "My Custom Workflow Name",
+                "user_id": "user_123",
+            }
+        }
+    }
+
+
+class WorkflowSaveResponse(BaseModel):
+    """
+    Response model for saving a workflow.
+
+    Fields:
+        success: Whether the save was successful.
+        workflow_id: The workflow ID that was saved.
+        title: The saved title.
+        message: Optional message about the operation.
+    """
+
+    success: bool
+    workflow_id: str
+    title: Optional[str] = None
+    message: Optional[str] = None
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "success": True,
+                "workflow_id": "123e4567-e89b-12d3-a456-426614174000",
+                "title": "My Custom Workflow Name",
+                "message": "Workflow saved successfully",
+            }
+        }
+    }

@@ -1178,16 +1178,20 @@ def generate_nl_ai_payload(
                             messages=[{"role": "user", "content": mermaid_input}]
                         )
 
-                        print(mermaid_response)
                         # Extract JSON from LLM output
                         mermaid_json = extract_json_from_text(mermaid_response)
-                        mermaid_chart = (
-                            json.loads(mermaid_json)
-                            .get("mermaid_chart")
-                            .replace("```mermaid", "")
-                            .replace("```", "")
-                        )
+                        mermaid_chart_raw = json.loads(mermaid_json).get("mermaid_chart")
+                        if mermaid_chart_raw:
+                            mermaid_chart = (
+                                mermaid_chart_raw
+                                .replace("```mermaid", "")
+                                .replace("```", "")
+                            )
+                        else:
+                            logger.warning("Mermaid chart LLM response did not contain 'mermaid_chart' key")
+                            mermaid_chart = None
                     except Exception as e:
+                        logger.warning(f"Failed to generate mermaid chart: {e}")
                         mermaid_chart = None
                     # --- END: Mermaid chart LLM call ---
                     title_generated = _extract_title_from_mermaid(mermaid_chart)
@@ -1327,10 +1331,9 @@ def classify_workflow_type(
         for placeholder, value in substitutions.items():
             classifier_prompt = classifier_prompt.replace(placeholder, value)
 
-        # Use a fast, lightweight model for classification
         from app.handlers.lite_llm_handler import get_llm
 
-        llm = get_llm(provider="openai", model="gpt-4o-mini", max_tokens=max_tokens)
+        llm = get_llm(provider="snowflake", model="claude-3-5-sonnet", max_tokens=max_tokens)
 
         # Call LLM
         response_str = llm.call(

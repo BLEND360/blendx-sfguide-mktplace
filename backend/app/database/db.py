@@ -145,8 +145,8 @@ def create_snowflake_engine():
         # Only pass account/host if they're explicitly set (for local testing)
         url_params = {
             "warehouse": settings.snowflake_warehouse,
-            # "database": settings.snowflake_database,
-            # "schema": settings.snowflake_schema,
+            "database": settings.snowflake_database,
+            "schema": settings.snowflake_schema,
             "authenticator": "oauth",
             "token": oauth_token,
         }

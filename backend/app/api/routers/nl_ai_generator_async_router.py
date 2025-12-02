@@ -15,7 +15,10 @@ from app.api.models.nl_ai_generator_async_models import (
     NLAIGeneratorAsyncRequest,
     NLAIGeneratorAsyncResponse,
     WorkflowGetResponse,
+    WorkflowListResponse,
     WorkflowData,
+    WorkflowSaveRequest,
+    WorkflowSaveResponse,
 )
 
 router = APIRouter()
@@ -224,6 +227,79 @@ async def nl_ai_generator_async_endpoint(
 
 
 @router.get(
+    "/nl-ai-generator-async/workflows",
+    response_model=WorkflowListResponse,
+    tags=["NL AI Generator"],
+    summary="List all generated workflows",
+    description="Get a list of all workflows generated through the NL generator. "
+    "Supports filtering by status and limiting results.",
+)
+async def list_workflows(
+    limit: Optional[int] = 20,
+    status_filter: Optional[str] = None,
+):
+    """
+    List all workflows generated through the NL generator.
+
+    This endpoint:
+    - Returns all workflows ordered by creation date (newest first)
+    - Supports optional limit parameter
+    - Can filter by status (PENDING, COMPLETED, FAILED)
+
+    Args:
+        limit: Maximum number of workflows to return (default 20)
+        status_filter: Optional status to filter by
+
+    Returns:
+        WorkflowListResponse: List of workflows
+
+    Raises:
+        HTTPException: If server error occurs
+    """
+    try:
+        from app.database.db import get_new_db_session
+        from app.database.repositories.workflows_repository import WorkflowsRepository
+
+        with get_new_db_session() as db:
+            workflow_repo = WorkflowsRepository(db)
+            workflows = workflow_repo.get_all_workflows(limit=limit, stable_only=True)
+
+            # Filter by status if provided
+            if status_filter:
+                workflows = [w for w in workflows if w.status == status_filter]
+
+            workflow_list = []
+            for w in workflows:
+                workflow_list.append(
+                    WorkflowData(
+                        workflow_id=w.workflow_id,
+                        version=w.version,
+                        type=w.type,
+                        status=w.status,
+                        mermaid=w.mermaid,
+                        title=w.title,
+                        rationale=w.rationale or "",
+                        yaml_text=w.yaml_text or "",
+                        user_id=w.user_id,
+                        model=w.model,
+                        stable=w.stable,
+                        created_at=w.created_at,
+                        updated_at=getattr(w, "updated_at", None),
+                    )
+                )
+
+            return WorkflowListResponse(
+                workflows=workflow_list,
+                total=len(workflow_list),
+                limit=limit,
+            )
+
+    except Exception as e:
+        logger.error(f"Error listing workflows: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@router.get(
     "/nl-ai-generator-async/{workflow_id}",
     response_model=WorkflowGetResponse,
     tags=["NL AI Generator"],
@@ -280,4 +356,97 @@ async def get_workflow_result(workflow_id: str):
 
     except Exception as e:
         logger.error(f"Error getting workflow {workflow_id}: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@router.put(
+    "/nl-ai-generator-async/{workflow_id}",
+    response_model=WorkflowSaveResponse,
+    tags=["NL AI Generator"],
+    summary="Save/update a workflow",
+    description="Save or update a workflow with a custom title. "
+    "Use this endpoint to explicitly save a generated workflow to the history.",
+)
+async def save_workflow(
+    workflow_id: str,
+    request: WorkflowSaveRequest,
+):
+    """
+    Save or update a workflow.
+
+    This endpoint:
+    - Updates the workflow title if provided
+    - Associates a user_id with the workflow if provided
+    - Can be used to explicitly save a workflow after generation
+
+    Args:
+        workflow_id: The workflow identifier to update
+        request: Save request with optional title and user_id
+
+    Returns:
+        WorkflowSaveResponse: Result of the save operation
+
+    Raises:
+        HTTPException: If workflow not found or server error
+    """
+    try:
+        from app.database.db import get_new_db_session
+        from app.database.repositories.workflows_repository import WorkflowsRepository
+
+        with get_new_db_session() as db:
+            workflow_repo = WorkflowsRepository(db)
+
+            # Check if workflow exists
+            workflow = workflow_repo.get_workflow(workflow_id)
+            if not workflow:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Workflow {workflow_id} not found"
+                )
+
+            # Build update data
+            update_data = {}
+
+            if request.title is not None:
+                # Check for duplicate titles if user_id is provided
+                user_id = request.user_id or workflow.user_id
+                if user_id and request.title:
+                    if workflow_repo.check_title_exists_for_user(
+                        request.title, user_id, exclude_workflow_id=workflow_id
+                    ):
+                        raise HTTPException(
+                            status_code=400,
+                            detail=f"A workflow with title '{request.title}' already exists"
+                        )
+                update_data["title"] = request.title
+                update_data["stable"] = True  # Mark as stable when saved
+
+            # Update workflow
+            if update_data:
+                success = workflow_repo.update_workflow(
+                    workflow_id,
+                    workflow.version,
+                    update_data,
+                )
+
+                if not success:
+                    raise HTTPException(
+                        status_code=500,
+                        detail="Failed to update workflow"
+                    )
+
+            # Get updated workflow
+            updated_workflow = workflow_repo.get_workflow(workflow_id)
+
+            return WorkflowSaveResponse(
+                success=True,
+                workflow_id=workflow_id,
+                title=updated_workflow.title if updated_workflow else request.title,
+                message="Workflow saved successfully",
+            )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error saving workflow {workflow_id}: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")

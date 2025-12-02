@@ -155,9 +155,9 @@ Once the application is running, open the URL returned by `app_url()` to access 
 - **TEST LITELLM** - Test LiteLLM integration
 - **TEST SECRETS** - Verify secret configuration
 - **TEST SERPER** - Test Serper API connectivity
-- **RUN CREW** - Execute a basic CrewAI workflow
-- **RUN CREW WITH EXTERNAL TOOL** - Execute workflow with Serper web search
-- **LIST CREWS** - View execution history
+- **RUN TEST CREW** - Execute a basic CrewAI workflow
+- **RUN TEST EXTERNAL TOOL** - Execute workflow with Serper web search
+- **LIST TEST CREWS** - View execution history of TEST crews
 
 ---
 

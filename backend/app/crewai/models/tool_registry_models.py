@@ -5,11 +5,14 @@ This module contains Pydantic models for validating tool registry configurations
 including tool implementations, factories, and registry settings.
 """
 
+import logging
 import os
 from typing import Any, Dict, List, Optional, Set, Union
 
 import yaml
 from pydantic import BaseModel, Field, field_validator
+
+logger = logging.getLogger(__name__)
 
 
 class CustomToolImplementationConfig(BaseModel):
@@ -101,7 +104,7 @@ class ToolsRegistry:
             self._build_available_tools()
         except Exception as e:
             # If validation fails, create empty registry
-            print(f"Warning: Failed to load tools registry: {e}")
+            logger.warning(f"Failed to load tools registry: {e}")
             self._registry_config = ToolsRegistryConfig()
             self._available_tools = set()
 

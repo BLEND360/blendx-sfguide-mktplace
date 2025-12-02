@@ -10,6 +10,30 @@
           </v-card-title>
           <v-card-text class="pa-3">
             <v-btn
+              color="info"
+              block
+              class="mb-3"
+              @click="showInstructions = true"
+              dark
+            >
+              <v-icon left>mdi-help-circle</v-icon>
+              INSTRUCTIONS
+            </v-btn>
+
+            <v-btn
+              color="info"
+              block
+              class="mb-3"
+              @click="showExampleWorkflow = true"
+              dark
+            >
+              <v-icon left>mdi-file-document-outline</v-icon>
+              EXAMPLE WORKFLOW
+            </v-btn>
+
+            <v-divider class="mb-3"></v-divider>
+
+            <v-btn
               color="secondary"
               block
               class="mb-2 dark-text"
@@ -68,7 +92,7 @@
               :disabled="anyTestLoading"
             >
               <v-icon left>mdi-play</v-icon>
-              RUN CREW
+              RUN TEST CREW
             </v-btn>
 
             <v-btn
@@ -80,20 +104,20 @@
               :disabled="anyTestLoading"
             >
               <v-icon left>mdi-tools</v-icon>
-              RUN CREW EXTERNAL
+              RUN TEST CREW EXTERNAL TOOL
             </v-btn>
 
             <v-btn
-              color="success"
+              color="accent"
               block
-              class="mb-2"
+              class="mb-2 dark-text"
               @click="listCrews"
               :loading="listingCrews"
               :disabled="anyTestLoading"
               dark
             >
               <v-icon left>mdi-format-list-bulleted</v-icon>
-              LIST CREWS
+              LIST TEST CREWS
             </v-btn>
           </v-card-text>
 
@@ -111,20 +135,20 @@
           <!-- Crew Executions Table -->
           <v-card-text v-if="crewExecutions" class="pa-3 pt-0">
             <v-divider class="mb-3"></v-divider>
-            <v-card outlined>
-              <v-card-subtitle class="pb-1">Crew Executions:</v-card-subtitle>
+            <v-card outlined dark class="crew-table-card">
+              <v-card-subtitle class="pb-1 white--text">Crew Executions:</v-card-subtitle>
               <v-card-text class="pt-0">
-                <v-simple-table dense>
+                <v-simple-table dense dark class="crew-table">
                   <template v-slot:default>
                     <thead>
                       <tr>
-                        <th>ID</th>
-                        <th>Status</th>
+                        <th class="white--text">ID</th>
+                        <th class="white--text">Status</th>
                       </tr>
                     </thead>
                     <tbody>
                       <tr v-for="exec in crewExecutions" :key="exec.execution_id">
-                        <td class="text-monospace">{{ exec.execution_id.substring(0, 8) }}...</td>
+                        <td class="text-monospace white--text">{{ exec.execution_id.substring(0, 8) }}...</td>
                         <td>
                           <v-chip x-small :color="getStatusColor(exec.status)" dark>
                             {{ exec.status }}
@@ -137,27 +161,117 @@
               </v-card-text>
             </v-card>
           </v-card-text>
+
         </v-card>
       </v-col>
 
       <!-- Main Chat Area -->
       <v-col cols="12" md="9" class="chat-col">
         <v-card class="fill-height d-flex flex-column" tile>
-          <v-card-title class="primary white--text py-3">
-            <v-icon left dark>mdi-chat</v-icon>
-            NL Generator Chat
+          <v-card-title class="primary white--text py-3 d-flex align-center">
+            <v-icon left dark>{{ showHistoryInMain ? 'mdi-history' : 'mdi-chat' }}</v-icon>
+            {{ showHistoryInMain ? 'Workflow History' : 'NL Generator Chat' }}
+            <v-spacer></v-spacer>
+            <v-btn
+              small
+              :color="showHistoryInMain ? 'white' : 'secondary'"
+              :outlined="showHistoryInMain"
+              :class="showHistoryInMain ? '' : 'dark-text'"
+              @click="toggleHistoryView"
+              :loading="loadingHistory"
+              class="ml-2"
+            >
+              <v-icon left small>{{ showHistoryInMain ? 'mdi-chat' : 'mdi-history' }}</v-icon>
+              {{ showHistoryInMain ? 'Back to Chat' : 'Load History' }}
+            </v-btn>
           </v-card-title>
 
           <!-- Chat Messages Area -->
           <v-card-text class="flex-grow-1 chat-messages pa-4" ref="chatMessages">
-            <!-- Welcome message -->
-            <div v-if="chatMessages.length === 0" class="text-center grey--text py-8">
-              <v-icon size="64" color="grey lighten-1">mdi-chat-processing-outline</v-icon>
-              <p class="mt-4">Send a message to generate a workflow with the NL Generator</p>
+            <!-- Workflow History View -->
+            <div v-if="showHistoryInMain">
+              <!-- Loading state -->
+              <div v-if="loadingHistory" class="text-center py-8">
+                <v-progress-circular indeterminate color="primary" size="50"></v-progress-circular>
+                <p class="mt-4 grey--text">Loading workflow history...</p>
+              </div>
+
+              <!-- Empty state -->
+              <div v-else-if="!workflowHistory || workflowHistory.length === 0" class="text-center grey--text py-8">
+                <v-icon size="64" color="grey lighten-1">mdi-history</v-icon>
+                <p class="mt-4">No workflows found in history</p>
+                <v-btn color="primary" @click="loadWorkflowHistory" class="mt-2">
+                  <v-icon left>mdi-refresh</v-icon>
+                  Refresh
+                </v-btn>
+              </div>
+
+              <!-- Workflow History Grid -->
+              <div v-else>
+                <v-row>
+                  <v-col
+                    v-for="workflow in workflowHistory"
+                    :key="workflow.workflow_id"
+                    cols="12"
+                    sm="6"
+                    md="4"
+                    lg="3"
+                  >
+                    <v-card
+                      class="workflow-card"
+                      outlined
+                      hover
+                      @click="viewWorkflowDetails(workflow)"
+                    >
+                      <v-card-text class="pb-2">
+                        <div class="d-flex align-center mb-1">
+                          <v-icon small color="primary" class="mr-2">mdi-sitemap</v-icon>
+                          <span class="workflow-card-title font-weight-medium text-truncate">
+                            {{ workflow.title || 'Untitled Workflow' }}
+                          </span>
+                        </div>
+                        <div class="text-caption grey--text mb-2">
+                          <v-icon x-small class="mr-1">mdi-calendar</v-icon>
+                          {{ formatDate(workflow.created_at) }}
+                        </div>
+                        <div class="workflow-rationale-preview text-caption grey--text text--darken-1 mb-2">
+                          {{ truncateText(workflow.rationale, 100) }}
+                        </div>
+                        <v-chip x-small :color="getStatusColor(workflow.status)" dark>
+                          {{ workflow.status }}
+                        </v-chip>
+                        <v-chip v-if="workflow.type" x-small outlined class="ml-1">
+                          {{ workflow.type }}
+                        </v-chip>
+                      </v-card-text>
+                      <v-card-actions class="pt-0">
+                        <v-spacer></v-spacer>
+                        <v-btn
+                          x-small
+                          text
+                          color="primary"
+                          @click.stop="viewWorkflowDetails(workflow)"
+                        >
+                          View Details
+                          <v-icon right x-small>mdi-arrow-right</v-icon>
+                        </v-btn>
+                      </v-card-actions>
+                    </v-card>
+                  </v-col>
+                </v-row>
+              </div>
             </div>
 
-            <!-- Chat messages -->
-            <div v-for="(msg, index) in chatMessages" :key="index" class="mb-4">
+            <!-- Chat View (original) -->
+            <div v-else>
+              <!-- Welcome message -->
+              <div v-if="chatMessages.length === 0" class="text-center grey--text py-8">
+                <v-icon size="64" color="grey lighten-1">mdi-chat-processing-outline</v-icon>
+                <p class="mt-4">Send a message to generate a workflow with the NL Generator</p>
+              </div>
+
+              <!-- Chat messages -->
+              <div v-for="(msg, index) in chatMessages" :key="index" class="mb-4">
               <!-- User message -->
               <div v-if="msg.type === 'user'" class="d-flex justify-end">
                 <v-card class="user-message pa-3" color="primary" dark max-width="70%">
@@ -181,12 +295,23 @@
 
                   <!-- Success state with tabs -->
                   <div v-else-if="msg.status === 'completed'">
-                    <div class="mb-2">
-                      <v-chip small color="success" class="mr-2">
-                        <v-icon left small>mdi-check</v-icon>
-                        {{ msg.workflow.status }}
-                      </v-chip>
-                      <span class="font-weight-medium">{{ msg.workflow.title }}</span>
+                    <div class="mb-2 d-flex align-center justify-space-between">
+                      <div>
+                        <v-chip small color="success" class="mr-2">
+                          <v-icon left small>mdi-check</v-icon>
+                          {{ msg.workflow.status }}
+                        </v-chip>
+                        <span class="font-weight-medium">{{ msg.workflow.title }}</span>
+                      </div>
+                      <v-btn
+                        small
+                        color="primary"
+                        @click="openSaveDialog(index, msg.workflow)"
+                        :loading="savingWorkflow === index"
+                      >
+                        <v-icon left small>mdi-content-save</v-icon>
+                        Save
+                      </v-btn>
                     </div>
 
                     <v-tabs v-model="msg.activeTab" background-color="grey lighten-4" class="rounded">
@@ -248,6 +373,7 @@
                 </v-card>
               </div>
             </div>
+            </div>
           </v-card-text>
 
           <!-- Error Alert -->
@@ -285,6 +411,299 @@
         </v-card>
       </v-col>
     </v-row>
+
+    <!-- Example Workflow Dialog -->
+    <v-dialog v-model="showExampleWorkflow" max-width="900" scrollable>
+      <v-card>
+        <v-card-title class="primary white--text">
+          <v-icon left dark>mdi-file-document-outline</v-icon>
+          Example Workflow: AI News Summary
+          <v-spacer></v-spacer>
+          <v-btn icon dark @click="showExampleWorkflow = false">
+            <v-icon>mdi-close</v-icon>
+          </v-btn>
+        </v-card-title>
+
+        <v-card-text class="pa-4">
+          <h3 class="mb-3">Description</h3>
+          <p class="mb-4">
+            This workflow uses a <strong>News Research Crew</strong> to gather the latest AI news using SerperDev and website search tools,
+            and a <strong>Summary Crew</strong> to synthesize this information into a well-structured markdown report.
+            The flow is sequential, with the summary crew waiting for the research crew to complete before starting its work.
+            The Content Synthesizer agent uses a lower temperature (0.3) for more consistent formatting, while the News Researcher
+            uses a higher temperature (0.7) for more creative search strategies. The flow includes proper task chaining through the
+            context parameter to ensure the summary is based on the gathered news data.
+          </p>
+
+          <v-divider class="my-4"></v-divider>
+
+          <v-tabs v-model="exampleTab" background-color="grey lighten-4" class="rounded">
+            <v-tab>
+              <v-icon left small>mdi-code-braces</v-icon>
+              YAML
+            </v-tab>
+            <v-tab>
+              <v-icon left small>mdi-sitemap</v-icon>
+              Diagram
+            </v-tab>
+          </v-tabs>
+
+          <v-tabs-items v-model="exampleTab">
+            <!-- YAML Tab -->
+            <v-tab-item>
+              <v-card flat class="pa-3 mt-2">
+                <div class="d-flex justify-end mb-2">
+                  <v-btn small text color="primary" @click="copyToClipboard(exampleYaml)">
+                    <v-icon left small>mdi-content-copy</v-icon>
+                    Copy YAML
+                  </v-btn>
+                </div>
+                <pre class="yaml-text">{{ exampleYaml }}</pre>
+              </v-card>
+            </v-tab-item>
+
+            <!-- Mermaid Diagram Tab -->
+            <v-tab-item>
+              <v-card flat class="pa-3 mt-2">
+                <div class="d-flex justify-end mb-2">
+                  <v-btn small text color="primary" @click="copyToClipboard(exampleMermaid)">
+                    <v-icon left small>mdi-content-copy</v-icon>
+                    Copy Mermaid
+                  </v-btn>
+                </div>
+                <div class="mermaid-container">
+                  <div v-html="exampleMermaidSvg" v-if="exampleMermaidSvg"></div>
+                  <div v-else class="text-center grey--text pa-4">
+                    <v-progress-circular indeterminate color="primary" size="30"></v-progress-circular>
+                    <p class="mt-2">Rendering diagram...</p>
+                  </div>
+                </div>
+              </v-card>
+            </v-tab-item>
+          </v-tabs-items>
+        </v-card-text>
+
+        <v-card-actions class="pa-4">
+          <v-spacer></v-spacer>
+          <v-btn color="primary" @click="showExampleWorkflow = false">
+            Close
+          </v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+
+    <!-- Instructions Dialog -->
+    <v-dialog v-model="showInstructions" max-width="700" scrollable>
+      <v-card>
+        <v-card-title class="primary white--text">
+          <v-icon left dark>mdi-information</v-icon>
+          How to Use This Application
+          <v-spacer></v-spacer>
+          <v-btn icon dark @click="showInstructions = false">
+            <v-icon>mdi-close</v-icon>
+          </v-btn>
+        </v-card-title>
+
+        <v-card-text class="pa-4">
+          <h3 class="mb-3">NL Generator Chat</h3>
+          <p class="mb-3">
+            The main feature of this application is the <strong>NL Generator Chat</strong>.
+            It allows you to describe a workflow in natural language, and the AI will generate:
+          </p>
+          <ul class="mb-4">
+            <li><strong>YAML Configuration:</strong> A complete CrewAI workflow definition</li>
+            <li><strong>Rationale:</strong> An explanation of why the workflow was designed this way</li>
+            <li><strong>Mermaid Diagram:</strong> A visual representation of the workflow</li>
+          </ul>
+
+          <v-divider class="my-4"></v-divider>
+
+          <h3 class="mb-3">How to Generate a Workflow</h3>
+          <ol class="mb-4">
+            <li>Type a description of the workflow you want in the chat input</li>
+            <li>Press <kbd>Ctrl+Enter</kbd> (or <kbd>Cmd+Enter</kbd> on Mac) or click the send button</li>
+            <li>Wait for the AI to process your request (this may take a few seconds)</li>
+            <li>View the results in the three tabs: Rationale, YAML, and Diagram</li>
+            <li>Use the "Copy" buttons to copy YAML or Mermaid code</li>
+          </ol>
+
+          <v-divider class="my-4"></v-divider>
+
+          <h3 class="mb-3">Test Controls (Left Sidebar)</h3>
+          <p class="mb-2">Use these buttons to verify the system is working correctly:</p>
+          <ul class="mb-4">
+            <li><strong>TEST CORTEX:</strong> Tests the Snowflake Cortex LLM connection</li>
+            <li><strong>TEST LITELLM:</strong> Tests the LiteLLM integration</li>
+            <li><strong>TEST SECRETS:</strong> Verifies that secrets (like API keys) are configured</li>
+            <li><strong>TEST SERPER:</strong> Tests the Serper search API integration</li>
+          </ul>
+
+          <v-divider class="my-4"></v-divider>
+
+          <h3 class="mb-3">Crew Execution</h3>
+          <p class="mb-2">Run pre-configured AI agent crews:</p>
+          <ul class="mb-4">
+            <li><strong>RUN TEST CREW:</strong> Executes the default CrewAI workflow</li>
+            <li><strong>RUN TEST EXTERNAL TOOL:</strong> Executes a crew with external tools (like Serper)</li>
+            <li><strong>LIST TEST CREWS:</strong> Shows recent crew execution history and their status</li>
+          </ul>
+
+          <v-alert type="info" dense class="mt-4">
+            <strong>Tip:</strong> If you encounter errors, use the TEST buttons first to diagnose which service might be unavailable.
+          </v-alert>
+        </v-card-text>
+
+        <v-card-actions class="pa-4">
+          <v-spacer></v-spacer>
+          <v-btn color="primary" @click="showInstructions = false">
+            Got it!
+          </v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+
+    <!-- Workflow Details Dialog -->
+    <v-dialog v-model="showWorkflowDetails" max-width="900" scrollable>
+      <v-card v-if="selectedWorkflow">
+        <v-card-title class="primary white--text">
+          <v-icon left dark>mdi-sitemap</v-icon>
+          {{ selectedWorkflow.title || 'Workflow Details' }}
+          <v-spacer></v-spacer>
+          <v-btn icon dark @click="showWorkflowDetails = false">
+            <v-icon>mdi-close</v-icon>
+          </v-btn>
+        </v-card-title>
+
+        <v-card-text class="pa-4">
+          <div class="mb-3">
+            <v-chip small :color="getStatusColor(selectedWorkflow.status)" dark class="mr-2">
+              {{ selectedWorkflow.status }}
+            </v-chip>
+            <v-chip small outlined class="mr-2">
+              <v-icon left small>mdi-calendar</v-icon>
+              {{ formatDate(selectedWorkflow.created_at) }}
+            </v-chip>
+            <v-chip small outlined v-if="selectedWorkflow.type">
+              <v-icon left small>mdi-tag</v-icon>
+              {{ selectedWorkflow.type }}
+            </v-chip>
+          </div>
+
+          <v-tabs v-model="workflowDetailsTab" background-color="grey lighten-4" class="rounded">
+            <v-tab>
+              <v-icon left small>mdi-text-box-outline</v-icon>
+              Rationale
+            </v-tab>
+            <v-tab>
+              <v-icon left small>mdi-code-braces</v-icon>
+              YAML
+            </v-tab>
+            <v-tab>
+              <v-icon left small>mdi-sitemap</v-icon>
+              Diagram
+            </v-tab>
+          </v-tabs>
+
+          <v-tabs-items v-model="workflowDetailsTab">
+            <!-- Rationale Tab -->
+            <v-tab-item>
+              <v-card flat class="pa-3 mt-2">
+                <div class="rationale-text">{{ selectedWorkflow.rationale || 'No rationale available' }}</div>
+              </v-card>
+            </v-tab-item>
+
+            <!-- YAML Tab -->
+            <v-tab-item>
+              <v-card flat class="pa-3 mt-2">
+                <div class="d-flex justify-end mb-2">
+                  <v-btn small text color="primary" @click="copyToClipboard(selectedWorkflow.yaml_text)">
+                    <v-icon left small>mdi-content-copy</v-icon>
+                    Copy YAML
+                  </v-btn>
+                </div>
+                <pre class="yaml-text">{{ selectedWorkflow.yaml_text || 'No YAML available' }}</pre>
+              </v-card>
+            </v-tab-item>
+
+            <!-- Mermaid Diagram Tab -->
+            <v-tab-item>
+              <v-card flat class="pa-3 mt-2">
+                <div class="d-flex justify-end mb-2">
+                  <v-btn small text color="primary" @click="copyToClipboard(selectedWorkflow.mermaid)">
+                    <v-icon left small>mdi-content-copy</v-icon>
+                    Copy Mermaid
+                  </v-btn>
+                </div>
+                <div class="mermaid-container">
+                  <div v-html="selectedWorkflowMermaidSvg" v-if="selectedWorkflowMermaidSvg"></div>
+                  <div v-else-if="selectedWorkflow.mermaid" class="text-center grey--text pa-4">
+                    <v-progress-circular indeterminate color="primary" size="30"></v-progress-circular>
+                    <p class="mt-2">Rendering diagram...</p>
+                  </div>
+                  <div v-else class="text-center grey--text pa-4">
+                    <v-icon size="48" color="grey lighten-1">mdi-sitemap</v-icon>
+                    <p class="mt-2">No diagram available</p>
+                  </div>
+                </div>
+              </v-card>
+            </v-tab-item>
+          </v-tabs-items>
+        </v-card-text>
+
+        <v-card-actions class="pa-4">
+          <v-spacer></v-spacer>
+          <v-btn color="primary" @click="showWorkflowDetails = false">
+            Close
+          </v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+
+    <!-- Save Workflow Dialog -->
+    <v-dialog v-model="showSaveDialog" max-width="500">
+      <v-card>
+        <v-card-title class="primary white--text">
+          <v-icon left dark>mdi-content-save</v-icon>
+          Save Workflow
+          <v-spacer></v-spacer>
+          <v-btn icon dark @click="showSaveDialog = false">
+            <v-icon>mdi-close</v-icon>
+          </v-btn>
+        </v-card-title>
+
+        <v-card-text class="pa-4">
+          <p class="mb-4">Save this workflow to your history. You can modify the name if you'd like.</p>
+          <v-text-field
+            v-model="saveWorkflowTitle"
+            label="Workflow Title"
+            outlined
+            dense
+            placeholder="Enter a descriptive name"
+            autofocus
+            @keydown.enter="confirmSaveWorkflow"
+          ></v-text-field>
+          <v-alert v-if="saveError" type="error" dense class="mt-2">
+            {{ saveError }}
+          </v-alert>
+        </v-card-text>
+
+        <v-card-actions class="pa-4">
+          <v-spacer></v-spacer>
+          <v-btn text @click="showSaveDialog = false">
+            Cancel
+          </v-btn>
+          <v-btn
+            color="primary"
+            @click="confirmSaveWorkflow"
+            :loading="savingWorkflow !== null"
+            :disabled="!saveWorkflowTitle.trim()"
+          >
+            <v-icon left>mdi-content-save</v-icon>
+            Save
+          </v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
   </v-container>
 </template>
 
@@ -296,6 +715,152 @@ export default {
   name: 'LLMCall',
 
   data: () => ({
+    // UI state
+    showInstructions: false,
+    showExampleWorkflow: false,
+    exampleTab: 0,
+    exampleMermaidSvg: null,
+
+    // Example workflow data
+    exampleYaml: `flow:
+  flow_name: "AI News Summary Flow"
+  verbose: true
+  class_name: "AINewsSummaryFlow"
+  crews: ["News Research Crew", "Summary Crew"]
+
+execution_group_name: "AI News Analysis"
+type: "RAG"
+
+crews:
+  - name: "News Research Crew"
+    process: "sequential"
+    verbose: true
+    memory: true
+    manager: null
+    agents: ["AI News Researcher"]
+    tasks: ["Gather AI News"]
+
+  - name: "Summary Crew"
+    process: "sequential"
+    verbose: true
+    memory: true
+    manager: null
+    agents: ["Content Synthesizer"]
+    tasks: ["Create Summary Report"]
+
+agents:
+  - role: "AI News Researcher"
+    goal: "Gather and analyze the latest artificial intelligence news and developments"
+    backstory: "Expert technology researcher specializing in AI industry trends and developments"
+    tools:
+      - crewai_tools: ["SerperDevTool", "WebsiteSearchTool"]
+    verbose: true
+    llm:
+      provider: "openai"
+      model: "gpt-4-turbo-preview"
+      temperature: 0.7
+    allow_delegation: false
+
+  - role: "Content Synthesizer"
+    goal: "Create clear, well-structured markdown summaries of AI news and developments"
+    backstory: "Experienced technical writer specializing in creating concise, informative summaries of complex topics"
+    verbose: true
+    llm:
+      provider: "openai"
+      model: "gpt-4-turbo-preview"
+      temperature: 0.3
+    allow_delegation: false
+
+tasks:
+  - name: "Gather AI News"
+    description: "Research and collect the latest significant news and developments in artificial intelligence from the past week"
+    agent: "AI News Researcher"
+    expected_output: "A comprehensive collection of recent AI news items with sources and key details"
+    tools:
+      - crewai_tools: ["SerperDevTool", "WebsiteSearchTool"]
+    context: []
+    output_file: null
+
+  - name: "Create Summary Report"
+    description: "Create a well-structured markdown report summarizing the key AI news and developments, organized by category and importance"
+    agent: "Content Synthesizer"
+    expected_output: "A markdown-formatted report summarizing AI news with clear sections, highlights, and source references"
+    tools: []
+    context: ["Gather AI News"]
+    output_file: null
+
+flow_methods:
+    - name: "run_research"
+      type: "start"
+      action: "run_crew"
+      crew: "News Research Crew"
+      output: "News research completed"
+    - name: "run_summary"
+      type: "listen"
+      listen_to: ["run_research"]
+      action: "run_crew"
+      crew: "Summary Crew"
+      output: "Summary creation completed"
+    - name: "flow_complete"
+      type: "listen"
+      listen_to: ["run_summary"]
+      output: "AI news summary flow completed successfully"`,
+
+    exampleMermaid: `---
+title: AI News Summary Flow
+---
+flowchart LR
+    %% Global Tools Section
+    Tool_SerperDev[("SerperDev API")]
+    Tool_WebSearch[("Website Search")]
+
+    %% News Research Phase
+    subgraph Crew_Research["News Research Crew"]
+        Agent_Researcher(("AI News Researcher Agent"))
+        Task_GatherNews["Gather AI News"]
+        Flow_Research{{"Research Complete"}}
+
+        Agent_Researcher -->|"executes"| Task_GatherNews
+        Task_GatherNews -->|"completes"| Flow_Research
+    end
+
+    %% Summary Creation Phase
+    subgraph Crew_Summary["Summary Crew"]
+        Agent_Synthesizer(("Content Synthesizer Agent"))
+        Task_CreateSummary["Create Summary Report"]
+        Flow_Summary{{"Summary Complete"}}
+
+        Agent_Synthesizer -->|"executes"| Task_CreateSummary
+        Task_CreateSummary -->|"completes"| Flow_Summary
+    end
+
+    %% Final Output
+    FinalReport[/"AI News Summary Report.md"/]
+
+    %% Cross-crew Dependencies
+    Flow_Research -->|"provides news data"| Task_CreateSummary
+    Flow_Summary ==>|"delivers"| FinalReport
+
+    %% Tool Usage
+    Tool_SerperDev -.->|"supports research"| Agent_Researcher
+    Tool_WebSearch -.->|"supports research"| Agent_Researcher
+
+    %% Apply consistent pastel colors
+    class Crew_Research,Crew_Summary crewStyle
+    class Agent_Researcher,Agent_Synthesizer agentStyle
+    class Task_GatherNews,Task_CreateSummary taskStyle
+    class Flow_Research,Flow_Summary flowStyle
+    class Tool_SerperDev,Tool_WebSearch toolStyle
+    class FinalReport outputStyle
+
+    %% Color definitions
+    classDef crewStyle fill:#E8F4FD,stroke:#5B9BD5,stroke-width:2px
+    classDef agentStyle fill:#F2E8F7,stroke:#9575CD,stroke-width:2px
+    classDef taskStyle fill:#E8F5E8,stroke:#81C784,stroke-width:2px
+    classDef flowStyle fill:#FFF3E0,stroke:#FFB74D,stroke-width:2px
+    classDef toolStyle fill:#FCE4EC,stroke:#F06292,stroke-width:2px
+    classDef outputStyle fill:#FFEBEE,stroke:#E91E63,stroke-width:3px`,
+
     // Chat state
     userMessage: '',
     chatMessages: [],
@@ -333,13 +898,40 @@ export default {
     // NL Generator polling
     nlPollingInterval: null,
     nlPollingAttempts: 0,
+
+    // Workflow History
+    workflowHistory: null,
+    loadingHistory: false,
+    showWorkflowDetails: false,
+    selectedWorkflow: null,
+    workflowDetailsTab: 0,
+    showHistoryInMain: false,
+    selectedWorkflowMermaidSvg: null,
+
+    // Save Workflow Dialog
+    showSaveDialog: false,
+    saveWorkflowTitle: '',
+    workflowToSave: null,
+    savingWorkflow: null,
+    saveMessageIndex: null,
+    saveError: null,
   }),
 
   computed: {
     anyTestLoading() {
       return this.testingCortex || this.testingLitellm || this.testingSecrets ||
              this.testingSerper || this.loading || this.loadingExternal ||
-             this.listingCrews || this.isGenerating
+             this.listingCrews || this.isGenerating || this.loadingHistory
+    }
+  },
+
+  watch: {
+    showExampleWorkflow(val) {
+      if (val && !this.exampleMermaidSvg) {
+        this.$nextTick(() => {
+          this.renderExampleMermaid()
+        })
+      }
     }
   },
 
@@ -476,6 +1068,10 @@ export default {
     },
 
     async renderMermaid(messageIndex, mermaidCode) {
+      if (!mermaidCode) {
+        this.$set(this.chatMessages[messageIndex], 'mermaidSvg', `<pre class="error-text">No diagram data available</pre>`)
+        return
+      }
       try {
         const id = `mermaid-${messageIndex}-${Date.now()}`
         const { svg } = await mermaid.render(id, mermaidCode)
@@ -483,6 +1079,17 @@ export default {
       } catch (error) {
         console.error('Error rendering mermaid:', error)
         this.$set(this.chatMessages[messageIndex], 'mermaidSvg', `<pre class="error-text">Error rendering diagram: ${error.message}</pre>`)
+      }
+    },
+
+    async renderExampleMermaid() {
+      try {
+        const id = `mermaid-example-${Date.now()}`
+        const { svg } = await mermaid.render(id, this.exampleMermaid)
+        this.exampleMermaidSvg = svg
+      } catch (error) {
+        console.error('Error rendering example mermaid:', error)
+        this.exampleMermaidSvg = `<pre class="error-text">Error rendering diagram: ${error.message}</pre>`
       }
     },
 
@@ -752,8 +1359,148 @@ export default {
       switch (status) {
         case 'COMPLETED': return 'success'
         case 'PROCESSING': return 'info'
+        case 'PENDING': return 'warning'
         case 'ERROR': return 'error'
+        case 'FAILED': return 'error'
         default: return 'grey'
+      }
+    },
+
+    // Workflow History methods
+    async loadWorkflowHistory() {
+      this.loadingHistory = true
+      this.error = null
+
+      const baseUrl = process.env.VUE_APP_API_URL
+
+      try {
+        const response = await axios.get(baseUrl + '/nl-ai-generator-async/workflows?limit=20&status_filter=COMPLETED')
+        if (response.data.workflows) {
+          this.workflowHistory = response.data.workflows
+        } else {
+          this.workflowHistory = []
+        }
+      } catch (error) {
+        this.error = "Error loading workflow history: " + (error.response?.data?.detail || error.message)
+        this.workflowHistory = []
+      } finally {
+        this.loadingHistory = false
+      }
+    },
+
+    async toggleHistoryView() {
+      this.showHistoryInMain = !this.showHistoryInMain
+      if (this.showHistoryInMain && (!this.workflowHistory || this.workflowHistory.length === 0)) {
+        await this.loadWorkflowHistory()
+      }
+    },
+
+    truncateText(text, maxLength) {
+      if (!text) return ''
+      if (text.length <= maxLength) return text
+      return text.substring(0, maxLength) + '...'
+    },
+
+    viewWorkflowDetails(workflow) {
+      this.selectedWorkflow = workflow
+      this.workflowDetailsTab = 0
+      this.selectedWorkflowMermaidSvg = null
+      this.showWorkflowDetails = true
+
+      // Render mermaid diagram if available
+      if (workflow.mermaid) {
+        this.$nextTick(() => {
+          this.renderSelectedWorkflowMermaid(workflow.mermaid)
+        })
+      }
+    },
+
+    async renderSelectedWorkflowMermaid(mermaidCode) {
+      if (!mermaidCode) return
+      try {
+        const id = `mermaid-details-${Date.now()}`
+        const { svg } = await mermaid.render(id, mermaidCode)
+        this.selectedWorkflowMermaidSvg = svg
+      } catch (error) {
+        console.error('Error rendering mermaid:', error)
+        this.selectedWorkflowMermaidSvg = `<pre class="error-text">Error rendering diagram: ${error.message}</pre>`
+      }
+    },
+
+    formatDate(dateString) {
+      if (!dateString) return ''
+      const date = new Date(dateString)
+      return date.toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      })
+    },
+
+    // Save Workflow methods
+    openSaveDialog(messageIndex, workflow) {
+      this.saveMessageIndex = messageIndex
+      this.workflowToSave = workflow
+      // Use existing title, or extract from YAML, or generate default
+      this.saveWorkflowTitle = workflow.title || this.extractFlowNameFromYaml(workflow.yaml_text) || ''
+      this.saveError = null
+      this.showSaveDialog = true
+    },
+
+    extractFlowNameFromYaml(yamlText) {
+      if (!yamlText) return null
+      try {
+        // Look for flow_name or crew_name in the YAML
+        const flowNameMatch = yamlText.match(/flow_name:\s*["']?([^"'\n]+)["']?/i)
+        if (flowNameMatch) return flowNameMatch[1].trim()
+
+        const crewNameMatch = yamlText.match(/crew_name:\s*["']?([^"'\n]+)["']?/i)
+        if (crewNameMatch) return crewNameMatch[1].trim()
+
+        return null
+      } catch (e) {
+        return null
+      }
+    },
+
+    async confirmSaveWorkflow() {
+      if (!this.saveWorkflowTitle.trim() || !this.workflowToSave) return
+
+      this.savingWorkflow = this.saveMessageIndex
+      this.saveError = null
+
+      const baseUrl = process.env.VUE_APP_API_URL
+
+      try {
+        const response = await axios.put(
+          baseUrl + `/nl-ai-generator-async/${this.workflowToSave.workflow_id}`,
+          {
+            title: this.saveWorkflowTitle.trim()
+          }
+        )
+
+        if (response.data.success) {
+          // Update the workflow title in the chat message
+          if (this.saveMessageIndex !== null && this.chatMessages[this.saveMessageIndex]) {
+            this.chatMessages[this.saveMessageIndex].workflow.title = this.saveWorkflowTitle.trim()
+          }
+
+          // Refresh workflow history if it's loaded
+          if (this.workflowHistory) {
+            this.loadWorkflowHistory()
+          }
+
+          this.showSaveDialog = false
+        } else {
+          this.saveError = response.data.message || 'Failed to save workflow'
+        }
+      } catch (error) {
+        console.error('Error saving workflow:', error)
+        this.saveError = error.response?.data?.detail || error.message || 'Failed to save workflow'
+      } finally {
+        this.savingWorkflow = null
       }
     }
   },
@@ -815,6 +1562,31 @@ export default {
 .sidebar-dark .v-data-table td {
   color: white !important;
   border-color: rgba(255, 255, 255, 0.2) !important;
+}
+
+/* Crew Executions Table Styles */
+.crew-table-card {
+  background-color: #1e1e1e !important;
+  border-color: rgba(255, 255, 255, 0.3) !important;
+}
+
+.crew-table {
+  background-color: #1e1e1e !important;
+}
+
+.crew-table th,
+.crew-table td {
+  background-color: #1e1e1e !important;
+  border-color: rgba(255, 255, 255, 0.2) !important;
+  color: white !important;
+}
+
+.crew-table >>> .v-data-table__wrapper {
+  background-color: #1e1e1e !important;
+}
+
+.crew-table >>> table {
+  background-color: #1e1e1e !important;
 }
 
 .dark-text {
@@ -913,5 +1685,58 @@ export default {
 .test-result-card {
   max-height: 300px;
   overflow-y: auto;
+}
+
+/* Workflow History Styles */
+.workflow-history-list {
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.workflow-history-item {
+  background-color: rgba(255, 255, 255, 0.1) !important;
+  border-color: rgba(255, 255, 255, 0.2) !important;
+  transition: background-color 0.2s ease;
+}
+
+.workflow-history-item:hover {
+  background-color: rgba(255, 255, 255, 0.2) !important;
+}
+
+.workflow-title {
+  font-weight: 500;
+  font-size: 0.9em;
+  color: white;
+}
+
+.workflow-date {
+  font-size: 0.75em;
+}
+
+/* Main Area Workflow History Grid Styles */
+.workflow-card {
+  cursor: pointer;
+  transition: all 0.2s ease;
+  height: 100%;
+}
+
+.workflow-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.workflow-card .v-card__title {
+  font-size: 0.95rem !important;
+  line-height: 1.3;
+  word-break: break-word;
+}
+
+.workflow-rationale-preview {
+  line-height: 1.4;
+  max-height: 60px;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
 }
 </style>

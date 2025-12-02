@@ -7,11 +7,14 @@ Transforms all YAML files in a directory into a single escaped string, suitable 
 #!/usr/bin/env python
 
 import argparse
+import logging
 import os
 import sys
 from typing import Optional
 
 import yaml
+
+logger = logging.getLogger(__name__)
 
 
 def transform_yaml(input_dir: str) -> str:
@@ -76,12 +79,13 @@ def main():
         if args.output:
             with open(args.output, "w", encoding="utf-8") as f:
                 f.write(result)
-            print(f"Output written to {args.output}")
+            logger.info(f"Output written to {args.output}")
         else:
-            print(result)
+            # Print to stdout for CLI usage (expected behavior)
+            sys.stdout.write(result)
 
     except Exception as e:
-        print(f"Error: {e}", file=sys.stderr)
+        logger.error(f"Error: {e}")
         sys.exit(1)
 
 

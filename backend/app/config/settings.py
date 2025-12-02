@@ -96,7 +96,6 @@ class Settings(BaseSettings):
             "llm_model_name": "LLM_MODEL_NAME",
             "embedding_provider": "EMBEDDING_PROVIDER",
             "embedding_model_name": "EMBEDDING_MODEL_NAME",
-            "openai_api_key": "OPENAI_API_KEY",
             "event_logging_enabled": "EVENT_LOGGING_ENABLED",
             "database_logging_enabled": "DATABASE_LOGGING_ENABLED",
             "opik": "OPIK",
@@ -105,6 +104,12 @@ class Settings(BaseSettings):
             "blendx_hub_schema": "BLENDX_HUB_SCHEMA",
             "blendx_hub_warehouse": "BLENDX_HUB_WAREHOUSE",
             "nl_generator_default_model": "NL_GENERATOR_DEFAULT_MODEL",
+            "crew_execution_database": "CREW_EXECUTION_DATABASE",
+            "crew_execution_schema": "CREW_EXECUTION_SCHEMA",
+            "crew_execution_table": "CREW_EXECUTION_TABLE",
+            "workflows_database": "WORKFLOWS_DATABASE",
+            "workflows_schema": "WORKFLOWS_SCHEMA",
+            "workflows_table": "WORKFLOWS_TABLE",
         },
     )
 
@@ -199,6 +204,17 @@ class Settings(BaseSettings):
         "crew_execution_results", description="Table name for crew execution results"
     )
 
+    # Workflows table configuration
+    workflows_database: Optional[str] = Field(
+        None, description="Database for workflows table (defaults to snowflake_database if not set)"
+    )
+    workflows_schema: Optional[str] = Field(
+        None, description="Schema for workflows table (defaults to snowflake_schema if not set)"
+    )
+    workflows_table: str = Field(
+        "workflows", description="Table name for workflows"
+    )
+
     @property
     def private_key(self) -> str:
         """Read and cache the private key from the configured path"""
@@ -212,10 +228,26 @@ class Settings(BaseSettings):
 
     @property
     def crew_execution_full_table_name(self) -> str:
-        """Get the fully qualified table name for crew execution results."""
-        database = self.crew_execution_database or self.snowflake_database
+        """Get the fully qualified table name for crew execution results.
+
+        If database is not set, returns schema.table (relies on session context).
+        If database is set, returns database.schema.table.
+        """
         schema = self.crew_execution_schema or self.snowflake_schema
-        return f"{database}.{schema}.{self.crew_execution_table}"
+        return f"{schema}.{self.crew_execution_table}"
+
+    @property
+    def workflows_full_table_name(self) -> str:
+        """Get the fully qualified table name for workflows.
+
+        If database is not set, returns schema.table (relies on session context).
+        If database is set, returns database.schema.table.
+        """
+        database = self.workflows_database or self.snowflake_database
+        schema = self.workflows_schema or self.snowflake_schema
+        if database:
+            return f"{database}.{schema}.{self.workflows_table}"
+        return f"{schema}.{self.workflows_table}"
 
     def get_nl_generator_default_model(self, fallback_model: Optional[str] = None) -> Optional[str]:
         """Get the default NL generator model for Snowflake.

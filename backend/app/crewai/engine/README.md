@@ -236,14 +236,6 @@ curl -X POST "http://localhost:3002/run-build-flow" \
 
 ## Advanced Tips
 
-- **Environment Variables:**
-  - You can use `${VAR_NAME}` in your YAML config to reference environment variables from your `.env` file. This is useful for secrets like API keys or credentials.
-  - Example:
-    ```yaml
-    api_key: "${OPENAI_API_KEY}"
-    ```
-  - When the config is loaded, `${OPENAI_API_KEY}` will be replaced with the value from your `.env` file.
-
 - **Custom Tools:**
   - For comprehensive guide on adding custom tools along with tool configuration and registration, see [`app/crewai/tools/README.md`](../../tools/README.md)
   - You can add your own tool classes in the `tools/` directory.

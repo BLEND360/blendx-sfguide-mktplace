@@ -169,7 +169,6 @@ tasks:
 ## Environment Variables
 
 Required environment variables for different tool types:
-- `OPENAI_API_KEY`: For OpenAI LLM and some tools
 - `SERPER_API_KEY`: For web search tools
 - `SNOWFLAKE_*`: For Snowflake connection (if using Snowflake tools)
 

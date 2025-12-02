@@ -10,9 +10,15 @@ from typing import List, Optional
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from app.config.settings import get_settings
 from app.database.models.workflows import Workflow
 
 logger = logging.getLogger(__name__)
+
+
+def get_table_name() -> str:
+    """Get the fully qualified table name from settings."""
+    return get_settings().workflows_full_table_name
 
 
 class WorkflowsRepository:
@@ -41,21 +47,11 @@ class WorkflowsRepository:
             # Take a shallow copy so caller mutations can't affect our params
             workflow_data = dict(workflow_data)
 
-            # DEBUGGING: Check what yaml_text type is being received
-            print(f"\n=== REPOSITORY DEBUG ===")
-            print(
-                f"workflow_data['yaml_text'] type: {type(workflow_data['yaml_text'])}"
-            )
-            print(
-                f"workflow_data['yaml_text'] value: {str(workflow_data['yaml_text'])[:100]}..."
-            )
-            print(f"=== END REPOSITORY DEBUG ===\n")
-
             # Use raw SQL insert for Snowflake compatibility
             self.session.execute(
                 text(
-                    """
-                    INSERT INTO workflows (workflow_id, version, type, mermaid, title, status, rationale, yaml_text, chat_id, message_id, user_id, model, stable, created_at)
+                    f"""
+                    INSERT INTO {get_table_name()} (workflow_id, version, type, mermaid, title, status, rationale, yaml_text, chat_id, message_id, user_id, model, stable, created_at)
                     VALUES (:workflow_id, :version, :type, :mermaid, :title, :status, :rationale, :yaml_text, :chat_id, :message_id, :user_id, :model, :stable, CURRENT_TIMESTAMP())
                     """
                 ),
@@ -106,9 +102,9 @@ class WorkflowsRepository:
                 # Get specific version
                 result = self.session.execute(
                     text(
-                        """
+                        f"""
                         SELECT workflow_id, version, type, mermaid, title, status, rationale, yaml_text, chat_id, message_id, user_id, model, stable, created_at
-                        FROM workflows
+                        FROM {get_table_name()}
                         WHERE workflow_id = :workflow_id AND version = :version
                         """
                     ),
@@ -118,9 +114,9 @@ class WorkflowsRepository:
                 # Get stable version
                 result = self.session.execute(
                     text(
-                        """
+                        f"""
                         SELECT workflow_id, version, type, mermaid, title, status, rationale, yaml_text, chat_id, message_id, user_id, model, stable, created_at
-                        FROM workflows
+                        FROM {get_table_name()}
                         WHERE workflow_id = :workflow_id AND stable = true
                         """
                     ),
@@ -163,9 +159,9 @@ class WorkflowsRepository:
         try:
             result = self.session.execute(
                 text(
-                    """
+                    f"""
                     SELECT workflow_id, version, type, mermaid, title, status, rationale, yaml_text, chat_id, message_id, user_id, model, stable, created_at
-                    FROM workflows
+                    FROM {get_table_name()}
                     WHERE message_id = :message_id
                     """
                 ),
@@ -212,9 +208,9 @@ class WorkflowsRepository:
             if stable_only:
                 result = self.session.execute(
                     text(
-                        """
+                        f"""
                         SELECT workflow_id, version, type, mermaid, title, status, rationale, yaml_text, chat_id, message_id, user_id, model, stable, created_at, updated_at
-                        FROM workflows
+                        FROM {get_table_name()}
                         WHERE user_id = :user_id AND stable = true
                         ORDER BY created_at DESC
                         """
@@ -224,9 +220,9 @@ class WorkflowsRepository:
             else:
                 result = self.session.execute(
                     text(
-                        """
+                        f"""
                         SELECT workflow_id, version, type, mermaid, title, status, rationale, yaml_text, chat_id, message_id, user_id, model, stable, created_at, updated_at
-                        FROM workflows
+                        FROM {get_table_name()}
                         WHERE user_id = :user_id
                         ORDER BY created_at DESC
                         """
@@ -274,9 +270,9 @@ class WorkflowsRepository:
         try:
             result = self.session.execute(
                 text(
-                    """
+                    f"""
                     SELECT workflow_id, version, type, mermaid, title, status, rationale, yaml_text, chat_id, message_id, user_id, model, stable, created_at
-                    FROM workflows
+                    FROM {get_table_name()}
                     WHERE chat_id = :chat_id
                     ORDER BY created_at DESC
                     """
@@ -325,9 +321,9 @@ class WorkflowsRepository:
             if stable_only:
                 result = self.session.execute(
                     text(
-                        """
+                        f"""
                         SELECT workflow_id, version, type, mermaid, title, status, rationale, yaml_text, chat_id, message_id, user_id, model, stable, created_at
-                        FROM workflows
+                        FROM {get_table_name()}
                         WHERE type = :workflow_type AND stable = true
                         ORDER BY created_at DESC
                         """
@@ -337,9 +333,9 @@ class WorkflowsRepository:
             else:
                 result = self.session.execute(
                     text(
-                        """
+                        f"""
                         SELECT workflow_id, version, type, mermaid, title, status, rationale, yaml_text, chat_id, message_id, user_id, model, stable, created_at
-                        FROM workflows
+                        FROM {get_table_name()}
                         WHERE type = :workflow_type
                         ORDER BY created_at DESC
                         """
@@ -384,9 +380,9 @@ class WorkflowsRepository:
         try:
             result = self.session.execute(
                 text(
-                    """
+                    f"""
                     SELECT workflow_id, version, type, mermaid, title, status, rationale, yaml_text, chat_id, message_id, user_id, model, stable, created_at
-                    FROM workflows
+                    FROM {get_table_name()}
                     WHERE message_id = :message_id
                     ORDER BY created_at DESC
                     """
@@ -455,7 +451,7 @@ class WorkflowsRepository:
                 return False
 
             query = f"""
-                UPDATE workflows
+                UPDATE {get_table_name()}
                 SET {', '.join(set_clauses)}
                 WHERE workflow_id = :workflow_id AND version = :version
             """
@@ -487,13 +483,13 @@ class WorkflowsRepository:
             if version is not None:
                 result = self.session.execute(
                     text(
-                        "DELETE FROM workflows WHERE workflow_id = :workflow_id AND version = :version"
+                        f"DELETE FROM {get_table_name()} WHERE workflow_id = :workflow_id AND version = :version"
                     ),
                     {"workflow_id": workflow_id, "version": version},
                 )
             else:
                 result = self.session.execute(
-                    text("DELETE FROM workflows WHERE workflow_id = :workflow_id"),
+                    text(f"DELETE FROM {get_table_name()} WHERE workflow_id = :workflow_id"),
                     {"workflow_id": workflow_id},
                 )
             self.session.commit()
@@ -517,7 +513,7 @@ class WorkflowsRepository:
         """
         try:
             result = self.session.execute(
-                text("DELETE FROM workflows WHERE chat_id = :chat_id"),
+                text(f"DELETE FROM {get_table_name()} WHERE chat_id = :chat_id"),
                 {"chat_id": chat_id},
             )
             self.session.commit()
@@ -544,16 +540,16 @@ class WorkflowsRepository:
         """
         try:
             if stable_only:
-                query = """
+                query = f"""
                     SELECT workflow_id, version, type, mermaid, title, status, rationale, yaml_text, chat_id, message_id, user_id, model, stable, created_at
-                    FROM workflows
+                    FROM {get_table_name()}
                     WHERE stable = true
                     ORDER BY created_at DESC
                 """
             else:
-                query = """
+                query = f"""
                     SELECT workflow_id, version, type, mermaid, title, status, rationale, yaml_text, chat_id, message_id, user_id, model, stable, created_at
-                    FROM workflows
+                    FROM {get_table_name()}
                     ORDER BY created_at DESC
                 """
 
@@ -570,14 +566,16 @@ class WorkflowsRepository:
                         version=row[1],
                         type=row[2],
                         mermaid=row[3],
-                        rationale=row[4],
-                        yaml_text=row[5],
-                        chat_id=row[6],
-                        message_id=row[7],
-                        user_id=row[8],
-                        model=row[9],
-                        stable=row[10],
-                        created_at=row[11],
+                        title=row[4],
+                        status=row[5],
+                        rationale=row[6],
+                        yaml_text=row[7],
+                        chat_id=row[8],
+                        message_id=row[9],
+                        user_id=row[10],
+                        model=row[11],
+                        stable=row[12],
+                        created_at=row[13],
                     )
                 )
             return workflows
@@ -599,9 +597,9 @@ class WorkflowsRepository:
         try:
             result = self.session.execute(
                 text(
-                    """
+                    f"""
                     SELECT workflow_id, version, type, mermaid, title, status, rationale, yaml_text, chat_id, message_id, user_id, model, stable, created_at
-                    FROM workflows
+                    FROM {get_table_name()}
                     WHERE chat_id = :chat_id AND stable = true
                     ORDER BY created_at DESC
                     LIMIT 1
@@ -650,11 +648,11 @@ class WorkflowsRepository:
         try:
             result = self.session.execute(
                 text(
-                    """
+                    f"""
                     WITH latest_workflow AS (
                         SELECT w.workflow_id, w.version, w.type, w.mermaid, w.rationale, w.yaml_text,
                                w.chat_id, w.message_id, w.user_id, w.stable, w.created_at
-                        FROM workflows w
+                        FROM {get_table_name()} w
                         WHERE w.chat_id = :chat_id AND w.stable = true
                         ORDER BY w.created_at DESC
                         LIMIT 1
@@ -720,9 +718,9 @@ class WorkflowsRepository:
         try:
             result = self.session.execute(
                 text(
-                    """
+                    f"""
                     SELECT MAX(version) as max_version
-                    FROM workflows
+                    FROM {get_table_name()}
                     WHERE workflow_id = :workflow_id
                     """
                 ),
@@ -758,9 +756,9 @@ class WorkflowsRepository:
             if exclude_workflow_id:
                 result = self.session.execute(
                     text(
-                        """
+                        f"""
                         SELECT COUNT(*)
-                        FROM workflows
+                        FROM {get_table_name()}
                         WHERE title = :title
                         AND user_id = :user_id
                         AND workflow_id != :exclude_workflow_id
@@ -776,9 +774,9 @@ class WorkflowsRepository:
             else:
                 result = self.session.execute(
                     text(
-                        """
+                        f"""
                         SELECT COUNT(*)
-                        FROM workflows
+                        FROM {get_table_name()}
                         WHERE title = :title
                         AND user_id = :user_id
                         AND stable = true
@@ -806,8 +804,8 @@ class WorkflowsRepository:
         try:
             result = self.session.execute(
                 text(
-                    """
-                    UPDATE workflows
+                    f"""
+                    UPDATE {get_table_name()}
                     SET stable = false
                     WHERE workflow_id = :workflow_id
                     """
