@@ -14,6 +14,8 @@ CREATE SCHEMA IF NOT EXISTS app_data;
 GRANT USAGE ON SCHEMA app_data TO APPLICATION ROLE app_admin;
 GRANT USAGE ON SCHEMA app_data TO APPLICATION ROLE app_user;
 
+-- Note: External Access Integration must be created by the consumer
+-- and referenced to this application. See deployment scripts.
 
 -- Create table to store Crew execution results
 CREATE OR REPLACE TABLE app_data.crew_execution_results (
@@ -32,6 +34,49 @@ CREATE OR REPLACE TABLE app_data.crew_execution_results (
 GRANT SELECT ON TABLE app_data.crew_execution_results TO APPLICATION ROLE app_user;
 GRANT SELECT, INSERT, UPDATE ON TABLE app_data.crew_execution_results TO APPLICATION ROLE app_admin;
 
+-- Create table to store Crew executions (used by backend ORM)
+CREATE OR REPLACE TABLE app_data.crew_executions (
+    id VARCHAR(36) PRIMARY KEY,
+    status VARCHAR(50) NOT NULL DEFAULT 'PENDING',
+    name VARCHAR(255),
+    input TEXT,
+    output TEXT,
+    context VARIANT,
+    created_at TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP(),
+    updated_at TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP(),
+    finished_at TIMESTAMP_NTZ,
+    execution_group_id VARCHAR(36),
+    flow_execution_id VARCHAR(36)
+);
+
+-- Grant permissions for crew_executions table
+GRANT SELECT ON TABLE app_data.crew_executions TO APPLICATION ROLE app_user;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE app_data.crew_executions TO APPLICATION ROLE app_admin;
+
+-- Create table to store Workflows (execution groups and flows from NL generator)
+CREATE OR REPLACE TABLE app_data.workflows (
+    workflow_id VARCHAR(255) NOT NULL,
+    version INTEGER NOT NULL DEFAULT 1,
+    type VARCHAR(50) NOT NULL,
+    mermaid TEXT,
+    title VARCHAR(255),
+    status VARCHAR(50) NOT NULL DEFAULT 'PENDING',
+    rationale TEXT,
+    yaml_text TEXT NOT NULL,
+    chat_id VARCHAR(255),
+    message_id VARCHAR(255),
+    user_id VARCHAR(255),
+    model VARCHAR(100),
+    stable BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP(),
+    updated_at TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP(),
+    PRIMARY KEY (workflow_id, version)
+);
+
+-- Grant permissions for workflows table
+GRANT SELECT ON TABLE app_data.workflows TO APPLICATION ROLE app_user;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE app_data.workflows TO APPLICATION ROLE app_admin;
+
 CREATE OR REPLACE PROCEDURE app_public.start_app(poolname VARCHAR, whname VARCHAR)
     RETURNS string
     LANGUAGE sql
@@ -44,16 +89,17 @@ BEGIN
             INSTANCE_FAMILY = CPU_X64_M
             AUTO_RESUME = TRUE';
 
-        -- Then create the service
+        -- Then create the service with external access integration from consumer reference
         EXECUTE IMMEDIATE 'CREATE SERVICE IF NOT EXISTS app_public.st_spcs
             IN COMPUTE POOL ' || poolname || '
-            FROM SPECIFICATION_FILE=''' || '/fullstack.yaml' || '''
-            QUERY_WAREHOUSE=' || whname;
+            FROM SPECIFICATION_FILE=''/fullstack.yaml''
+            QUERY_WAREHOUSE=' || whname || '
+            EXTERNAL_ACCESS_INTEGRATIONS = (REFERENCE(''serper_access_integration''))';
 
-GRANT USAGE ON SERVICE app_public.st_spcs TO APPLICATION ROLE app_user;
-GRANT SERVICE ROLE app_public.st_spcs!ALL_ENDPOINTS_USAGE TO APPLICATION ROLE app_user;
+        GRANT USAGE ON SERVICE app_public.st_spcs TO APPLICATION ROLE app_user;
+        GRANT SERVICE ROLE app_public.st_spcs!ALL_ENDPOINTS_USAGE TO APPLICATION ROLE app_user;
 
-RETURN 'Service started. Check status, and when ready, get URL';
+        RETURN 'Service started. Check status, and when ready, get URL';
 END;
 $$;
 GRANT USAGE ON PROCEDURE app_public.start_app(VARCHAR, VARCHAR) TO APPLICATION ROLE app_admin;
@@ -201,27 +247,60 @@ GRANT USAGE ON PROCEDURE app_public.count_crew_executions() TO APPLICATION ROLE 
 
 
 CREATE OR REPLACE PROCEDURE config.get_config_for_ref(reference_name STRING)
-  RETURNS VARIANT
+  RETURNS VARCHAR
   LANGUAGE SQL
 AS
 $$
 BEGIN
-    
-    RETURN OBJECT_CONSTRUCT('reference', reference_name);
+    CASE (UPPER(reference_name))
+        WHEN 'SERPER_API_KEY' THEN
+            RETURN '{"type": "CONFIGURATION", "payload": {"type": "GENERIC_STRING"}}';
+        ELSE
+            RETURN '{"type": "ERROR", "payload": {"message": "Unknown reference"}}';
+    END CASE;
 END;
 $$;
 GRANT USAGE ON PROCEDURE config.get_config_for_ref(STRING) TO APPLICATION ROLE app_admin;
+
+
+create or replace procedure config.get_configuration(ref_name string)
+returns string
+language sql
+as $$
+begin
+    CASE (UPPER(ref_name))
+        WHEN 'SERPER_ACCESS_INTEGRATION' THEN
+            RETURN '{
+                "type": "CONFIGURATION",
+                "payload": {
+                    "host_ports": ["serper.dev", "google.serper.dev"],
+                    "allowed_secrets": "ALL"
+                }
+            }';
+        ELSE
+            RETURN '{
+                "type": "ERROR",
+                "payload": {
+                    "message": "The reference is not available for configuration"
+                }
+            }';
+    END CASE;
+end;
+$$;
+
+GRANT USAGE ON PROCEDURE CONFIG.get_configuration(STRING)
+  TO APPLICATION ROLE app_admin;
+
 
 CREATE OR REPLACE PROCEDURE CONFIG.REGISTER_SINGLE_REFERENCE(
   ref_name STRING, operation STRING, ref_or_alias STRING)
   RETURNS STRING
   LANGUAGE SQL
-  EXECUTE AS OWNER
   AS $$
     DECLARE
       result STRING;
     BEGIN
-      CASE (operation)
+      CASE (UPPER(operation))
         WHEN 'ADD' THEN
           result := SYSTEM$SET_REFERENCE(:ref_name, :ref_or_alias);
         WHEN 'REMOVE' THEN
@@ -229,14 +308,12 @@ CREATE OR REPLACE PROCEDURE CONFIG.REGISTER_SINGLE_REFERENCE(
         WHEN 'CLEAR' THEN
           result := SYSTEM$REMOVE_REFERENCE(:ref_name);
       ELSE
-        RETURN 'unknown operation: ' || operation;
+        RETURN 'unknown operation: ' || UPPER(operation);
       END CASE;
-      RETURN 'Reference ' || :ref_name || ' ' || :operation || ' successful: ' || result;
+      RETURN 'Reference ' || :ref_name || ' ' || UPPER(:operation) || ' successful: ' || result;
     END;
   $$;
 
 GRANT USAGE
   ON PROCEDURE CONFIG.REGISTER_SINGLE_REFERENCE(STRING, STRING, STRING)
   TO APPLICATION ROLE APP_ADMIN;
-
-  

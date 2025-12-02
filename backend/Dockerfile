@@ -1,10 +1,18 @@
-FROM python:3.10
+FROM python:3.10-slim
+
+# Install git (required for git dependencies)
+RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/*
+
 EXPOSE 8081
 WORKDIR /app
-COPY src/requirements.txt .
-RUN pip3 install -r requirements.txt
-RUN pip3 uninstall oscrypto -y
-RUN pip3 install oscrypto@git+https://github.com/wbond/oscrypto.git@d5f3437ed24257895ae1edd9e503cfb352e635a8
-COPY src/. .
-RUN chmod +x ./entrypoint.sh
-ENTRYPOINT [ "./entrypoint.sh" ]
+
+# Copy requirements first for caching
+COPY requirements.txt ./
+
+# Install dependencies
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy application code
+COPY . /app
+
+ENTRYPOINT ["gunicorn", "app.main:app", "--workers", "4", "--worker-class", "uvicorn.workers.UvicornWorker", "--threads", "4", "--timeout", "0", "--keep-alive", "650", "--bind", "0.0.0.0:8081"]

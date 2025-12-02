@@ -1,0 +1,25 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "payload": {
+      "type": "object",
+      "properties": {
+        "yaml_text": { "type": "string", "description": "YAML configuration for CrewAI (flow or group)" },
+        "input": { "type": ["string", "null"], "description": "Optional input for the flow or crew" }
+      },
+      "required": ["yaml_text"],
+      "description": "Payload for BuildFlowRequest or BuildCrewRequest: must include yaml_text (YAML string), and optionally input."
+    },
+    "type": {
+      "type": "string",
+      "enum": ["run-build-flow", "run-build-crew"],
+      "description": "Type of execution: flow or group"
+    },
+    "rationale": {
+      "type": "string",
+      "description": "Rationale for the design and choices made"
+    }
+  },
+  "required": ["payload", "type", "rationale"]
+}

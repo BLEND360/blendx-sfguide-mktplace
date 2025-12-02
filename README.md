@@ -8,7 +8,7 @@
     - [Linux](https://docs.docker.com/desktop/install/linux-install/)
 
 
-## Set your SnowCLI connection (optional)
+## Set your SnowCLI connection (optional, need to be accountadmin)
 
 We use your default connection to connect to Snowflake and deploy the images / app. Set your
 default connection by modifying your `config.toml` file or by exporting the following environment variable:
@@ -17,28 +17,29 @@ default connection by modifying your `config.toml` file or by exporting the foll
 export SNOWFLAKE_DEFAULT_CONNECTION_NAME=<your connection name>
 ```
 
-## Create image repository, build and push your local service image
-
-The [service/](service/) directory contains a [Dockerfile](service/Dockerfile) that builds a
-simple Python server that responds to GET health checks, a GET for `/index.html`, as well as
-POSTing to `/echo` in the Snowflake External Function payload format. You can build it and
-push it to an image repository called `SPCS_NA.PUBLIC.IMAGES` in your account like so:
-
-```sh
-./build-and-push.sh
-```
-
-This command will always use your default SnowCLI connection.
-
 ## Deploy the application
 
 Deploy the app package and instance as such:
 
+1. First time:
 ```sh
-snow app run
+./scripts/complete-setup.sh
 ```
 
-> Take note of the name of the application, which is based on the name you chose when you initialized this project. The application object and package are, by default, automatically suffixed by your (local) user name (i.e. `$USER`).
+2. Update app:
+```sh
+./scripts/deploy.sh
+```
+
+3. Clean up / remove app:
+```sh
+./scripts/cleanup.sh
+```
+
+4. Restart the app (calls stop and start):
+```sh
+./scripts/restart.sh
+```
 
 ## Setup the application
 
@@ -67,35 +68,8 @@ GRANT DATABASE ROLE SNOWFLAKE.CORTEX_USER TO APPLICATION <your_app_name>;
 GRANT IMPORTED PRIVILEGES ON DATABASE SNOWFLAKE TO APPLICATION <your_app_name>;
 ```
 
-Replace `<your_app_name>` with your actual application name (e.g., `spcs_app_instance_test`).
-
-These grants enable:
-- Access to Cortex LLM functions via SQL (`SNOWFLAKE.CORTEX.COMPLETE`)
-- Access to Cortex REST API endpoints for CrewAI integration
-
-## Launch the application
-
-Once all services and pools are created, you will be able to launch the app by clicking on the `Launch App` button. This will navigate to the URL provided by the `Service` and `Endpoint` defined in the `default_web_endpoint` in the [manifest.yml](app/manifest.yml). You will see the contents of [index.html](service/index.html) as served by the application container.
-
-## Test out the echo service
+Or you can execute the script below:
 
 ```sh
-snow sql -q "select <app name>.services.echo('Hello world!')"
+snow sql -f grant_cortex_permissions.sql --connection <your_connection_name>```
 ```
-
-You should see the same text back (Hello world!).
-
-## Clean up
-
-You can stop the service and drop the compute pool without dropping the application by running the following statement:
-
-```sh
-snow sql -q "call <app name>.setup.drop_service_and_pool()"
-```
-
-Optionally, you can remove the app + package altogether afterwards:
-
-```sh
-snow app teardown --cascade
-```
-> Version `2.4.0+` of Snowflake CLI should be installed in order to execute `--cascade` command.

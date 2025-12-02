@@ -4,11 +4,15 @@
       app
       color="primary"
       dark
+      elevation="2"
+      height="70"
     >
-    <v-app-bar-nav-icon></v-app-bar-nav-icon>
-
-    <v-toolbar-title>BlendX</v-toolbar-title>
-  </v-app-bar>
+      <img
+        :src="require('@/assets/blendx-logo.png')"
+        alt="BlendX"
+        class="logo"
+      />
+    </v-app-bar>
 
     <v-main>
       <LLMCall/>
@@ -31,3 +35,10 @@ export default {
   }),
 };
 </script>
+
+<style scoped>
+.logo {
+  height: 50px;
+  margin-left: 16px;
+}
+</style>
