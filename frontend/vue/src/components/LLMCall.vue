@@ -398,14 +398,13 @@
             ></v-textarea>
             <v-btn
               color="primary"
-              fab
-              small
               class="ml-3"
               @click="sendMessage"
               :loading="isGenerating"
               :disabled="!userMessage.trim() || isGenerating"
             >
-              <v-icon>mdi-send</v-icon>
+              <v-icon left>mdi-send</v-icon>
+              Send
             </v-btn>
           </v-card-actions>
         </v-card>
@@ -546,6 +545,18 @@
             <li><strong>RUN TEST CREW:</strong> Executes the default CrewAI workflow</li>
             <li><strong>RUN TEST EXTERNAL TOOL:</strong> Executes a crew with external tools (like Serper)</li>
             <li><strong>LIST TEST CREWS:</strong> Shows recent crew execution history and their status</li>
+          </ul>
+
+          <v-divider class="my-4"></v-divider>
+
+          <h3 class="mb-3">Workflow History</h3>
+          <p class="mb-2">Access and manage your previously generated workflows:</p>
+          <ul class="mb-4">
+            <li><strong>LOAD HISTORY:</strong> Click this button in the chat header to view all your saved workflows</li>
+            <li><strong>Workflow Cards:</strong> Each workflow is displayed as a card showing the title, date, rationale preview, and status</li>
+            <li><strong>View Details:</strong> Click on any workflow card to see the full details including Rationale, YAML, and Diagram</li>
+            <li><strong>Back to Chat:</strong> Click this button to return to the chat interface</li>
+            <li><strong>Save Workflows:</strong> After generating a workflow, use the "Save" button to add it to your history with a custom name</li>
           </ul>
 
           <v-alert type="info" dense class="mt-4">
