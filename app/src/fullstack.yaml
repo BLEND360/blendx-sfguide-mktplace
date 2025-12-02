@@ -10,8 +10,11 @@ spec:
         ENVIRONMENT: PRODUCTION
         SNOWFLAKE_AUTHMETHOD: oauth
         SNOWFLAKE_WAREHOUSE: WH_BLENDX_DEMO_PROVIDER
-        SNOWFLAKE_DATABASE: NAC_TEST_DB
-        SNOWFLAKE_SCHEMA: DATA
+        # SNOWFLAKE_DATABASE is intentionally not set - will use session context from OAuth
+        # Tables are accessed as schema.table_name using the app's database context
+        SNOWFLAKE_SCHEMA: app_data
+        CREW_EXECUTION_SCHEMA: app_data
+        WORKFLOWS_SCHEMA: app_data
         CREWAI_DISABLE_TELEMETRY: true
         OTEL_SDK_DISABLED: true
       secrets:

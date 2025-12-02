@@ -19,12 +19,12 @@ from crewai.llm import LLM
 from litellm import CustomLLM
 from snowflake.snowpark import Session
 
-from settings import Settings, get_settings
+from app.config.settings import Settings, get_settings
 # from app.services.llm_tracking_service import (
 #     get_llm_tracking_service,
 #     setup_litellm_tracking,
 # )
-from jwt_generator_service import JWTGenerator
+from app.services.jwt_generator_service import JWTGenerator
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -1014,20 +1014,9 @@ class UnifiedLLMService:
         authmethod = getattr(self.settings, "snowflake_authmethod", "oauth")
         is_spcs_oauth = oauth_available and authmethod == "oauth"
 
-        # TEMPORARY: Force OpenAI-compatible endpoint for testing
-        logger.info("⚠️ TESTING: Forcing OpenAI-compatible endpoint for all environments")
+        # Force OpenAI-compatible endpoint for testing
         base_url = f"https://{host}/api/v2/cortex/v1"
         logger.info(f"🔧 Using Snowflake OpenAI-compatible endpoint: {base_url}")
-
-        # Original logic (commented for testing):
-        # if is_spcs_oauth:
-        #     # Use native Cortex endpoint for SPCS with OAuth (works with container token)
-        #     base_url = f"https://{host}/api/v2/cortex/inference:complete"
-        #     logger.info(f"🔧 Using Snowflake native Cortex endpoint for SPCS: {base_url}")
-        # else:
-        #     # Use OpenAI-compatible endpoint for local/JWT (better function calling support)
-        #     base_url = f"https://{host}/api/v2/cortex/v1"
-        #     logger.info(f"🔧 Using Snowflake OpenAI-compatible endpoint: {base_url}")
 
         # Normalize authmethod: "private_key" is an alias for "jwt"
         if authmethod == "private_key":
@@ -1035,36 +1024,6 @@ class UnifiedLLMService:
 
         # Get private key if using JWT
         private_key = None
-
-        # TEMPORARY: Disable custom handler for testing - use OpenAI handler directly
-        # For SPCS with OAuth, use custom LiteLLM handler
-        if False and is_spcs_oauth:
-            litellm.register_model({
-                "custom-cortex-llm": {
-                    "provider": "custom",
-                    "mode": "chat",
-                }
-            })
-
-            self._snowflake_service = SnowflakeLitellmService(
-                base_url=base_url,
-                snowflake_account=account,
-                snowflake_service_user=user,
-                snowflake_authmethod="oauth",
-                snowflake_token_path="/snowflake/session/token",
-                temperature=kwargs.get("temperature", 0.2),
-                max_tokens=kwargs.get("max_tokens", 4096),
-                response_format=kwargs.get("response_format"),
-            )
-
-            litellm.register_provider("custom-cortex-llm", self._snowflake_service)
-
-            logger.info(f"✅ Registered custom Cortex LLM handler for SPCS")
-
-            return TrackedLLM(
-                model=f"custom-cortex-llm/{model}",
-                temperature=kwargs.get("temperature", 0.2),
-            )
 
         # For local development without token file, try to use JWT if private key is available
         if authmethod == "oauth" and not oauth_available:

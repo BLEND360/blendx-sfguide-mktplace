@@ -15,7 +15,7 @@ from snowflake.sqlalchemy import URL
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from settings import get_settings
+from app.config.settings import get_settings
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -124,7 +124,13 @@ def create_snowflake_engine():
     auth_method = (settings.snowflake_authmethod or "").lower()
     env = settings.environment.upper()
     allowed_envs = {"DEVELOPMENT", "SHARED", "STAGING", "PRODUCTION", "UAT"}
-    use_oauth = auth_method == "oauth" and env in allowed_envs
+    token_file_exists = os.path.exists("/snowflake/session/token")
+    # Only use OAuth if auth method is oauth, environment allows it, AND token file exists
+    # This allows local development without the token file, falling back to private key auth
+    use_oauth = auth_method == "oauth" and env in allowed_envs and token_file_exists
+
+    if auth_method == "oauth" and env in allowed_envs and not token_file_exists:
+        logger.info("OAuth requested but token file not found, falling back to private key authentication")
 
     logger.info(f"Using oauth value: {use_oauth}")
 
@@ -139,8 +145,8 @@ def create_snowflake_engine():
         # Only pass account/host if they're explicitly set (for local testing)
         url_params = {
             "warehouse": settings.snowflake_warehouse,
-            # "database": settings.snowflake_database,
-            # "schema": settings.snowflake_schema,
+            "database": settings.snowflake_database,
+            "schema": settings.snowflake_schema,
             "authenticator": "oauth",
             "token": oauth_token,
         }

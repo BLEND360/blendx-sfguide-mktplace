@@ -1,0 +1,173 @@
+# Flow Configuration Template
+#
+# This template shows how to configure flows with various tools including:
+# - BlendX Hub Search Services
+# - BlendX Hub Data Analysts (Snowflake Cortex Analyst)
+# - BlendX Hub MCP Servers
+# - CrewAI Native Tools
+# - Custom Tools
+#
+# Flows allow for orchestrating multiple crews in sequence or parallel.
+
+# Flow Section - defines the main flow and its configuration
+flow:
+  flow_name: "Investment Flow"
+  verbose: true
+  class_name: "InvestmentFlow"
+  crews: ["Research Crew", "Analysis Crew"]
+
+# Crew Definitions - each crew has agents and tasks assigned to it
+execution_group_name: "Default Crew Group"
+type: "RAG"  # Optional: Type of flow execution (only "RAG" currently supported)
+crews:
+  - name: "Research Crew"
+    process: "sequential"  # sequential, parallel, or hierarchical
+    verbose: true
+    memory: true
+    manager: null  # Required only for hierarchical process
+    agents: ["Investment Advisor", "News Researcher"]
+    tasks: ["Financial Analysis Task", "Market News Analysis Task"]
+
+  - name: "Analysis Crew"
+    process: "sequential"
+    verbose: true
+    memory: true
+    manager: null
+    agents: ["Report Synthesizer"]
+    tasks: ["Investment Report Task"]
+
+# Agent Definitions
+agents:
+  - role: "Investment Advisor"
+    goal: "Analyze financial metrics and market performance to provide investment recommendations."
+    backstory: "Senior investment advisor with expertise in fundamental analysis and portfolio management."
+    tools:
+      - custom_tools: ["GetStockInfo", "GetHistoricalData"]
+      - mcp: ["YFinance"]  # MCP servers from BlendX Hub (must be a list)
+    verbose: true
+    llm:
+      provider: "snowflake"
+      model: "claude-3-5-sonnet"
+      temperature: 0.5
+    allow_delegation: false
+
+  - role: "News Researcher"
+    goal: "Gather and analyze news, market sentiment, and industry developments."
+    backstory: "Experienced market researcher specializing in news analysis and sentiment tracking."
+    tools:
+      - crewai_tools: ["SerperDevTool", "WebsiteSearchTool"]
+    verbose: true
+    llm:
+      provider: "openai"
+      model: "gpt-4-turbo-preview"
+      temperature: 0.7
+    allow_delegation: false
+
+  - role: "Report Synthesizer"
+    goal: "Create comprehensive investment reports by synthesizing financial analysis and market research."
+    backstory: "Expert report writer with deep understanding of financial markets."
+    tools:
+      - crewai_tools: ["SerperDevTool", "WebsiteSearchTool"]
+    verbose: true
+    allow_delegation: false
+
+  # Example: Data Analyst Agent with Code Execution
+  # Uncomment to use a Data Analyst from BlendX Hub
+  # - role: "Marketing Data Analyst"
+  #   goal: "Analyze marketing campaign data and provide clear, actionable insights"
+  #   backstory: |
+  #     You are a senior marketing data analyst who specializes in interpreting campaign performance data.
+  #     You use Data Analyst tools to query data from Snowflake and then provide clear,
+  #     business-friendly insights that marketing teams can act on.
+  #     You always explain what the data means in plain language, not technical jargon.
+  #   tools:
+  #     - SnowflakeDataAnalyst: ["NBCU_POC"]  # Replace with your Data Analyst name from BlendX Hub
+  #   verbose: true
+  #   allow_delegation: false
+  #   llm:
+  #     provider: "openai"
+  #     model: "gpt-4o"
+  #     temperature: 0.2  # Slightly higher for more natural language
+
+  # Example: Python Code Execution Agent
+  # Uncomment to enable Python code execution for data analysis
+  # - role: "Python Data Analyst"
+  #   goal: "Perform statistical analysis and data manipulation using Python"
+  #   backstory: |
+  #     You are an expert Python data analyst proficient in pandas, numpy, and statistical analysis.
+  #     You write clean, efficient Python code to analyze data and provide actionable insights.
+  #   allow_code_execution: true  # Enables Python Code Interpreter with pandas, numpy, scipy, etc.
+  #   max_iter: 5  # Limit iterations to prevent loops (recommended: 3-8)
+  #   max_execution_time: 180  # Timeout in seconds (recommended: 120-300)
+  #   verbose: true
+  #   allow_delegation: false
+  #   llm:
+  #     provider: "openai"
+  #     model: "gpt-4o"
+  #     temperature: 0.1  # Low temperature for consistent code generation
+
+# Task Definitions
+tasks:
+  - name: "Financial Analysis Task"
+    description: "Conduct a thorough financial analysis of the target company, ${input}. Analyze key financial metrics, historical performance, and compare with industry peers."
+    agent: "Investment Advisor"
+    expected_output: "A detailed financial analysis including key metrics, peer comparisons, and financial health assessment."
+    tools:
+      - search_service: "TEST_SERVICE"
+      - SnowflakeDataAnalyst: ["NBCU_POC"]
+    context: []  # Optional: List of task names whose outputs will be used as context
+    output_file: null  # Optional: File path to save task output
+
+  - name: "Market News Analysis Task"
+    description: "Research and analyze recent news, market sentiment, and industry developments affecting the target company."
+    agent: "News Researcher"
+    expected_output: "A comprehensive news analysis including recent developments, market sentiment, and potential impact on the company."
+    tools:
+      - crewai_tools: ["SerperDevTool", "WebsiteSearchTool"]
+    context: []
+    output_file: null
+
+  - name: "Investment Report Task"
+    description: "Synthesize the financial analysis and market research into a comprehensive investment report."
+    agent: "Report Synthesizer"
+    expected_output: "A professional investment report combining financial analysis and market research with clear recommendations."
+    tools: []
+    context: ["Financial Analysis Task", "Market News Analysis Task"]
+    output_file: null
+
+# Flow Methods - optional, for advanced flow control
+flow_methods:
+    - name: "run_research"
+      type: "start"  # start, listen, or complete
+      action: "run_crew"
+      crew: "Research Crew"
+      output: "Research crew completed"
+    - name: "run_analysis"
+      type: "listen"
+      listen_to: ["run_research"]
+      action: "run_crew"
+      crew: "Analysis Crew"
+      output: "Analysis crew completed"
+    - name: "flow_complete"
+      type: "listen"
+      listen_to: ["run_analysis"]
+      output: "Flow completed successfully"
+
+# Notes:
+# - Use ${input} in task descriptions for dynamic input fields
+# - The 'context' field chains task outputs as input/context for subsequent tasks
+# - MCP tools allow integration with external services via BlendX Hub
+# - Flow methods enable advanced flow control and state management
+#
+# Code Execution (allow_code_execution):
+# - Set allow_code_execution: true to enable Python code execution for data analysis
+# - Automatically adds Code Interpreter tool with access to pandas, numpy, scipy, matplotlib
+# - Security: Blocks dangerous modules (os, sys, subprocess, socket, requests)
+# - Best Practices:
+#   * Set max_iter: 5 to prevent infinite loops (default: 8 if not specified)
+#   * Set max_execution_time: 180 for 3-minute timeout (default: 300 if not specified)
+#   * Use temperature: 0.1 for consistent code generation
+#   * Keep task descriptions simple and focused
+# - Agent's code must end with: result = "your output as a formatted string"
+# - Available libraries: All installed in virtual environment (auto-detected)
+# - See docs/allow_code_execution.md for complete guide
