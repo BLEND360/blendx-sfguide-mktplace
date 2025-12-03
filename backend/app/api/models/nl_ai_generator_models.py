@@ -3,6 +3,17 @@ from typing import Any, Literal, Optional
 from pydantic import BaseModel, Field
 
 
+class MermaidChartResponse(BaseModel):
+    """Structured output model for mermaid chart generation."""
+
+    mermaid_chart: str = Field(
+        ...,
+        description="Valid Mermaid flowchart code representing the CrewAI workflow. "
+        "Must include title, flowchart LR direction, proper node definitions, "
+        "connections with labels, and pastel color class definitions.",
+    )
+
+
 class NLAIGeneratorRequest(BaseModel):
     user_request: str = Field(
         ..., description="User's natural language request for YAML generation."
