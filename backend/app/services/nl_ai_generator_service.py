@@ -15,6 +15,7 @@ from typing import Any, Dict, Optional, Set, Tuple
 import jsonschema
 import yaml
 
+from app.api.models.nl_ai_generator_models import MermaidChartResponse
 from app.crewai.models.crew_yaml_config import CrewYAMLConfig
 from app.crewai.models.error_formatter import format_yaml_validation_error
 from app.crewai.models.flow_yaml_config import FlowYAMLConfig
@@ -601,6 +602,161 @@ def extract_json_from_text(text: str) -> str:
     return json_match.group(0)
 
 
+def _fix_json_string_escaping(json_str: str) -> str:
+    """
+    Fix common JSON escaping issues in LLM-generated JSON strings.
+
+    LLMs often produce JSON with:
+    - Unescaped newlines inside string values
+    - Unescaped quotes inside string values
+    - Unescaped backslashes
+
+    Args:
+        json_str: Raw JSON string from LLM
+
+    Returns:
+        str: JSON string with fixed escaping
+    """
+    # Strategy: Find string values and fix escaping within them
+    result = []
+    i = 0
+    in_string = False
+    string_start = -1
+
+    while i < len(json_str):
+        char = json_str[i]
+
+        if char == '"' and (i == 0 or json_str[i-1] != '\\'):
+            if not in_string:
+                # Starting a string
+                in_string = True
+                string_start = i
+                result.append(char)
+            else:
+                # Ending a string
+                in_string = False
+                result.append(char)
+        elif in_string:
+            # Inside a string - fix unescaped characters
+            if char == '\n':
+                result.append('\\n')
+            elif char == '\r':
+                result.append('\\r')
+            elif char == '\t':
+                result.append('\\t')
+            else:
+                result.append(char)
+        else:
+            result.append(char)
+
+        i += 1
+
+    return ''.join(result)
+
+
+def _generate_mermaid_chart_with_structured_output(
+    user_request: str,
+    yaml_config: str,
+    config_template_flow: str,
+    config_template_crew: str,
+) -> Optional[str]:
+    """
+    Generate mermaid chart using LLM with structured output.
+
+    Uses Pydantic model for structured output to ensure valid JSON response
+    and avoid parsing errors from malformed LLM output.
+
+    Args:
+        user_request: The user's original request
+        yaml_config: The generated YAML configuration
+        config_template_flow: Flow configuration template
+        config_template_crew: Crew configuration template
+
+    Returns:
+        str: Valid mermaid chart code, or None if generation fails
+    """
+    try:
+        from app.handlers.lite_llm_handler import get_snowflake_litellm_service
+        from app.config.settings import get_settings
+
+        settings = get_settings()
+
+        # Load the mermaid prompt template
+        mermaid_prompt = load_file_sync(
+            "app/llm/prompts/nl_ai_mermaid_generator.prompt"
+        )
+
+        # Prepare the prompt
+        mermaid_input = mermaid_prompt
+        mermaid_input = mermaid_input.replace("{{user_request}}", user_request)
+        mermaid_input = mermaid_input.replace("{{yaml_config}}", yaml_config)
+        mermaid_input = mermaid_input.replace(
+            "{{flow_config_template}}", config_template_flow
+        )
+        mermaid_input = mermaid_input.replace(
+            "{{crew_config_template}}", config_template_crew
+        )
+        mermaid_input = mermaid_input.replace("{{error_feedback}}", "")
+
+        # Build base URL for native Snowflake endpoint (supports response_format)
+        host = settings.snowflake_host
+        base_url = f"https://{host}/api/v2/cortex/inference:complete"
+
+        # Get private key for JWT auth
+        private_key = None
+        if settings.snowflake_private_key_path:
+            try:
+                with open(settings.snowflake_private_key_path, "r") as f:
+                    private_key = f.read()
+            except Exception as e:
+                logger.warning(f"Could not load private key: {e}")
+
+        # Use SnowflakeLitellmService with response_format for structured output
+        mermaid_llm = get_snowflake_litellm_service(
+            base_url=base_url,
+            snowflake_account=settings.snowflake_account,
+            snowflake_service_user=settings.snowflake_service_user or settings.snowflake_user,
+            snowflake_authmethod="jwt" if private_key else "oauth",
+            api_key=private_key,
+            temperature=0.1,
+            max_tokens=GenerationConfig.DEFAULT_MAX_TOKENS,
+            response_format=MermaidChartResponse.model_json_schema(),
+        )
+
+        # Call LLM with structured output
+        mermaid_response = mermaid_llm.completion(
+            model="claude-3-5-sonnet",
+            messages=[{"role": "user", "content": mermaid_input}],
+            timeout=120,
+        )
+
+        # Parse the structured response
+        response_content = mermaid_response.choices[0].message.content
+        response_data = json.loads(response_content)
+        mermaid_chart_raw = response_data.get("mermaid_chart")
+
+        if mermaid_chart_raw:
+            # Clean up any markdown code fences if present
+            mermaid_chart = (
+                mermaid_chart_raw
+                .replace("```mermaid", "")
+                .replace("```", "")
+                .strip()
+            )
+            logger.info("✅ Mermaid chart generated successfully with structured output")
+            return mermaid_chart
+        else:
+            logger.warning("Mermaid chart response did not contain 'mermaid_chart' key")
+            return None
+
+    except json.JSONDecodeError as e:
+        logger.warning(f"Failed to parse mermaid chart JSON response: {e}")
+        return None
+    except Exception as e:
+        logger.warning(f"Failed to generate mermaid chart: {e}")
+        return None
+
+
 def load_file_sync(path: str) -> str:
     """
     Synchronously load file content with proper error handling.
@@ -943,19 +1099,15 @@ def generate_nl_ai_payload_with_context(
                     state["last_payload_validation_error"] = yaml_error
                     continue
 
-                # Generate mermaid chart
+                # Generate mermaid chart using LLM with structured output
                 mermaid_chart = ""
                 if payload.get("yaml_text"):
-                    try:
-                        from app.services.yaml_to_mermaid_service import (
-                            convert_yaml_workflow_to_mermaid,
-                        )
-
-                        mermaid_chart = convert_yaml_workflow_to_mermaid(
-                            payload["yaml_text"]
-                        )
-                    except Exception as e:
-                        logger.warning(f"Failed to generate mermaid chart: {e}")
+                    mermaid_chart = _generate_mermaid_chart_with_structured_output(
+                        user_request=user_request,
+                        yaml_config=payload["yaml_text"],
+                        config_template_flow=config_files["config_template_flow"],
+                        config_template_crew=config_files["config_template_crew"],
+                    ) or ""
 
                 # Success - return the result with classification info
                 title_generated = _extract_title_from_mermaid(mermaid_chart)
@@ -1147,53 +1299,13 @@ def generate_nl_ai_payload(
                 is_valid, validation_error = _process_yaml_payload(payload, type_)
                 if is_valid:
                     logger.info(f"YAML validation successful for attempt {attempt + 1}")
-                    # --- BEGIN: Mermaid chart LLM call ---
-                    try:
-                        mermaid_prompt = load_file_sync(
-                            "app/llm/prompts/nl_ai_mermaid_generator.prompt"
-                        )
-                        # Prepare the prompt for the mermaid chart
-                        yaml_config = payload["yaml_text"]
-                        mermaid_input = mermaid_prompt
-                        mermaid_input = mermaid_input.replace(
-                            "{{user_request}}", user_request
-                        )
-                        mermaid_input = mermaid_input.replace(
-                            "{{yaml_config}}", yaml_config
-                        )
-                        mermaid_input = mermaid_input.replace(
-                            "{{flow_config_template}}",
-                            config_files["config_template_flow"],
-                        )
-                        mermaid_input = mermaid_input.replace(
-                            "{{crew_config_template}}",
-                            config_files["config_template_crew"],
-                        )
-                        # No error feedback for chart
-                        mermaid_input = mermaid_input.replace("{{error_feedback}}", "")
-                        mermaid_llm, _ = _select_nl_llm_from_env(
-                            GenerationConfig.DEFAULT_MAX_TOKENS
-                        )
-                        mermaid_response = mermaid_llm.call(
-                            messages=[{"role": "user", "content": mermaid_input}]
-                        )
-
-                        # Extract JSON from LLM output
-                        mermaid_json = extract_json_from_text(mermaid_response)
-                        mermaid_chart_raw = json.loads(mermaid_json).get("mermaid_chart")
-                        if mermaid_chart_raw:
-                            mermaid_chart = (
-                                mermaid_chart_raw
-                                .replace("```mermaid", "")
-                                .replace("```", "")
-                            )
-                        else:
-                            logger.warning("Mermaid chart LLM response did not contain 'mermaid_chart' key")
-                            mermaid_chart = None
-                    except Exception as e:
-                        logger.warning(f"Failed to generate mermaid chart: {e}")
-                        mermaid_chart = None
-                    # --- END: Mermaid chart LLM call ---
+                    # Generate mermaid chart using LLM with structured output
+                    mermaid_chart = _generate_mermaid_chart_with_structured_output(
+                        user_request=user_request,
+                        yaml_config=payload["yaml_text"],
+                        config_template_flow=config_files["config_template_flow"],
+                        config_template_crew=config_files["config_template_crew"],
+                    )
                     title_generated = _extract_title_from_mermaid(mermaid_chart)
 
                     result = {

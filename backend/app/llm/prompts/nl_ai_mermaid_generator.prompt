@@ -109,6 +109,13 @@ classDef outputStyle fill:#FFEBEE,stroke:#E91E63,stroke-width:3px
 
 ## CRITICAL SYNTAX REQUIREMENTS
 
+### IMPORTANT: Style Application Rules
+- **NEVER use `:::styleName` inline syntax** on any node or subgraph declaration
+- **ALWAYS use the `class` keyword** at the end of the diagram to apply styles
+- **Correct**: `class Agent_Researcher,Agent_Writer agentStyle`
+- **INCORRECT**: `Agent_Researcher(("Name")):::agentStyle` - THIS WILL CAUSE PARSING ERRORS
+- **INCORRECT**: `subgraph Crew_Name["Name"]:::crewStyle` - THIS WILL CAUSE PARSING ERRORS
+
 ### Node ID Conventions
 - **Crews**: `Crew_[CrewName]` (replace spaces with underscores)
 - **Agents**: `Agent_[AgentName]` (replace spaces with underscores) - Agent display names must end with "Agent"
@@ -285,6 +292,7 @@ Return ONLY a JSON object with this exact structure:
 ## VALIDATION CHECKLIST
 
 Before generating output, verify:
+- **NO INLINE STYLES**: Verify NO `:::styleName` syntax is used anywhere - use `class` keyword instead
 - **TITLE**: Chart includes descriptive title with workflow/crew name
 - **LABELED ARROWS**: ALL connections include descriptive labels explaining the relationship
 - **AGENT NAMING**: All agent names end with the word "Agent"

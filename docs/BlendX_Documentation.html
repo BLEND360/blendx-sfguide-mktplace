@@ -1,0 +1,634 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        @page {
+            size: A4;
+            margin: 2cm;
+            @top-center {
+                content: "BlendX Documentation";
+                font-size: 10px;
+                color: #666;
+            }
+            @bottom-center {
+                content: "Page " counter(page) " of " counter(pages);
+                font-size: 10px;
+                color: #666;
+            }
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            font-size: 11pt;
+            line-height: 1.6;
+            color: #333;
+            max-width: 100%;
+        }
+
+        h1 {
+            color: #1a73e8;
+            font-size: 28pt;
+            border-bottom: 3px solid #1a73e8;
+            padding-bottom: 10px;
+            margin-top: 30px;
+            page-break-after: avoid;
+        }
+
+        h2 {
+            color: #1a73e8;
+            font-size: 18pt;
+            border-bottom: 2px solid #e0e0e0;
+            padding-bottom: 8px;
+            margin-top: 25px;
+            page-break-after: avoid;
+        }
+
+        h3 {
+            color: #333;
+            font-size: 14pt;
+            margin-top: 20px;
+            page-break-after: avoid;
+        }
+
+        h4 {
+            color: #555;
+            font-size: 12pt;
+            margin-top: 15px;
+            page-break-after: avoid;
+        }
+
+        p {
+            margin: 10px 0;
+        }
+
+        code {
+            background-color: #f5f5f5;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'SF Mono', Monaco, 'Courier New', monospace;
+            font-size: 10pt;
+        }
+
+        pre {
+            background-color: #2d2d2d;
+            color: #f8f8f2;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+            font-size: 9pt;
+            line-height: 1.4;
+            page-break-inside: avoid;
+        }
+
+        pre code {
+            background-color: transparent;
+            padding: 0;
+            color: #f8f8f2;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 15px 0;
+            font-size: 10pt;
+            page-break-inside: avoid;
+        }
+
+        th {
+            background-color: #1a73e8;
+            color: white;
+            padding: 10px;
+            text-align: left;
+            font-weight: 600;
+        }
+
+        td {
+            border: 1px solid #ddd;
+            padding: 10px;
+            vertical-align: top;
+        }
+
+        tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+
+        ul, ol {
+            margin: 10px 0;
+            padding-left: 25px;
+        }
+
+        li {
+            margin: 5px 0;
+        }
+
+        hr {
+            border: none;
+            border-top: 2px solid #e0e0e0;
+            margin: 30px 0;
+        }
+
+        blockquote {
+            border-left: 4px solid #1a73e8;
+            margin: 15px 0;
+            padding: 10px 20px;
+            background-color: #f5f9ff;
+        }
+
+        .cover-page {
+            text-align: center;
+            padding-top: 200px;
+            page-break-after: always;
+        }
+
+        .cover-page h1 {
+            font-size: 36pt;
+            border: none;
+            color: #1a73e8;
+        }
+
+        .cover-page .subtitle {
+            font-size: 18pt;
+            color: #666;
+            margin-top: 20px;
+        }
+
+        .cover-page .version {
+            font-size: 12pt;
+            color: #999;
+            margin-top: 50px;
+        }
+
+        strong {
+            color: #1a73e8;
+        }
+
+        a {
+            color: #1a73e8;
+            text-decoration: none;
+        }
+
+        a:hover {
+            text-decoration: underline;
+        }
+
+        img, svg {
+            max-width: 100%;
+            height: auto;
+            overflow: visible;
+        }
+
+        pre > code {
+            white-space: pre-wrap;
+        }
+    </style>
+</head>
+<body>
+    <div class="cover-page">
+        <h1>BlendX</h1>
+        <div class="subtitle">CrewAI Agent Workflows<br>Snowflake Native Application</div>
+        <div class="version">Documentation v1.0<br>December 2025</div>
+    </div>
+    <h1 id="blendx-crewai-agent-workflows">BlendX CrewAI Agent Workflows</h1>
+<h2 id="overview">Overview</h2>
+<p>BlendX Snowflake Native Application enables you to run CrewAI agent workflows directly within your Snowflake environment, powered by Snowflake Cortex LLMs.</p>
+<h3 id="key-features">Key Features</h3>
+<ul>
+<li><strong>Multi-Agent AI Workflows</strong>: Run sophisticated multi-agent AI workflows using the CrewAI framework</li>
+<li><strong>Snowflake Cortex Integration</strong>: Powered by Snowflake Cortex LLMs - no external API keys required for LLM access</li>
+<li><strong>Natural Language Workflow Generator</strong>: Create complex workflows using plain English descriptions</li>
+<li><strong>External Tool Integration</strong>: Web search capabilities via Serper API</li>
+<li><strong>Secure Execution</strong>: Runs within Snowpark Container Services (SPCS)</li>
+<li><strong>Built-in Secret Management</strong>: Through Snowflake references</li>
+<li><strong>Interactive Web Interface</strong>: For generating and monitoring workflows</li>
+</ul>
+<hr />
+<h2 id="architecture">Architecture</h2>
+<p><img alt="BlendX Architecture" src="architecture.png" /></p>
+<hr />
+<h2 id="installation">Installation</h2>
+<h3 id="step-1-install-the-application">Step 1: Install the Application</h3>
+<p>Click "Get" in the Snowflake Marketplace to install the application in your Snowflake account.</p>
+<h3 id="step-2-grant-privileges">Step 2: Grant Privileges</h3>
+<p>When prompted, grant the following privileges:</p>
+<table>
+<thead>
+<tr>
+<th>Privilege</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>IMPORTED PRIVILEGES ON SNOWFLAKE DB</td>
+<td>Access to Cortex LLMs</td>
+</tr>
+<tr>
+<td>CREATE COMPUTE POOL</td>
+<td>Create SPCS compute resources</td>
+</tr>
+<tr>
+<td>BIND SERVICE ENDPOINT</td>
+<td>Expose web interface</td>
+</tr>
+<tr>
+<td>CREATE WAREHOUSE</td>
+<td>Create warehouse for processing</td>
+</tr>
+<tr>
+<td>EXECUTE MANAGED TASK</td>
+<td>Run scheduled tasks</td>
+</tr>
+<tr>
+<td>CREATE EXTERNAL ACCESS INTEGRATION</td>
+<td>Connect to external APIs</td>
+</tr>
+</tbody>
+</table>
+<h3 id="step-3-configure-serper-api-optional">Step 3: Configure Serper API (Optional)</h3>
+<p>For web search capabilities, create a secret with your Serper API key:</p>
+<div class="codehilite"><pre><span></span><code><span class="k">CREATE</span><span class="w"> </span><span class="k">DATABASE</span><span class="w"> </span><span class="k">IF</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">EXISTS</span><span class="w"> </span><span class="n">secrets_db</span><span class="p">;</span>
+<span class="k">CREATE</span><span class="w"> </span><span class="k">SCHEMA</span><span class="w"> </span><span class="k">IF</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">EXISTS</span><span class="w"> </span><span class="n">secrets_db</span><span class="p">.</span><span class="n">app_secrets</span><span class="p">;</span>
+
+<span class="k">CREATE</span><span class="w"> </span><span class="n">SECRET</span><span class="w"> </span><span class="k">IF</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">EXISTS</span><span class="w"> </span><span class="n">secrets_db</span><span class="p">.</span><span class="n">app_secrets</span><span class="p">.</span><span class="n">serper_api_key</span>
+<span class="w">  </span><span class="k">TYPE</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">GENERIC_STRING</span>
+<span class="w">  </span><span class="n">SECRET_STRING</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s1">&#39;&lt;your_serper_api_key&gt;&#39;</span><span class="p">;</span>
+</code></pre></div>
+
+<p>Get your API key from: https://serper.dev</p>
+<h3 id="step-4-grant-cortex-permissions">Step 4: Grant Cortex Permissions</h3>
+<div class="codehilite"><pre><span></span><code><span class="c1">-- Grant Cortex user role to the application</span>
+<span class="k">GRANT</span><span class="w"> </span><span class="k">DATABASE</span><span class="w"> </span><span class="k">ROLE</span><span class="w"> </span><span class="n">SNOWFLAKE</span><span class="p">.</span><span class="n">CORTEX_USER</span><span class="w"> </span><span class="k">TO</span><span class="w"> </span><span class="n">APPLICATION</span><span class="w"> </span><span class="o">&lt;</span><span class="n">your_app_name</span><span class="o">&gt;</span><span class="p">;</span>
+
+<span class="c1">-- Grant imported privileges on Snowflake database</span>
+<span class="k">GRANT</span><span class="w"> </span><span class="n">IMPORTED</span><span class="w"> </span><span class="k">PRIVILEGES</span><span class="w"> </span><span class="k">ON</span><span class="w"> </span><span class="k">DATABASE</span><span class="w"> </span><span class="n">SNOWFLAKE</span><span class="w"> </span><span class="k">TO</span><span class="w"> </span><span class="n">APPLICATION</span><span class="w"> </span><span class="o">&lt;</span><span class="n">your_app_name</span><span class="o">&gt;</span><span class="p">;</span>
+</code></pre></div>
+
+<h3 id="step-5-activate-and-start">Step 5: Activate and Start</h3>
+<ol>
+<li>Click "Activate" in the application page</li>
+<li>Configure references (Serper secret if using web search)</li>
+<li>Start the application:</li>
+</ol>
+<div class="codehilite"><pre><span></span><code><span class="k">CALL</span><span class="w"> </span><span class="o">&lt;</span><span class="n">app_name</span><span class="o">&gt;</span><span class="p">.</span><span class="n">app_public</span><span class="p">.</span><span class="n">start_app</span><span class="p">(</span><span class="s1">&#39;&lt;pool_name&gt;&#39;</span><span class="p">,</span><span class="w"> </span><span class="s1">&#39;&lt;warehouse_name&gt;&#39;</span><span class="p">);</span>
+</code></pre></div>
+
+<h3 id="step-6-access-the-application">Step 6: Access the Application</h3>
+<p>Get the application URL:</p>
+<div class="codehilite"><pre><span></span><code><span class="k">CALL</span><span class="w"> </span><span class="o">&lt;</span><span class="n">app_name</span><span class="o">&gt;</span><span class="p">.</span><span class="n">app_public</span><span class="p">.</span><span class="n">app_url</span><span class="p">();</span>
+</code></pre></div>
+
+<p>Open the URL in your browser to access the web interface.</p>
+<hr />
+<h2 id="using-the-natural-language-generator">Using the Natural Language Generator</h2>
+<p>The NL Generator allows you to create complex AI workflows using plain English descriptions.</p>
+<h3 id="how-it-works">How It Works</h3>
+<ol>
+<li><strong>Describe your workflow</strong> in natural language</li>
+<li>The AI <strong>classifies</strong> your request as either a Crew or Flow</li>
+<li>A <strong>YAML configuration</strong> is generated automatically</li>
+<li>A <strong>visual diagram</strong> is created using Mermaid</li>
+<li><strong>Execute</strong> the workflow directly in Snowflake</li>
+</ol>
+<h3 id="workflow-types">Workflow Types</h3>
+<table>
+<thead>
+<tr>
+<th>Type</th>
+<th>Description</th>
+<th>Best For</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Crew</strong></td>
+<td>Parallel or independent task execution</td>
+<td>Multiple agents working on separate topics</td>
+</tr>
+<tr>
+<td><strong>Flow</strong></td>
+<td>Sequential, dependent workflows</td>
+<td>Step-by-step processes where output feeds into next step</td>
+</tr>
+</tbody>
+</table>
+<h3 id="example-requests">Example Requests</h3>
+<h4 id="sequential-flow-research-analysis-report">Sequential Flow (Research → Analysis → Report)</h4>
+<div class="codehilite"><pre><span></span><code><span class="nv">Create</span><span class="w"> </span><span class="nv">a</span><span class="w"> </span><span class="nv">workflow</span><span class="w"> </span><span class="nv">to</span><span class="w"> </span><span class="nv">research</span><span class="w"> </span><span class="nv">the</span><span class="w"> </span><span class="nv">latest</span><span class="w"> </span><span class="nv">Snowflake</span><span class="w"> </span><span class="nv">AI</span><span class="w"> </span><span class="nv">features</span>,
+<span class="k">then</span><span class="w"> </span><span class="nv">analyze</span><span class="w"> </span><span class="nv">how</span><span class="w"> </span><span class="nv">they</span><span class="w"> </span><span class="nv">compare</span><span class="w"> </span><span class="nv">to</span><span class="w"> </span><span class="nv">competitors</span><span class="w"> </span><span class="nv">like</span><span class="w"> </span><span class="nv">Databricks</span><span class="w"> </span><span class="nv">and</span><span class="w"> </span><span class="nv">AWS</span>,
+<span class="nv">and</span><span class="w"> </span><span class="nv">finally</span><span class="w"> </span><span class="nv">generate</span><span class="w"> </span><span class="nv">a</span><span class="w"> </span><span class="nv">comprehensive</span><span class="w"> </span><span class="nv">market</span><span class="w"> </span><span class="nv">analysis</span><span class="w"> </span><span class="nv">report</span>.
+</code></pre></div>
+
+<h4 id="parallel-crew-independent-analysts">Parallel Crew (Independent Analysts)</h4>
+<div class="codehilite"><pre><span></span><code><span class="nx">Create</span><span class="w"> </span><span class="nx">a</span><span class="w"> </span><span class="nx">team</span><span class="w"> </span><span class="nx">of</span><span class="w"> </span><span class="nx">analysts</span><span class="w"> </span><span class="nx">to</span><span class="w"> </span><span class="nx">review</span><span class="w"> </span><span class="nx">customer</span><span class="w"> </span><span class="nx">feedback</span><span class="p">.</span>
+<span class="nx">One</span><span class="w"> </span><span class="nx">analyst</span><span class="w"> </span><span class="nx">should</span><span class="w"> </span><span class="nx">focus</span><span class="w"> </span><span class="nx">on</span><span class="w"> </span><span class="nx">sentiment</span><span class="w"> </span><span class="nx">analysis</span><span class="w"> </span><span class="nx">of</span><span class="w"> </span><span class="nx">product</span><span class="w"> </span><span class="nx">reviews</span><span class="p">,</span>
+<span class="nx">another</span><span class="w"> </span><span class="nx">should</span><span class="w"> </span><span class="nx">identify</span><span class="w"> </span><span class="nx">common</span><span class="w"> </span><span class="nx">feature</span><span class="w"> </span><span class="nx">requests</span><span class="p">,</span>
+<span class="k">and</span><span class="w"> </span><span class="nx">a</span><span class="w"> </span><span class="nx">third</span><span class="w"> </span><span class="nx">should</span><span class="w"> </span><span class="nx">categorize</span><span class="w"> </span><span class="nx">support</span><span class="w"> </span><span class="nx">tickets</span><span class="w"> </span><span class="nx">by</span><span class="w"> </span><span class="nx">issue</span><span class="w"> </span><span class="k">type</span><span class="p">.</span>
+</code></pre></div>
+
+<h4 id="simple-research-task">Simple Research Task</h4>
+<div class="codehilite"><pre><span></span><code><span class="nv">Search</span><span class="w"> </span><span class="k">for</span><span class="w"> </span><span class="nv">recent</span><span class="w"> </span><span class="nv">news</span><span class="w"> </span><span class="nv">about</span><span class="w"> </span><span class="nv">artificial</span><span class="w"> </span><span class="nv">intelligence</span><span class="w"> </span><span class="nv">in</span><span class="w"> </span><span class="nv">healthcare</span>
+<span class="nv">and</span><span class="w"> </span><span class="nv">create</span><span class="w"> </span><span class="nv">a</span><span class="w"> </span><span class="nv">summary</span><span class="w"> </span><span class="nv">report</span><span class="w"> </span><span class="nv">highlighting</span><span class="w"> </span><span class="nv">the</span><span class="w"> </span><span class="nv">top</span><span class="w"> </span><span class="mi">3</span><span class="w"> </span><span class="nv">breakthroughs</span>.
+</code></pre></div>
+
+<h3 id="generated-output">Generated Output</h3>
+<p>The NL Generator produces:</p>
+<ol>
+<li><strong>YAML Configuration</strong>: Complete CrewAI workflow definition</li>
+<li><strong>Rationale</strong>: Explanation of the workflow design</li>
+<li><strong>Mermaid Diagram</strong>: Visual representation of the workflow</li>
+</ol>
+<hr />
+<h2 id="workflow-configuration">Workflow Configuration</h2>
+<h3 id="agent-configuration">Agent Configuration</h3>
+<p>Agents are defined with the following properties:</p>
+<div class="codehilite"><pre><span></span><code><span class="nt">agents</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">role</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;Research</span><span class="nv"> </span><span class="s">Analyst&quot;</span>
+<span class="w">    </span><span class="nt">goal</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;Gather</span><span class="nv"> </span><span class="s">and</span><span class="nv"> </span><span class="s">analyze</span><span class="nv"> </span><span class="s">market</span><span class="nv"> </span><span class="s">data&quot;</span>
+<span class="w">    </span><span class="nt">backstory</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;Expert</span><span class="nv"> </span><span class="s">researcher</span><span class="nv"> </span><span class="s">with</span><span class="nv"> </span><span class="s">10</span><span class="nv"> </span><span class="s">years</span><span class="nv"> </span><span class="s">experience&quot;</span>
+<span class="w">    </span><span class="nt">tools</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">crewai_tools</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">&quot;SerperDevTool&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;WebsiteSearchTool&quot;</span><span class="p p-Indicator">]</span>
+<span class="w">    </span><span class="nt">llm</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">provider</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;snowflake&quot;</span>
+<span class="w">      </span><span class="nt">model</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;claude-3-5-sonnet&quot;</span>
+<span class="w">      </span><span class="nt">temperature</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.7</span>
+<span class="w">    </span><span class="nt">allow_delegation</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span>
+</code></pre></div>
+
+<h3 id="available-tools">Available Tools</h3>
+<table>
+<thead>
+<tr>
+<th>Tool Type</th>
+<th>Syntax</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>CrewAI Native</td>
+<td><code>crewai_tools: ["SerperDevTool", "WebsiteSearchTool"]</code></td>
+<td>Built-in CrewAI tools</td>
+</tr>
+</tbody>
+</table>
+<h3 id="task-configuration">Task Configuration</h3>
+<div class="codehilite"><pre><span></span><code><span class="nt">tasks</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;Market</span><span class="nv"> </span><span class="s">Research</span><span class="nv"> </span><span class="s">Task&quot;</span>
+<span class="w">    </span><span class="nt">description</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;Research</span><span class="nv"> </span><span class="s">market</span><span class="nv"> </span><span class="s">trends</span><span class="nv"> </span><span class="s">for</span><span class="nv"> </span><span class="s">${input}&quot;</span>
+<span class="w">    </span><span class="nt">agent</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;Research</span><span class="nv"> </span><span class="s">Analyst&quot;</span>
+<span class="w">    </span><span class="nt">expected_output</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;Comprehensive</span><span class="nv"> </span><span class="s">market</span><span class="nv"> </span><span class="s">analysis</span><span class="nv"> </span><span class="s">report&quot;</span>
+<span class="w">    </span><span class="nt">tools</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">crewai_tools</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">&quot;SerperDevTool&quot;</span><span class="p p-Indicator">]</span>
+<span class="w">    </span><span class="nt">context</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[]</span><span class="w">  </span>
+</code></pre></div>
+
+<h3 id="flow-methods-for-flow-type">Flow Methods (for Flow type)</h3>
+<div class="codehilite"><pre><span></span><code><span class="nt">flow_methods</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;run_research&quot;</span>
+<span class="w">    </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;start&quot;</span>
+<span class="w">    </span><span class="nt">action</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;run_crew&quot;</span>
+<span class="w">    </span><span class="nt">crew</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;Research</span><span class="nv"> </span><span class="s">Crew&quot;</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;run_analysis&quot;</span>
+<span class="w">    </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;listen&quot;</span>
+<span class="w">    </span><span class="nt">listen_to</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">&quot;run_research&quot;</span><span class="p p-Indicator">]</span>
+<span class="w">    </span><span class="nt">action</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;run_crew&quot;</span>
+<span class="w">    </span><span class="nt">crew</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;Analysis</span><span class="nv"> </span><span class="s">Crew&quot;</span>
+</code></pre></div>
+
+<hr />
+<h2 id="llm-configuration">LLM Configuration</h2>
+<h3 id="default-provider">Default Provider</h3>
+<p>All workflows use Snowflake Cortex by default:</p>
+<div class="codehilite"><pre><span></span><code><span class="nt">llm</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">provider</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;snowflake&quot;</span>
+<span class="w">  </span><span class="nt">model</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;claude-3-5-sonnet&quot;</span>
+<span class="w">  </span><span class="nt">temperature</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.5</span>
+</code></pre></div>
+
+<h3 id="available-models">Available Models</h3>
+<table>
+<thead>
+<tr>
+<th>Provider</th>
+<th>Models</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Snowflake</td>
+<td>claude-3-5-sonnet, llama3.1-70b, mistral-large2</td>
+</tr>
+</tbody>
+</table>
+<h3 id="temperature-guidelines">Temperature Guidelines</h3>
+<table>
+<thead>
+<tr>
+<th>Temperature</th>
+<th>Use Case</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>0.1 - 0.3</td>
+<td>Code generation, data analysis, consistent outputs</td>
+</tr>
+<tr>
+<td>0.5 - 0.7</td>
+<td>General tasks, balanced creativity</td>
+</tr>
+<tr>
+<td>0.7 - 1.0</td>
+<td>Creative writing, brainstorming</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="testing-the-application">Testing the Application</h2>
+<h3 id="test-buttons">Test Buttons</h3>
+<p>The application includes built-in test buttons:</p>
+<table>
+<thead>
+<tr>
+<th>Button</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>TEST CORTEX</td>
+<td>Verify Snowflake Cortex LLM connectivity</td>
+</tr>
+<tr>
+<td>TEST LITELLM</td>
+<td>Test LiteLLM integration</td>
+</tr>
+<tr>
+<td>TEST SECRETS</td>
+<td>Verify secret configuration</td>
+</tr>
+<tr>
+<td>TEST SERPER</td>
+<td>Test Serper API connectivity</td>
+</tr>
+<tr>
+<td>RUN TEST CREW</td>
+<td>Execute a basic CrewAI workflow</td>
+</tr>
+<tr>
+<td>RUN TEST EXTERNAL TOOL</td>
+<td>Run workflow with web search</td>
+</tr>
+</tbody>
+</table>
+<h3 id="verification-steps">Verification Steps</h3>
+<ol>
+<li>Click <strong>TEST CORTEX</strong> - Should return a response from the LLM</li>
+<li>Click <strong>TEST SECRETS</strong> - Should show SERPER_API_KEY status</li>
+<li>Click <strong>TEST SERPER</strong> - Should return search results (if configured)</li>
+<li>Click <strong>RUN TEST CREW</strong> - Should complete a basic workflow</li>
+</ol>
+<hr />
+<h2 id="workflow-history">Workflow History</h2>
+<h3 id="viewing-history">Viewing History</h3>
+<ol>
+<li>Click <strong>Load History</strong> in the chat header</li>
+<li>Browse previously generated workflows</li>
+<li>Click any workflow card to view details</li>
+</ol>
+<h3 id="saving-workflows">Saving Workflows</h3>
+<ol>
+<li>After generating a workflow, click <strong>Save</strong></li>
+<li>Enter a descriptive name</li>
+<li>The workflow is saved to your history</li>
+</ol>
+<h3 id="workflow-details">Workflow Details</h3>
+<p>Each saved workflow includes:
+- Title and creation date
+- Status (COMPLETED, PENDING, FAILED)
+- Type (run-build-crew or run-build-flow)
+- Rationale
+- YAML configuration
+- Mermaid diagram</p>
+<hr />
+<h2 id="troubleshooting">Troubleshooting</h2>
+<h3 id="common-issues">Common Issues</h3>
+<h4 id="cortex-test-failed">"Cortex test failed"</h4>
+<p><strong>Cause</strong>: Missing Cortex permissions</p>
+<p><strong>Solution</strong>:</p>
+<div class="codehilite"><pre><span></span><code><span class="k">GRANT</span><span class="w"> </span><span class="k">DATABASE</span><span class="w"> </span><span class="k">ROLE</span><span class="w"> </span><span class="n">SNOWFLAKE</span><span class="p">.</span><span class="n">CORTEX_USER</span><span class="w"> </span><span class="k">TO</span><span class="w"> </span><span class="n">APPLICATION</span><span class="w"> </span><span class="o">&lt;</span><span class="n">your_app_name</span><span class="o">&gt;</span><span class="p">;</span>
+<span class="k">GRANT</span><span class="w"> </span><span class="n">IMPORTED</span><span class="w"> </span><span class="k">PRIVILEGES</span><span class="w"> </span><span class="k">ON</span><span class="w"> </span><span class="k">DATABASE</span><span class="w"> </span><span class="n">SNOWFLAKE</span><span class="w"> </span><span class="k">TO</span><span class="w"> </span><span class="n">APPLICATION</span><span class="w"> </span><span class="o">&lt;</span><span class="n">your_app_name</span><span class="o">&gt;</span><span class="p">;</span>
+</code></pre></div>
+
+<h4 id="serper-test-failed">"Serper test failed"</h4>
+<p><strong>Cause</strong>: Missing or invalid Serper API key</p>
+<p><strong>Solution</strong>:
+1. Verify secret exists: <code>SHOW SECRETS IN SCHEMA secrets_db.app_secrets;</code>
+2. Recreate if needed with valid API key</p>
+<h4 id="error-rendering-diagram">"Error rendering diagram"</h4>
+<p><strong>Cause</strong>: Invalid Mermaid syntax in generated chart</p>
+<p><strong>Solution</strong>: The application will display an error message. Try regenerating the workflow.</p>
+<h4 id="workflow-stuck-in-pending">Workflow stuck in "PENDING"</h4>
+<p><strong>Cause</strong>: Long-running LLM processing</p>
+<p><strong>Solution</strong>: Wait up to 2-3 minutes. If still pending, check compute pool status.</p>
+<hr />
+<h2 id="compute-costs">Compute Costs</h2>
+<p>Usage of this application incurs Snowflake compute costs for:</p>
+<table>
+<thead>
+<tr>
+<th>Resource</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>SPCS Compute Pool</td>
+<td>Container runtime for the application</td>
+</tr>
+<tr>
+<td>Snowflake Cortex</td>
+<td>LLM token usage</td>
+</tr>
+<tr>
+<td>Warehouse</td>
+<td>Query processing</td>
+</tr>
+</tbody>
+</table>
+<h3 id="cost-optimization-tips">Cost Optimization Tips</h3>
+<ol>
+<li>Use smaller compute pool sizes for testing</li>
+<li>Stop the application when not in use</li>
+<li>Use lower temperature settings to reduce token usage</li>
+<li>Batch similar workflows together</li>
+</ol>
+<hr />
+<h2 id="security">Security</h2>
+<h3 id="data-privacy">Data Privacy</h3>
+<ul>
+<li>All data processing occurs within your Snowflake account</li>
+<li>No data is transmitted to the application provider</li>
+<li>LLM processing uses Snowflake Cortex (data stays in Snowflake)</li>
+</ul>
+<h3 id="external-connections">External Connections</h3>
+<p>If configured, the application may connect to:</p>
+<table>
+<thead>
+<tr>
+<th>Service</th>
+<th>Purpose</th>
+<th>Data Sent</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Serper API</td>
+<td>Web search</td>
+<td>Search queries only</td>
+</tr>
+</tbody>
+</table>
+<h3 id="secret-management">Secret Management</h3>
+<ul>
+<li>API keys are stored as Snowflake Secrets</li>
+<li>Secrets are accessed via secure references</li>
+<li>Never exposed in logs or outputs</li>
+</ul>
+<hr />
+<h2 id="api-reference">API Reference</h2>
+<h3 id="start-application">Start Application</h3>
+<div class="codehilite"><pre><span></span><code><span class="k">CALL</span><span class="w"> </span><span class="o">&lt;</span><span class="n">app_name</span><span class="o">&gt;</span><span class="p">.</span><span class="n">app_public</span><span class="p">.</span><span class="n">start_app</span><span class="p">(</span><span class="s1">&#39;&lt;pool_name&gt;&#39;</span><span class="p">,</span><span class="w"> </span><span class="s1">&#39;&lt;warehouse_name&gt;&#39;</span><span class="p">);</span>
+</code></pre></div>
+
+<h3 id="stop-application">Stop Application</h3>
+<div class="codehilite"><pre><span></span><code><span class="k">CALL</span><span class="w"> </span><span class="o">&lt;</span><span class="n">app_name</span><span class="o">&gt;</span><span class="p">.</span><span class="n">app_public</span><span class="p">.</span><span class="n">stop_app</span><span class="p">();</span>
+</code></pre></div>
+
+<h3 id="get-application-url">Get Application URL</h3>
+<div class="codehilite"><pre><span></span><code><span class="k">CALL</span><span class="w"> </span><span class="o">&lt;</span><span class="n">app_name</span><span class="o">&gt;</span><span class="p">.</span><span class="n">app_public</span><span class="p">.</span><span class="n">app_url</span><span class="p">();</span>
+</code></pre></div>
+
+<h3 id="check-application-status">Check Application Status</h3>
+<div class="codehilite"><pre><span></span><code><span class="k">CALL</span><span class="w"> </span><span class="o">&lt;</span><span class="n">app_name</span><span class="o">&gt;</span><span class="p">.</span><span class="n">app_public</span><span class="p">.</span><span class="n">service_status</span><span class="p">();</span>
+</code></pre></div>
+
+<hr />
+<h2 id="support">Support</h2>
+<h3 id="getting-help">Getting Help</h3>
+<ul>
+<li><strong>Documentation</strong>: This guide</li>
+<li><strong>Issues</strong>: Contact support@blend360.com</li>
+</ul>
+<h3 id="reporting-issues">Reporting Issues</h3>
+<p>When reporting issues, please include:
+1. Error message (if any)
+2. Steps to reproduce
+3. Workflow YAML (if applicable)
+4. Browser and version</p>
+<hr />
+<p><em>BlendX CrewAI Agent Workflows - Powered by Snowflake Cortex</em></p>
+</body>
+</html>

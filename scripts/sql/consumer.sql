@@ -6,7 +6,7 @@ CREATE SCHEMA IF NOT EXISTS secrets_db.app_secrets;
 
 CREATE OR REPLACE SECRET secrets_db.app_secrets.serper_api_key
   TYPE = GENERIC_STRING
-  SECRET_STRING = '570e07cb33dd1a29bdcaf82d7529cd527ff11f10'
+  SECRET_STRING = '{key}'
   COMMENT = 'API key for Serper web search service used by CrewAI application';
 
 GRANT REFERENCE_USAGE ON DATABASE secrets_db

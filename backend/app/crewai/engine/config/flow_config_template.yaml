@@ -18,7 +18,6 @@ flow:
 
 # Crew Definitions - each crew has agents and tasks assigned to it
 execution_group_name: "Default Crew Group"
-type: "RAG"  # Optional: Type of flow execution (only "RAG" currently supported)
 crews:
   - name: "Research Crew"
     process: "sequential"  # sequential, parallel, or hierarchical
@@ -58,8 +57,8 @@ agents:
       - crewai_tools: ["SerperDevTool", "WebsiteSearchTool"]
     verbose: true
     llm:
-      provider: "openai"
-      model: "gpt-4-turbo-preview"
+      provider: "snowflake"
+      model: "claude-3-5-sonnet"
       temperature: 0.7
     allow_delegation: false
 
@@ -85,8 +84,8 @@ agents:
   #   verbose: true
   #   allow_delegation: false
   #   llm:
-  #     provider: "openai"
-  #     model: "gpt-4o"
+  #     provider: "snowflake"
+  #     model: "claude-3-5-sonnet"
   #     temperature: 0.2  # Slightly higher for more natural language
 
   # Example: Python Code Execution Agent
@@ -102,8 +101,8 @@ agents:
   #   verbose: true
   #   allow_delegation: false
   #   llm:
-  #     provider: "openai"
-  #     model: "gpt-4o"
+  #     provider: "snowflake"
+  #     model: "claude-3-5-sonnet"
   #     temperature: 0.1  # Low temperature for consistent code generation
 
 # Task Definitions

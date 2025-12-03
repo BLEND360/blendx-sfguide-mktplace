@@ -1104,8 +1104,29 @@ class UnifiedLLMService:
         # The endpoint handles token limits internally via max_completion_tokens
 
         # Add response_format if provided for structured output
+        # For Claude models on Snowflake Cortex, only json_schema format is supported
+        # We need to wrap the schema in the correct format if it's not already
         if "response_format" in kwargs:
-            llm_params["response_format"] = kwargs["response_format"]
+            response_format = kwargs["response_format"]
+            # Check if it's already in the correct json_schema format
+            if isinstance(response_format, dict):
+                if response_format.get("type") == "json_schema":
+                    # Already in correct format
+                    llm_params["response_format"] = response_format
+                elif "properties" in response_format or "$schema" in response_format:
+                    # It's a raw JSON schema, wrap it in json_schema format for Claude on Snowflake
+                    llm_params["response_format"] = {
+                        "type": "json_schema",
+                        "json_schema": {
+                            "name": response_format.get("title", "response_schema"),
+                            "schema": response_format,
+                            "strict": True
+                        }
+                    }
+                    logger.info("🔧 Wrapped raw JSON schema in json_schema format for Snowflake Cortex")
+                else:
+                    # Pass through as-is (e.g., {"type": "json_object"})
+                    llm_params["response_format"] = response_format
 
         logger.info(
             f"✅ Created Snowflake LLM with OpenAI-compatible endpoint (temperature={llm_params['temperature']})"
