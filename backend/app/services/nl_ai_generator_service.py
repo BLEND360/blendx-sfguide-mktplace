@@ -676,7 +676,10 @@ def _generate_mermaid_chart_with_structured_output(
         str: Valid mermaid chart code, or None if generation fails
     """
     try:
-        from app.handlers.lite_llm_handler import get_llm
+        from app.handlers.lite_llm_handler import get_snowflake_litellm_service
+        from app.config.settings import get_settings
+
+        settings = get_settings()
 
         # Load the mermaid prompt template
         mermaid_prompt = load_file_sync(
@@ -695,21 +698,41 @@ def _generate_mermaid_chart_with_structured_output(
         )
         mermaid_input = mermaid_input.replace("{{error_feedback}}", "")
 
-        # Get LLM with structured output using Pydantic model schema
-        mermaid_llm = get_llm(
-            provider="snowflake",
-            model="claude-3-5-sonnet",
+        # Build base URL for native Snowflake endpoint (supports response_format)
+        host = settings.snowflake_host
+        base_url = f"https://{host}/api/v2/cortex/inference:complete"
+
+        # Get private key for JWT auth
+        private_key = None
+        if settings.snowflake_private_key_path:
+            try:
+                with open(settings.snowflake_private_key_path, "r") as f:
+                    private_key = f.read()
+            except Exception as e:
+                logger.warning(f"Could not load private key: {e}")
+
+        # Use SnowflakeLitellmService with response_format for structured output
+        mermaid_llm = get_snowflake_litellm_service(
+            base_url=base_url,
+            snowflake_account=settings.snowflake_account,
+            snowflake_service_user=settings.snowflake_service_user or settings.snowflake_user,
+            snowflake_authmethod="jwt" if private_key else "oauth",
+            api_key=private_key,
+            temperature=0.1,
             max_tokens=GenerationConfig.DEFAULT_MAX_TOKENS,
             response_format=MermaidChartResponse.model_json_schema(),
         )
 
         # Call LLM with structured output
-        mermaid_response = mermaid_llm.call(
-            messages=[{"role": "user", "content": mermaid_input}]
+        mermaid_response = mermaid_llm.completion(
+            model="claude-3-5-sonnet",
+            messages=[{"role": "user", "content": mermaid_input}],
+            timeout=120,
         )
 
-        # Parse the structured response directly as JSON
-        response_data = json.loads(mermaid_response)
+        # Parse the structured response
+        response_content = mermaid_response.choices[0].message.content
+        response_data = json.loads(response_content)
         mermaid_chart_raw = response_data.get("mermaid_chart")
 
         if mermaid_chart_raw:
