@@ -17,24 +17,26 @@ Follow these steps after installing the application from the Snowflake Marketpla
 
 ### Step 1: Grant Account-Level Privileges
 
-When you first open the application, you will be prompted to grant the following privileges:
-
-- **IMPORTED PRIVILEGES ON SNOWFLAKE DB** - Access Snowflake Cortex AI functions
-- **CREATE COMPUTE POOL** - Create compute resources for the application
-- **BIND SERVICE ENDPOINT** - Expose the application's web interface
-- **CREATE WAREHOUSE** - Create a warehouse for query execution
-- **EXECUTE MANAGED TASK** - Execute Cortex functions
-- **CREATE EXTERNAL ACCESS INTEGRATION** - Enable external API connections (Serper)
+When you first open the application, you will be prompted to grant serper external access integration privileges.
 
 Click **Grant** to approve these privileges.
 
 ---
 
-### Step 2: Configure Serper API Secret (Required for External Tools)
+### Step 2: Activate the Application
+
+1. Return to the application page in the Snowflake UI
+2. Click **Activate** to start the application
+3. Wait for the service to initialize (this may take a few minutes)
+
+
+### Step 3: Configure Serper API Secret (Required for External Tools)
 
 The application uses Serper API for web search functionality. You need to create a secret with your API key.
 
-#### 2.1 Create Secret Infrastructure
+**Note**: The application automatically creates the External Access Integration - you only need to provide the API key secret.
+
+#### 3.1 Create Secret
 
 ```sql
 -- Use your role (replace with your actual role)
@@ -49,11 +51,7 @@ CREATE SCHEMA IF NOT EXISTS secrets_db.app_secrets;
 CREATE SECRET IF NOT EXISTS secrets_db.app_secrets.serper_api_key
   TYPE = GENERIC_STRING
   SECRET_STRING = '<your_serper_api_key>';
-```
 
-#### 2.2 Grant Secret Access to Application Package
-
-```sql
 -- Grant reference usage on the secrets database to the application package
 GRANT REFERENCE_USAGE ON DATABASE secrets_db
   TO SHARE IN APPLICATION PACKAGE <app_package_name>;
@@ -61,74 +59,26 @@ GRANT REFERENCE_USAGE ON DATABASE secrets_db
 
 ---
 
-### Step 3: Create External Access Integration for Serper
-
-```sql
--- Create network rule for Serper API
-CREATE NETWORK RULE IF NOT EXISTS secrets_db.app_secrets.serper_network_rule
-  TYPE = HOST_PORT
-  VALUE_LIST = ('google.serper.dev')
-  MODE = EGRESS;
-
--- Create external access integration
-CREATE OR REPLACE EXTERNAL ACCESS INTEGRATION serper_access_integration
-  ALLOWED_NETWORK_RULES = (secrets_db.app_secrets.serper_network_rule)
-  ALLOWED_AUTHENTICATION_SECRETS = (secrets_db.app_secrets.serper_api_key)
-  ENABLED = TRUE;
-
-GRANT USAGE ON INTEGRATION serper_access_integration TO ROLE nac_test;
-
-```
-
----
-
 ### Step 4: Configure Application References
 
-In the Snowflake UI, navigate to **Data Products > Apps > [Your App Name]** and configure the following references:
+In the Snowflake UI, configure the following reference at connections section:
 
 #### Object Access Privileges
 
-- **Serper secret** → `secrets_db.app_secrets.serper_api_key`
-- **Serper External Access** → `serper_access_integration`
+- **Serper API Key** → `secrets_db.app_secrets.serper_api_key`
 
-Click on each reference and select the corresponding object you created in the previous steps.
+Click on the reference and select the secret you created in the previous step.
 
----
-
-### Step 5: Create Compute Pool and Warehouse
-
-```sql
--- Create compute pool for the application
-CREATE COMPUTE POOL IF NOT EXISTS <pool_name>
-  MIN_NODES = 1
-  MAX_NODES = 3
-  INSTANCE_FAMILY = CPU_X64_M
-  AUTO_RESUME = TRUE;
-
--- Grant compute pool to the application
-GRANT USAGE ON COMPUTE POOL <pool_name> TO APPLICATION <app_name>;
-
--- Grant warehouse permissions (use existing or create new)
-GRANT USAGE ON WAREHOUSE <warehouse_name> TO APPLICATION <app_name>;
-GRANT OPERATE ON WAREHOUSE <warehouse_name> TO APPLICATION <app_name>;
-```
+**Note**: The application creates its own External Access Integration automatically.
 
 ---
 
-### Step 6: Activate the Application
-
-1. Return to the application page in the Snowflake UI
-2. Click **Activate** to start the application
-3. Wait for the service to initialize (this may take a few minutes)
-
----
-
-### Step 7: Start the Application Service
+### Step 5: Start the Application Service
 
 After activation, start the service by calling:
 
 ```sql
-CALL <app_name>.app_public.start_app('<pool_name>', '<warehouse_name>');
+CALL <app_name>.app_public.start_app('<pool_name>');
 ```
 
 Check the service status:
@@ -161,50 +111,16 @@ Once the application is running, open the URL returned by `app_url()` to access 
 
 ---
 
-## Troubleshooting
-
-### Cortex Test Fails
-
-Ensure you granted `IMPORTED PRIVILEGES ON SNOWFLAKE DB` when prompted. If needed, manually grant:
-
-```sql
-GRANT DATABASE ROLE SNOWFLAKE.CORTEX_USER TO APPLICATION <app_name>;
-GRANT IMPORTED PRIVILEGES ON DATABASE SNOWFLAKE TO APPLICATION <app_name>;
-```
-
-### Serper Test Fails
-
-1. Verify your Serper API key is correct
-2. Check that the secret reference is configured in the app
-3. Ensure the external access integration is granted to the app
-
-### Service Won't Start
-
-Check service logs for errors:
-
-```sql
-CALL <app_name>.app_public.get_service_logs('eap-backend', 200);
-```
-
-### Stop the Application
-
-```sql
-CALL <app_name>.app_public.stop_app();
-```
-
----
-
 ## Quick Reference - SQL Commands
 
 ```sql
 -- Replace placeholders with your actual values:
 -- <app_name>: Your application instance name
 -- <pool_name>: Your compute pool name
--- <warehouse_name>: Your warehouse name
 -- <your_role>: Your Snowflake role
 
 -- Start application
-CALL <app_name>.app_public.start_app('<pool_name>', '<warehouse_name>');
+CALL <app_name>.app_public.start_app('<pool_name>');
 
 -- Get application URL
 CALL <app_name>.app_public.app_url();

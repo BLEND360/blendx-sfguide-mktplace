@@ -115,7 +115,7 @@ jobs:
       - name: Restart service
         run: |
           snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_NAC_ROLE }}; CALL ${{ secrets.SNOWFLAKE_APP_INSTANCE }}.app_public.stop_app();" --connection mkt_blendx_demo || echo "Service not running (OK)"
-          snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_NAC_ROLE }}; CALL ${{ secrets.SNOWFLAKE_APP_INSTANCE }}.app_public.start_app('${{ secrets.SNOWFLAKE_COMPUTE_POOL }}', '${{ secrets.SNOWFLAKE_WAREHOUSE }}');" --connection mkt_blendx_demo
+          snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_NAC_ROLE }}; CALL ${{ secrets.SNOWFLAKE_APP_INSTANCE }}.app_public.start_app('${{ secrets.SNOWFLAKE_COMPUTE_POOL }}');" --connection mkt_blendx_demo
 
       - name: Wait for service to start
         run: sleep 30

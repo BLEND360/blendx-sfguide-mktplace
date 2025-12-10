@@ -61,10 +61,7 @@ Get your API key from: https://serper.dev
 
 ```sql
 -- Grant Cortex user role to the application
-GRANT DATABASE ROLE SNOWFLAKE.CORTEX_USER TO APPLICATION <your_app_name>;
-
--- Grant imported privileges on Snowflake database
-GRANT IMPORTED PRIVILEGES ON DATABASE SNOWFLAKE TO APPLICATION <your_app_name>;
+GRANT DATABASE ROLE SNOWFLAKE.CORTEX_USER TO APPLICATION <your_app_name>
 ```
 
 ### Step 5: Activate and Start
@@ -74,7 +71,7 @@ GRANT IMPORTED PRIVILEGES ON DATABASE SNOWFLAKE TO APPLICATION <your_app_name>;
 3. Start the application:
 
 ```sql
-CALL <app_name>.app_public.start_app('<pool_name>', '<warehouse_name>');
+CALL <app_name>.app_public.start_app('<pool_name>');
 ```
 
 ### Step 6: Access the Application
@@ -291,7 +288,6 @@ Each saved workflow includes:
 **Solution**:
 ```sql
 GRANT DATABASE ROLE SNOWFLAKE.CORTEX_USER TO APPLICATION <your_app_name>;
-GRANT IMPORTED PRIVILEGES ON DATABASE SNOWFLAKE TO APPLICATION <your_app_name>;
 ```
 
 #### "Serper test failed"
@@ -364,7 +360,7 @@ If configured, the application may connect to:
 ### Start Application
 
 ```sql
-CALL <app_name>.app_public.start_app('<pool_name>', '<warehouse_name>');
+CALL <app_name>.app_public.start_app('<pool_name>');
 ```
 
 ### Stop Application

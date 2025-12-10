@@ -219,7 +219,7 @@ async def test_serper():
     logger.info("Testing Serper API connection")
 
     try:
-        import http.client
+        import requests
 
         api_key = get_serper_api_key()
 
@@ -233,40 +233,40 @@ async def test_serper():
 
         logger.info(f"✅ API Key found: {api_key[:4]}****")
 
-        conn = http.client.HTTPSConnection("google.serper.dev")
+        url = "https://google.serper.dev/search"
         payload = json.dumps({"q": "artificial intelligence"})
-        headers = {"X-API-KEY": api_key, "Content-Type": "application/json"}
+        headers = {
+            "X-API-KEY": api_key,
+            "Content-Type": "application/json"
+        }
 
         logger.info("Sending request to Serper API...")
-        conn.request("POST", "/search", payload, headers)
-        res = conn.getresponse()
-        data = res.read()
-        response_text = data.decode("utf-8")
+        response = requests.post(url, headers=headers, data=payload, timeout=30)
 
-        logger.info(f"✅ Serper API responded with status: {res.status}")
+        logger.info(f"✅ Serper API responded with status: {response.status_code}")
 
         try:
-            response_json = json.loads(response_text)
+            response_json = response.json()
 
-            if res.status == 200:
+            if response.status_code == 200:
                 results_count = len(response_json.get("organic", []))
                 logger.info(f"✅ Serper search successful! Found {results_count} results")
 
                 return {
                     "status": "success",
                     "message": "Serper API is working correctly",
-                    "http_status": res.status,
+                    "http_status": response.status_code,
                     "results_count": results_count,
                     "search_query": "artificial intelligence",
                     "response_preview": response_json.get("organic", [])[0] if results_count > 0 else None,
                     "full_response": response_json,
                 }
             else:
-                logger.error(f"❌ Serper API returned error status: {res.status}")
+                logger.error(f"❌ Serper API returned error status: {response.status_code}")
                 return {
                     "status": "error",
-                    "message": f"Serper API returned error status: {res.status}",
-                    "http_status": res.status,
+                    "message": f"Serper API returned error status: {response.status_code}",
+                    "http_status": response.status_code,
                     "response": response_json,
                 }
         except json.JSONDecodeError as je:
@@ -274,8 +274,8 @@ async def test_serper():
             return {
                 "status": "error",
                 "message": "Failed to parse Serper response as JSON",
-                "http_status": res.status,
-                "raw_response": response_text[:500],
+                "http_status": response.status_code,
+                "raw_response": response.text[:500],
             }
 
     except Exception as e:

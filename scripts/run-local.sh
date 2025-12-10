@@ -99,7 +99,7 @@ check_dependencies() {
 setup_backend() {
     print_info "Setting up backend..."
 
-    cd "$PROJECT_ROOT/backend/app"
+    cd "$PROJECT_ROOT/backend"
 
     # Create virtual environment if it doesn't exist
     if [ ! -d "venv" ]; then
@@ -134,11 +134,13 @@ setup_frontend() {
 start_backend() {
     print_info "Starting backend on port $BACKEND_PORT..."
 
-    cd "$PROJECT_ROOT/backend/app"
+    cd "$PROJECT_ROOT/backend"
     source venv/bin/activate
 
     # Load environment variables if .env exists
-    if [ -f "$PROJECT_ROOT/.env" ]; then
+    if [ -f "$PROJECT_ROOT/backend/.env" ]; then
+        export $(grep -v '^#' "$PROJECT_ROOT/backend/.env" | xargs)
+    elif [ -f "$PROJECT_ROOT/.env" ]; then
         export $(grep -v '^#' "$PROJECT_ROOT/.env" | xargs)
     fi
 
@@ -146,8 +148,9 @@ start_backend() {
     export ENVIRONMENT=local
     export API_PORT=$BACKEND_PORT
 
-    # Run FastAPI with uvicorn
-    python -m uvicorn main:app --host 0.0.0.0 --port $BACKEND_PORT --reload &
+    # Run FastAPI with uvicorn from the backend directory
+    # The app module structure expects to be run from backend/ not backend/app/
+    python -m uvicorn app.main:app --host 0.0.0.0 --port $BACKEND_PORT --reload &
     BACKEND_PID=$!
 
     cd "$PROJECT_ROOT"

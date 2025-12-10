@@ -244,7 +244,7 @@ else
     echo "Next steps:"
     echo ""
     echo "1. Run complete setup to redeploy:"
-    echo -e "   ${CYAN}./scripts/complete-setup.sh${NC}"
+    echo -e "   ${CYAN}./scripts/provider-setup.sh${NC}"
     echo ""
     echo "2. Or manually recreate resources as needed"
 fi

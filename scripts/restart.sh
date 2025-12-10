@@ -5,7 +5,7 @@ echo "Stopping service..."
 snow sql -q "USE ROLE nac_test; CALL spcs_app_instance_test.app_public.stop_app();" --connection mkt_blendx_demo
 
 echo "Starting service..."
-snow sql -q "USE ROLE nac_test; CALL spcs_app_instance_test.app_public.start_app('pool_nac', 'WH_BLENDX_DEMO_PROVIDER');" --connection mkt_blendx_demo
+snow sql -q "USE ROLE nac_test; CALL spcs_app_instance_test.app_public.start_app('pool_nac');" --connection mkt_blendx_demo
 
 sleep 30
 

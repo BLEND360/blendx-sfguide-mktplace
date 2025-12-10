@@ -4,7 +4,7 @@ manifest_version: 2
 version:
   name: V1
   label: "Version One"
-  comment: "The first version of our Native Application that includes SPCS"
+  comment: "BlendX CrewAI Workflow"
 
 
 #artifacts that are distributed from this version of the package
@@ -29,22 +29,14 @@ privileges:
  - EXECUTE MANAGED TASK:
       description: "Enables application to execute Snowflake Cortex functions"
  - CREATE EXTERNAL ACCESS INTEGRATION:
-      description: "Create external access integration for serper connection"
+      description: "Create external access integration for external API access (Serper web search)"
 
 references:
  - serper_api_key:
-     label: "Serper secret"
-     description: "Needed to authenticate with serper"
+     label: "Serper API Key"
+     description: "Secret containing the Serper API key for web search functionality"
      privileges:
           - READ
      object_type: SECRET
      register_callback: config.register_single_reference
      configuration_callback: config.get_config_for_ref
- - serper_access_integration:
-     label: "Serper External Access"
-     description: "External access integration for Serper API (serper.dev)"
-     privileges:
-          - USAGE
-     object_type: EXTERNAL ACCESS INTEGRATION
-     register_callback: config.register_single_reference
-     configuration_callback: config.get_configuration
