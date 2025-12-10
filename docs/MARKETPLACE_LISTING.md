@@ -54,9 +54,7 @@ Use Cases:
 ### Categories
 
 - AI/ML
-- Native Apps
-- Data Science
-- Automation
+
 
 ### Quick Start / Getting Started
 
@@ -97,7 +95,7 @@ Get your API key from https://serper.dev
 3. Start the application:
 
 ```sql
-CALL <app_name>.app_public.start_app('<pool_name>', '<warehouse_name>');
+CALL <app_name>.app_public.start_app('<pool_name>');
 ```
 
 ### Step 5: Access the Application
@@ -131,7 +129,7 @@ After configuring Serper API:
 ### Documentation URL
 
 ```
-https://github.com/your-org/blendx-sfguide-mktplace
+
 ```
 
 ### Support Email
@@ -141,40 +139,25 @@ support@blend360.com
 ```
 
 ### Legal Terms / Terms of Service
+Standard
+### Attributes
+Time coverage
+Last 7 days
+Event-based
 
-```
-TERMS OF SERVICE
-
-By installing and using this application ("BlendX"), you agree to the following terms:
-
-1. LICENSE GRANT
-   The provider grants you a non-exclusive, non-transferable license to use this application within your Snowflake account.
-
-2. DATA PROCESSING
-   - All data processing occurs within your Snowflake account
-   - The application uses Snowflake Cortex LLMs for AI processing
-   - If configured, external API calls may be made to Serper (google.serper.dev) for web search functionality
-   - No data is transmitted to the application provider
-
-3. THIRD-PARTY SERVICES
-   - Snowflake Cortex: Subject to Snowflake's terms of service
-   - Serper API (optional): Subject to Serper's terms of service (https://serper.dev/terms)
-
-4. COMPUTE COSTS
-   Usage of this application will incur Snowflake compute costs for:
-   - Snowpark Container Services (SPCS) compute pool
-   - Snowflake Cortex LLM usage
-   - Warehouse usage
-
-5. DISCLAIMER
-   THE APPLICATION IS PROVIDED "AS IS" WITHOUT WARRANTY OF ANY KIND. THE PROVIDER DISCLAIMS ALL WARRANTIES, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE.
-
-6. LIMITATION OF LIABILITY
-   IN NO EVENT SHALL THE PROVIDER BE LIABLE FOR ANY INDIRECT, INCIDENTAL, SPECIAL, OR CONSEQUENTIAL DAMAGES ARISING OUT OF THE USE OF THIS APPLICATION.
-
-7. SUPPORT
-   Support is provided on a best-effort basis. Contact: support@your-company.com
-```
+### Geographic coverage
+Global
+By country
+### Region Availability
+Cloud region availability
+Daily
+Replication of objects in your data product and referenced objects
+Visible in 1 region
+AWS
+US East (N. Virginia)(Your region)
+Event data collection
+Unavailable in 1 region.
+View details
 
 ### Privacy Policy
 
@@ -199,8 +182,6 @@ PRIVACY POLICY
    - Workflow execution logs are stored in your Snowflake account
    - You control all data retention through your Snowflake account settings
 
-5. CONTACT
-   For privacy-related questions: privacy@your-company.com
 ```
 
 ---
@@ -241,74 +222,6 @@ SHOW RELEASE CHANNELS IN APPLICATION PACKAGE <your_package_name>;
 ```sql
 USE ROLE <your_package_role>;
 DESCRIBE APPLICATION PACKAGE <your_package_name>;
-```
-
-## Common Errors and Solutions
-
-### Error: "The Release Directive of this application package contains invalid patch to share to external account"
-
-This error occurs when the release directive is not properly configured for external sharing.
-
-#### Cause
-
-When release channels are enabled (default for new application packages), you must use channel-specific syntax to set the release directive.
-
-#### Solution
-
-**For packages WITH release channels enabled:**
-
-```sql
-USE ROLE <your_package_role>;
-ALTER APPLICATION PACKAGE <your_package_name>
-  MODIFY RELEASE CHANNEL DEFAULT
-  SET DEFAULT RELEASE DIRECTIVE
-    VERSION = <version_name>
-    PATCH = <patch_number>;
-```
-
-Example:
-
-```sql
-USE ROLE naspcs_role;
-ALTER APPLICATION PACKAGE spcs_app_pkg_test
-  MODIFY RELEASE CHANNEL DEFAULT
-  SET DEFAULT RELEASE DIRECTIVE
-    VERSION = V1
-    PATCH = 0;
-```
-
-**For packages WITHOUT release channels (legacy):**
-
-```sql
-USE ROLE <your_package_role>;
-ALTER APPLICATION PACKAGE <your_package_name>
-  SET DEFAULT RELEASE DIRECTIVE
-    VERSION = <version_name>
-    PATCH = <patch_number>;
-```
-
-#### How to check if release channels are enabled
-
-```sql
-DESCRIBE APPLICATION PACKAGE <your_package_name>;
-```
-
-Look for `release_channels` property. If it says `ENABLED`, use the channel-specific syntax.
-
-### Error: "Release channels not specified for application package with release channels enabled"
-
-This error occurs when you try to use the legacy `SET DEFAULT RELEASE DIRECTIVE` syntax on a package that has release channels enabled.
-
-#### Solution
-
-Use the `MODIFY RELEASE CHANNEL` syntax instead:
-
-```sql
-ALTER APPLICATION PACKAGE <your_package_name>
-  MODIFY RELEASE CHANNEL DEFAULT
-  SET DEFAULT RELEASE DIRECTIVE
-    VERSION = <version>
-    PATCH = <patch>;
 ```
 
 ## Release Channels Overview
@@ -369,22 +282,3 @@ ALTER APPLICATION PACKAGE <your_package_name>
 SHOW RELEASE DIRECTIVES IN APPLICATION PACKAGE <your_package_name>;
 -- release_status should be DEPLOYED
 ```
-
-## Scheduled Upgrades
-
-You can schedule upgrades for consumers using `UPGRADE_AFTER`:
-
-```sql
-ALTER APPLICATION PACKAGE <your_package_name>
-  MODIFY RELEASE CHANNEL DEFAULT
-  SET DEFAULT RELEASE DIRECTIVE
-    VERSION = <new_version>
-    PATCH = 0
-    UPGRADE_AFTER = '2025-01-15T10:00:00Z';
-```
-
-## References
-
-- [ALTER APPLICATION PACKAGE RELEASE DIRECTIVE](https://docs.snowflake.com/en/sql-reference/sql/alter-application-package-release-directive)
-- [Publish an app using release channels](https://docs.snowflake.com/en/developer-guide/native-apps/release-channels)
-- [Set the release directive for an app](https://docs.snowflake.com/en/developer-guide/native-apps/update-app-release-directive)

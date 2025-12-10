@@ -9,7 +9,7 @@ spec:
       env:
         ENVIRONMENT: PRODUCTION
         SNOWFLAKE_AUTHMETHOD: oauth
-        SNOWFLAKE_WAREHOUSE: WH_BLENDX_DEMO_PROVIDER
+        SNOWFLAKE_WAREHOUSE: APP_WH
         # SNOWFLAKE_DATABASE is intentionally not set - will use session context from OAuth
         # Tables are accessed as schema.table_name using the app's database context
         SNOWFLAKE_SCHEMA: app_data
@@ -21,11 +21,13 @@ spec:
         - snowflakeSecret:
             objectReference: serper_api_key
           directoryPath: /secrets/serper
+
     - name: eap-router
       image: /spcs_app/napp/img_repo/eap_router
       env:
         FE_SERVER: 127.0.0.1:8080
         BE_SERVER: 127.0.0.1:8081
+
   endpoints:
     - name: app
       port: 8000

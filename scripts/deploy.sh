@@ -39,9 +39,8 @@ APP_SCHEMA=${APP_SCHEMA:-"napp"}
 APP_STAGE=${APP_STAGE:-"app_stage"}
 APP_PACKAGE_NAME=${APP_PACKAGE_NAME:-"spcs_app_pkg_test"}
 APP_INSTANCE_NAME=${APP_INSTANCE_NAME:-"spcs_app_instance_test"}
-APP_VERSION=${APP_VERSION:-"v6"}
+APP_VERSION=${APP_VERSION:-"v1"}
 COMPUTE_POOL=${COMPUTE_POOL:-"pool_nac"}
-WAREHOUSE=${WAREHOUSE:-"WH_BLENDX_DEMO_PROVIDER"}
 SKIP_BUILD=${SKIP_BUILD:-false}
 SKIP_PUSH=${SKIP_PUSH:-false}
 SERVICE_START_WAIT=${SERVICE_START_WAIT:-30}
@@ -267,14 +266,19 @@ echo "=========================================="
 if [ "$DRY_RUN" = false ]; then
     echo "Checking for old versions not in any release channel..."
 
-    # Query versions and find those with "None" in release_channel_names column (not in any channel)
-    # These are candidates for deregistration
-    ORPHAN_VERSIONS=$(snow sql -q "USE ROLE ${APP_PACKAGE_ROLE}; SHOW VERSIONS IN APPLICATION PACKAGE ${APP_PACKAGE_NAME};" --connection ${SNOW_CONNECTION} 2>/dev/null | \
+    # Query versions to temp file to avoid pipeline hangs
+    TEMP_VERSIONS=$(mktemp)
+    snow sql -q "USE ROLE ${APP_PACKAGE_ROLE}; SHOW VERSIONS IN APPLICATION PACKAGE ${APP_PACKAGE_NAME};" --connection ${SNOW_CONNECTION} > "$TEMP_VERSIONS" 2>&1 || true
+
+    # Find versions with "None" in release_channel_names column (not in any channel)
+    ORPHAN_VERSIONS=$(cat "$TEMP_VERSIONS" | \
         grep -E "^\|[[:space:]]*V[0-9]+" | \
         grep -i "None" | \
         awk -F'|' '{print $2}' | \
         tr -d ' ' | \
-        grep -v "^${APP_VERSION}$")
+        grep -v "^${APP_VERSION}$" || echo "")
+
+    rm -f "$TEMP_VERSIONS"
 
     if [ -n "$ORPHAN_VERSIONS" ]; then
         echo "Found versions not in any release channel: $ORPHAN_VERSIONS"
@@ -311,11 +315,17 @@ echo ""
 echo "Checking for old versions in release channel to drop..."
 
 if [ "$DRY_RUN" = false ]; then
-    OLD_CHANNEL_VERSIONS=$(snow sql -q "USE ROLE ${APP_PACKAGE_ROLE}; SHOW VERSIONS IN APPLICATION PACKAGE ${APP_PACKAGE_NAME};" --connection ${SNOW_CONNECTION} 2>/dev/null | \
+    # Query versions to temp file to avoid pipeline hangs
+    TEMP_CHANNEL_VERSIONS=$(mktemp)
+    snow sql -q "USE ROLE ${APP_PACKAGE_ROLE}; SHOW VERSIONS IN APPLICATION PACKAGE ${APP_PACKAGE_NAME};" --connection ${SNOW_CONNECTION} > "$TEMP_CHANNEL_VERSIONS" 2>&1 || true
+
+    OLD_CHANNEL_VERSIONS=$(cat "$TEMP_CHANNEL_VERSIONS" | \
         grep -i "DEFAULT" | \
         awk -F'|' '{print $2}' | \
         tr -d ' ' | \
-        grep -v "^${APP_VERSION}$")
+        grep -v "^${APP_VERSION}$" || echo "")
+
+    rm -f "$TEMP_CHANNEL_VERSIONS"
 
     if [ -n "$OLD_CHANNEL_VERSIONS" ]; then
         echo "Found old versions in DEFAULT channel: $OLD_CHANNEL_VERSIONS"
@@ -356,7 +366,7 @@ if [ "$SETUP_MODE" = false ]; then
         run_command "Upgrading application instance" \
             "snow sql -q \"USE ROLE ${APP_CONSUMER_ROLE}; ALTER APPLICATION ${APP_INSTANCE_NAME} UPGRADE USING VERSION ${APP_VERSION};\" --connection ${SNOW_CONNECTION}"
     else
-        echo "Application instance does not exist yet - needs to be created by complete-setup.sh"
+        echo "Application instance does not exist yet - needs to be created by provider-setup.sh"
         echo "Skipping upgrade step..."
     fi
 
@@ -365,7 +375,7 @@ else
     echo "=========================================="
     echo "[8/9] Skipping upgrade (setup mode)"
     echo "=========================================="
-    echo "Application will be created by complete-setup.sh"
+    echo "Application will be created by provider-setup.sh"
     echo ""
 fi
 
@@ -384,9 +394,9 @@ if [ "$SETUP_MODE" = false ]; then
             "snow sql -q \"USE ROLE ${APP_CONSUMER_ROLE}; CALL ${APP_INSTANCE_NAME}.app_public.stop_app();\" --connection ${SNOW_CONNECTION} || echo 'Service not running (OK)'"
 
         run_command "Starting service" \
-            "snow sql -q \"USE ROLE ${APP_CONSUMER_ROLE}; CALL ${APP_INSTANCE_NAME}.app_public.start_app('${COMPUTE_POOL}', '${WAREHOUSE}');\" --connection ${SNOW_CONNECTION}"
+            "snow sql -q \"USE ROLE ${APP_CONSUMER_ROLE}; CALL ${APP_INSTANCE_NAME}.app_public.start_app('${COMPUTE_POOL}');\" --connection ${SNOW_CONNECTION}"
     else
-        echo "Application instance does not exist yet - service will be started by complete-setup.sh"
+        echo "Application instance does not exist yet - service will be started by provider-setup.sh"
         echo "Skipping service restart step..."
     fi
 
@@ -400,7 +410,7 @@ else
     echo "=========================================="
     echo "[9/9] Skipping service restart (setup mode)"
     echo "=========================================="
-    echo "Service will be started by complete-setup.sh"
+    echo "Service will be started by "
     echo ""
 fi
 

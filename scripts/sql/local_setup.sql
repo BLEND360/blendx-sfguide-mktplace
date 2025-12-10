@@ -10,6 +10,8 @@
 -- Switch to admin role to grant permissions
 USE ROLE ACCOUNTADMIN;  -- Or use the role that owns the database
 
+CREATE ROLE IF NOT EXISTS naspcs_role;
+
 -- Grants on database
 GRANT USAGE ON DATABASE spcs_app_test TO ROLE naspcs_role;
 
@@ -23,16 +25,33 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA spcs_app_test.napp 
 -- Grants on future tables
 GRANT SELECT, INSERT, UPDATE, DELETE ON FUTURE TABLES IN SCHEMA spcs_app_test.napp TO ROLE naspcs_role;
 
--- Warehouse grant
-GRANT USAGE ON WAREHOUSE wh_nap TO ROLE naspcs_role;
 
+-- Create the warehouse if it doesn't exist
+CREATE WAREHOUSE IF NOT EXISTS DEV_WH
+    WAREHOUSE_SIZE = 'X-SMALL'
+    AUTO_SUSPEND = 60
+    AUTO_RESUME = TRUE
+    INITIALLY_SUSPENDED = TRUE
+    COMMENT = 'Warehouse for local BlendX development';
+    
+-- Warehouse grant (using separate warehouse for local development)
+GRANT USAGE ON WAREHOUSE DEV_WH TO ROLE naspcs_role;
+
+CREATE USER naspcs_user
+  TYPE = SERVICE
+  LOGIN_NAME = 'naspcs_user'
+  DISPLAY_NAME='naspcs_user'
+  DEFAULT_WAREHOUSE='DEV_WH'
+  DEFAULT_ROLE='naspcs_role';
+
+GRANT ROLE naspcs_role TO USER naspcs_user;
 
 -- =============================================================================
 -- STEP 2: CREATE TABLES (Run with naspcs_role)
 -- =============================================================================
 
 USE ROLE naspcs_role;
-USE WAREHOUSE wh_nap;
+USE WAREHOUSE DEV_WH;
 USE DATABASE spcs_app_test;
 USE SCHEMA napp;
 
