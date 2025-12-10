@@ -9,13 +9,28 @@ GRANT USAGE ON SCHEMA app_public TO APPLICATION ROLE app_user;
 CREATE OR ALTER VERSIONED SCHEMA v1;
 GRANT USAGE ON SCHEMA v1 TO APPLICATION ROLE app_admin;
 
+-- Create network rule for Serper API access (required for EAI)
+CREATE OR REPLACE NETWORK RULE app_public.serper_network_rule
+    TYPE = HOST_PORT
+    VALUE_LIST = ('google.serper.dev')
+    MODE = EGRESS;
+
+-- Create external access integration for Serper API
+CREATE OR REPLACE EXTERNAL ACCESS INTEGRATION serper_eai
+    ALLOWED_NETWORK_RULES = (app_public.serper_network_rule)
+    ENABLED = TRUE;
+
+-- Define app specification for external access (required for Marketplace)
+ALTER APPLICATION SET SPECIFICATION serper_api_spec
+    TYPE = EXTERNAL_ACCESS
+    LABEL = 'Serper Web Search API'
+    DESCRIPTION = 'Allows the application to connect to google.serper.dev for web search functionality'
+    HOST_PORTS = ('google.serper.dev');
+
 -- Create schema for application data
 CREATE SCHEMA IF NOT EXISTS app_data;
 GRANT USAGE ON SCHEMA app_data TO APPLICATION ROLE app_admin;
 GRANT USAGE ON SCHEMA app_data TO APPLICATION ROLE app_user;
-
--- Note: External Access Integration must be created by the consumer
--- and referenced to this application. See deployment scripts.
 
 -- Create table to store Crew execution results
 CREATE OR REPLACE TABLE app_data.crew_execution_results (
@@ -77,32 +92,37 @@ CREATE OR REPLACE TABLE app_data.workflows (
 GRANT SELECT ON TABLE app_data.workflows TO APPLICATION ROLE app_user;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE app_data.workflows TO APPLICATION ROLE app_admin;
 
-CREATE OR REPLACE PROCEDURE app_public.start_app(poolname VARCHAR, whname VARCHAR)
+CREATE OR REPLACE PROCEDURE app_public.start_app(poolname VARCHAR)
     RETURNS string
     LANGUAGE sql
     AS $$
 BEGIN
-        -- First, create compute pool if it doesn't exist
-        EXECUTE IMMEDIATE 'CREATE COMPUTE POOL IF NOT EXISTS ' || poolname || '
-            MIN_NODES = 1
-            MAX_NODES = 3
-            INSTANCE_FAMILY = CPU_X64_M
-            AUTO_RESUME = TRUE';
+        LET app_warehouse VARCHAR DEFAULT 'APP_WH';
 
-        -- Then create the service with external access integration from consumer reference
-        EXECUTE IMMEDIATE 'CREATE SERVICE IF NOT EXISTS app_public.st_spcs
-            IN COMPUTE POOL ' || poolname || '
-            FROM SPECIFICATION_FILE=''/fullstack.yaml''
-            QUERY_WAREHOUSE=' || whname || '
-            EXTERNAL_ACCESS_INTEGRATIONS = (REFERENCE(''serper_access_integration''))';
+        -- First, create the application warehouse
+        CREATE WAREHOUSE IF NOT EXISTS IDENTIFIER(:app_warehouse)
+            WAREHOUSE_SIZE = 'X-SMALL'
+            AUTO_SUSPEND = 60
+            AUTO_RESUME = TRUE
+            INITIALLY_SUSPENDED = TRUE;
+
+        -- Create compute pool if it doesn't exist
+        EXECUTE IMMEDIATE 'CREATE COMPUTE POOL IF NOT EXISTS ' || poolname ||
+            ' MIN_NODES = 1 MAX_NODES = 3 INSTANCE_FAMILY = CPU_X64_M AUTO_RESUME = TRUE AUTO_SUSPEND_SECS = 300';
+
+        -- Create the service with the app's external access integration (EAI created at setup time)
+        EXECUTE IMMEDIATE 'CREATE SERVICE app_public.st_spcs IN COMPUTE POOL ' || poolname ||
+            ' FROM SPECIFICATION_FILE=''/fullstack.yaml'' QUERY_WAREHOUSE=' || app_warehouse ||
+            ' EXTERNAL_ACCESS_INTEGRATIONS = (serper_eai)';
 
         GRANT USAGE ON SERVICE app_public.st_spcs TO APPLICATION ROLE app_user;
         GRANT SERVICE ROLE app_public.st_spcs!ALL_ENDPOINTS_USAGE TO APPLICATION ROLE app_user;
 
-        RETURN 'Service started. Check status, and when ready, get URL';
+        RETURN 'Service started with warehouse ' || app_warehouse || '. Check status, and when ready, get URL';
 END;
 $$;
-GRANT USAGE ON PROCEDURE app_public.start_app(VARCHAR, VARCHAR) TO APPLICATION ROLE app_admin;
+
+GRANT USAGE ON PROCEDURE app_public.start_app(VARCHAR) TO APPLICATION ROLE app_admin;
 
 CREATE OR REPLACE PROCEDURE app_public.stop_app()
     RETURNS string
@@ -120,9 +140,8 @@ CREATE OR REPLACE PROCEDURE app_public.app_url()
     LANGUAGE sql
     AS
 $$
-DECLARE
-    ingress_url VARCHAR;
 BEGIN
+    LET ingress_url VARCHAR;
     SHOW ENDPOINTS IN SERVICE app_public.st_spcs;
     SELECT "ingress_url" INTO :ingress_url FROM TABLE (RESULT_SCAN (LAST_QUERY_ID())) LIMIT 1;
     RETURN ingress_url;
@@ -235,9 +254,8 @@ CREATE OR REPLACE PROCEDURE app_public.count_crew_executions()
     LANGUAGE sql
     AS
 $$
-DECLARE
-    total_count NUMBER;
 BEGIN
+    LET total_count NUMBER;
     SELECT COUNT(*) INTO :total_count FROM app_data.crew_execution_results;
     RETURN total_count;
 END;
@@ -263,33 +281,6 @@ $$;
 GRANT USAGE ON PROCEDURE config.get_config_for_ref(STRING) TO APPLICATION ROLE app_admin;
 
 
-create or replace procedure config.get_configuration(ref_name string)
-returns string
-language sql
-as $$
-begin
-    CASE (UPPER(ref_name))
-        WHEN 'SERPER_ACCESS_INTEGRATION' THEN
-            RETURN '{
-                "type": "CONFIGURATION",
-                "payload": {
-                    "host_ports": ["serper.dev", "google.serper.dev"],
-                    "allowed_secrets": "ALL"
-                }
-            }';
-        ELSE
-            RETURN '{
-                "type": "ERROR",
-                "payload": {
-                    "message": "The reference is not available for configuration"
-                }
-            }';
-    END CASE;
-end;
-$$;
-
-GRANT USAGE ON PROCEDURE CONFIG.get_configuration(STRING)
-  TO APPLICATION ROLE app_admin;
 
 
 CREATE OR REPLACE PROCEDURE CONFIG.REGISTER_SINGLE_REFERENCE(

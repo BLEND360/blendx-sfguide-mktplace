@@ -81,6 +81,7 @@
               TEST SERPER
             </v-btn>
 
+
             <v-divider class="my-3"></v-divider>
 
             <v-btn
@@ -883,6 +884,7 @@ flowchart LR
     testingLitellm: false,
     testingSecrets: false,
     testingSerper: false,
+    testingEaiEnv: false,
 
     // Crew states
     loading: false,
@@ -931,7 +933,7 @@ flowchart LR
     // Only disable test buttons when another test is running (not during workflow generation)
     anyTestLoading() {
       return this.testingCortex || this.testingLitellm || this.testingSecrets ||
-             this.testingSerper || this.loading || this.loadingExternal ||
+             this.testingSerper || this.testingEaiEnv || this.loading || this.loadingExternal ||
              this.listingCrews || this.loadingHistory
     }
   },
