@@ -35,15 +35,17 @@ class CrewService:
 
     def create_execution_record(
         self,
-        crew_name: str,
         crew_type: str | None = None,
+        workflow_id: str | None = None,
+        is_test: bool = False,
     ) -> str:
         """
         Create initial execution record in database.
 
         Args:
-            crew_name: Name of the crew being executed
             crew_type: Optional type of crew (e.g., 'external_tool')
+            workflow_id: Optional workflow ID to associate with this execution
+            is_test: Flag to indicate if this is a test execution from UI
 
         Returns:
             Generated execution ID
@@ -64,23 +66,25 @@ class CrewService:
 
         insert_query = text(f"""
             INSERT INTO {get_table_name()}
-            (id, crew_name, status, metadata, result_text)
+            (id, status, metadata, result_text, workflow_id, is_test)
             SELECT
                 :id,
-                :crew_name,
                 :status,
                 PARSE_JSON(:metadata),
-                :result_text
+                :result_text,
+                :workflow_id,
+                :is_test
         """)
 
         self.db.execute(
             insert_query,
             {
                 "id": execution_id,
-                "crew_name": crew_name,
                 "status": "PROCESSING",
                 "metadata": metadata_json,
                 "result_text": "Processing...",
+                "workflow_id": workflow_id,
+                "is_test": is_test,
             },
         )
         self.db.commit()
@@ -150,11 +154,66 @@ class CrewService:
                 error=None,
             )
 
-    def list_executions(self, limit: int = 10) -> list[dict]:
+    def list_executions(self, limit: int = 10, is_test: bool | None = None) -> list[dict]:
         """
-        List recent crew executions.
+        List recent executions.
 
         Args:
+            limit: Maximum number of executions to return
+            is_test: Filter by test flag (True for test only, False for non-test, None for all)
+
+        Returns:
+            List of execution dictionaries
+        """
+        # Build query with optional is_test filter
+        if is_test is not None:
+            query = text(f"""
+                SELECT
+                    id,
+                    status,
+                    execution_timestamp,
+                    updated_at,
+                    workflow_id
+                FROM {get_table_name()}
+                WHERE is_test = :is_test
+                ORDER BY execution_timestamp DESC
+                LIMIT :limit
+            """)
+            results = self.db.execute(query, {"limit": limit, "is_test": is_test}).fetchall()
+        else:
+            query = text(f"""
+                SELECT
+                    id,
+                    status,
+                    execution_timestamp,
+                    updated_at,
+                    workflow_id
+                FROM {get_table_name()}
+                ORDER BY execution_timestamp DESC
+                LIMIT :limit
+            """)
+            results = self.db.execute(query, {"limit": limit}).fetchall()
+
+        executions = []
+        for row in results:
+            executions.append(
+                {
+                    "execution_id": row[0],
+                    "status": row[1],
+                    "execution_timestamp": str(row[2]) if row[2] else None,
+                    "updated_at": str(row[3]) if row[3] else None,
+                    "workflow_id": row[4],
+                }
+            )
+
+        return executions
+
+    def list_executions_by_workflow(self, workflow_id: str, limit: int = 10) -> list[dict]:
+        """
+        List executions for a specific workflow.
+
+        Args:
+            workflow_id: The workflow ID to filter by
             limit: Maximum number of executions to return
 
         Returns:
@@ -163,26 +222,26 @@ class CrewService:
         query = text(f"""
             SELECT
                 id,
-                crew_name,
                 status,
                 execution_timestamp,
-                updated_at
+                updated_at,
+                workflow_id
             FROM {get_table_name()}
+            WHERE workflow_id = :workflow_id
             ORDER BY execution_timestamp DESC
             LIMIT :limit
         """)
-
-        results = self.db.execute(query, {"limit": limit}).fetchall()
+        results = self.db.execute(query, {"workflow_id": workflow_id, "limit": limit}).fetchall()
 
         executions = []
         for row in results:
             executions.append(
                 {
                     "execution_id": row[0],
-                    "crew_name": row[1],
-                    "status": row[2],
-                    "execution_timestamp": str(row[3]) if row[3] else None,
-                    "updated_at": str(row[4]) if row[4] else None,
+                    "status": row[1],
+                    "execution_timestamp": str(row[2]) if row[2] else None,
+                    "updated_at": str(row[3]) if row[3] else None,
+                    "workflow_id": row[4],
                 }
             )
 
@@ -269,6 +328,7 @@ class CrewService:
         result_text: str,
         raw_output: dict,
         crew_type: str | None = None,
+        workflow_id: str | None = None,
     ):
         """Save successful execution result to database."""
         raw_output_json = json.dumps(raw_output)
@@ -284,27 +344,47 @@ class CrewService:
 
         metadata_json = json.dumps(metadata)
 
-        update_query = text(f"""
-            UPDATE {get_table_name()}
-            SET
-                raw_output = PARSE_JSON(:raw_output),
-                result_text = :result_text,
-                status = :status,
-                metadata = PARSE_JSON(:metadata),
-                updated_at = CURRENT_TIMESTAMP()
-            WHERE id = :id
-        """)
-
-        session.execute(
-            update_query,
-            {
+        # Build update query - only include workflow_id if provided
+        if workflow_id:
+            update_query = text(f"""
+                UPDATE {get_table_name()}
+                SET
+                    raw_output = PARSE_JSON(:raw_output),
+                    result_text = :result_text,
+                    status = :status,
+                    metadata = PARSE_JSON(:metadata),
+                    workflow_id = :workflow_id,
+                    updated_at = CURRENT_TIMESTAMP()
+                WHERE id = :id
+            """)
+            params = {
                 "id": execution_id,
                 "raw_output": raw_output_json,
                 "result_text": result_text,
                 "status": "COMPLETED",
                 "metadata": metadata_json,
-            },
-        )
+                "workflow_id": workflow_id,
+            }
+        else:
+            update_query = text(f"""
+                UPDATE {get_table_name()}
+                SET
+                    raw_output = PARSE_JSON(:raw_output),
+                    result_text = :result_text,
+                    status = :status,
+                    metadata = PARSE_JSON(:metadata),
+                    updated_at = CURRENT_TIMESTAMP()
+                WHERE id = :id
+            """)
+            params = {
+                "id": execution_id,
+                "raw_output": raw_output_json,
+                "result_text": result_text,
+                "status": "COMPLETED",
+                "metadata": metadata_json,
+            }
+
+        session.execute(update_query, params)
         session.commit()
 
         logger.info(f"Crew result saved successfully for {execution_id}")
@@ -334,3 +414,71 @@ class CrewService:
                 session.commit()
         except Exception as db_error:
             logger.error(f"Failed to update error status for {execution_id}: {str(db_error)}")
+
+    @staticmethod
+    def create_and_save_execution(
+        result_text: str,
+        raw_output: dict,
+        workflow_id: str | None = None,
+        is_test: bool = False,
+        status: str = "COMPLETED",
+    ) -> str:
+        """
+        Create a new execution record and save results in one operation.
+        Used by flow executions that don't need the two-phase create/update pattern.
+
+        Args:
+            result_text: Text result from the execution
+            raw_output: Raw output dictionary
+            workflow_id: Optional workflow ID to associate
+            is_test: Flag for test executions
+            status: Execution status (default: COMPLETED)
+
+        Returns:
+            Generated execution ID
+        """
+        execution_id = str(uuid.uuid4())
+        raw_output_json = json.dumps(raw_output)
+
+        metadata = {
+            "model": "claude-3-5-sonnet",
+            "provider": "snowflake",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+        metadata_json = json.dumps(metadata)
+
+        try:
+            with get_new_db_session() as session:
+                insert_query = text(f"""
+                    INSERT INTO {get_table_name()}
+                    (id, status, metadata, result_text, raw_output, workflow_id, is_test)
+                    SELECT
+                        :id,
+                        :status,
+                        PARSE_JSON(:metadata),
+                        :result_text,
+                        PARSE_JSON(:raw_output),
+                        :workflow_id,
+                        :is_test
+                """)
+
+                session.execute(
+                    insert_query,
+                    {
+                        "id": execution_id,
+                        "status": status,
+                        "metadata": metadata_json,
+                        "result_text": result_text,
+                        "raw_output": raw_output_json,
+                        "workflow_id": workflow_id,
+                        "is_test": is_test,
+                    },
+                )
+                session.commit()
+
+            logger.info(f"Created and saved execution {execution_id}")
+            return execution_id
+
+        except Exception as e:
+            logger.error(f"Failed to create and save execution: {str(e)}")
+            raise

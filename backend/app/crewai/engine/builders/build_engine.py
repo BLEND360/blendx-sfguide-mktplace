@@ -977,6 +977,16 @@ class CrewAIEngineConfig:
                         crew_config["process"] = "sequential"
 
                 # Create the crew
+                # Get embedder config for memory if memory is enabled
+                embedder_config = None
+                if crew_config.get("memory", False):
+                    try:
+                        from app.handlers.lite_llm_handler import get_embedder_config
+                        embedder_config = get_embedder_config()
+                        logger.info(f"Using embedder config for crew '{crew_name}': {embedder_config.get('provider') if embedder_config else 'default'}")
+                    except Exception as e:
+                        logger.warning(f"Could not get embedder config: {e}, memory will use default embedder")
+
                 crew_instance = Crew(
                     name=crew_name,
                     agents=list(crew_agents.values()),
@@ -984,6 +994,7 @@ class CrewAIEngineConfig:
                     verbose=crew_config.get("verbose", True),
                     process=crew_config.get("process", "sequential"),
                     memory=crew_config.get("memory", False),
+                    embedder=embedder_config,
                     manager_agent=manager_agent,
                     max_rpm=crew_config.get("max_rpm", None),
                 )
@@ -1349,6 +1360,16 @@ class CrewAIEngineConfig:
                         crew_config["process"] = "sequential"
 
                 # Create the crew
+                # Get embedder config for memory if memory is enabled
+                embedder_config = None
+                if crew_config.get("memory", False):
+                    try:
+                        from app.handlers.lite_llm_handler import get_embedder_config
+                        embedder_config = get_embedder_config()
+                        logger.info(f"Using embedder config for crew '{crew_name}': {embedder_config.get('provider') if embedder_config else 'default'}")
+                    except Exception as e:
+                        logger.warning(f"Could not get embedder config: {e}, memory will use default embedder")
+
                 crew_instance = Crew(
                     name=crew_name,
                     agents=list(crew_agents.values()),
@@ -1356,6 +1377,7 @@ class CrewAIEngineConfig:
                     verbose=crew_config.get("verbose", True),
                     process=crew_config.get("process", "sequential"),
                     memory=crew_config.get("memory", False),
+                    embedder=embedder_config,
                     manager_agent=manager_agent,
                     max_rpm=crew_config.get("max_rpm", None),
                 )
@@ -1610,8 +1632,7 @@ class CrewAIEngineConfig:
             from typing import Any, Dict
 
             # Import CrewAI components dynamically
-            if Flow is None:
-                Agent, Crew, Flow, Task = get_crewai_components()
+            Agent, Crew, Flow, Task = get_crewai_components()
 
             from crewai.flow.flow import listen, start
             from pydantic import BaseModel
@@ -1650,6 +1671,8 @@ class CrewAIEngineConfig:
             state_defaults["current_step"] = ""
             state_fields["all_results"] = Dict[str, Any]
             state_defaults["all_results"] = {}
+            state_fields["workflow_id"] = Optional[str]
+            state_defaults["workflow_id"] = None
 
             # Create dynamic state class with proper defaults
             class DynamicState(BaseModel):
@@ -1697,7 +1720,7 @@ class CrewAIEngineConfig:
 
                 # Create the method function
                 def create_method(crew, method_name, decorator_type, listen_to):
-                    def method_func(self):
+                    async def method_func(self):
                         logger.info(f"Executing flow method: {method_name}")
 
                         # Update state
@@ -1705,19 +1728,17 @@ class CrewAIEngineConfig:
 
                         if crew:
                             try:
-                                # Use run_crew service to ensure proper persistence and flow_execution_id handling
-                                from app.services.crew_service import run_crew
-
-                                result = run_crew(
-                                    crew=crew,
-                                    flow_execution_id=self.state.id,
-                                    db=None,  # Let run_crew handle its own DB session
-                                )
+                                # Execute the crew directly using async kickoff
+                                result = await crew.kickoff_async()
 
                                 # Store result in state
                                 setattr(self.state, f"{method_name}_result", result)
                                 setattr(self.state, f"{method_name}_completed", True)
                                 self.state.all_results[method_name] = result
+
+                                # NOTE: We don't save individual crew results here.
+                                # The final result is saved once in finalize_results method
+                                # to avoid duplicate execution records.
 
                                 logger.info(
                                     f"Flow method '{method_name}' completed successfully"
@@ -1735,6 +1756,9 @@ class CrewAIEngineConfig:
                             )
                             setattr(self.state, f"{method_name}_completed", True)
                             return None
+
+                    # Set the function name so CrewAI Flow can properly register the method
+                    method_func.__name__ = method_name
 
                     # Apply appropriate decorator based on configuration
                     if decorator_type == "start":
@@ -1830,6 +1854,48 @@ class CrewAIEngineConfig:
                 def create_final_method():
                     def finalize_results(self):
                         logger.info("Finalizing flow results")
+
+                        # Save the final consolidated result to database (only once)
+                        try:
+                            from app.services.crew_service import CrewService
+                            import json
+
+                            # Combine all results into a single output
+                            all_results = self.state.all_results or {}
+
+                            # Create a consolidated result text
+                            result_parts = []
+                            for method_name, result in all_results.items():
+                                if hasattr(result, 'raw'):
+                                    result_parts.append(f"=== {method_name} ===\n{result.raw}")
+                                else:
+                                    result_parts.append(f"=== {method_name} ===\n{str(result)}")
+
+                            result_text = "\n\n".join(result_parts) if result_parts else "Flow completed"
+
+                            # Create raw_output with all results
+                            raw_output = {}
+                            for method_name, result in all_results.items():
+                                if hasattr(result, 'json_dict') and result.json_dict:
+                                    raw_output[method_name] = result.json_dict
+                                elif hasattr(result, 'raw'):
+                                    raw_output[method_name] = result.raw
+                                else:
+                                    raw_output[method_name] = str(result)
+
+                            # Get workflow_id from state if available
+                            workflow_id = getattr(self.state, 'workflow_id', None)
+
+                            CrewService.create_and_save_execution(
+                                result_text=result_text,
+                                raw_output=raw_output,
+                                workflow_id=workflow_id,
+                                is_test=False,
+                            )
+                            logger.info("Saved final flow result to database")
+                        except Exception as db_error:
+                            logger.warning(f"Could not save final flow result to database: {db_error}")
+
                         return self.state.all_results
 
                     # Listen to the last method

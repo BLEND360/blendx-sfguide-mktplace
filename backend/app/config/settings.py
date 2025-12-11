@@ -72,9 +72,7 @@ class Settings(BaseSettings):
         extra="ignore",
         env_prefix="",
         env_map={
-            "persistence_granularity": "PERSISTENCE_GRANULARITY",
             "log_level": "LOG_LEVEL",
-            "flow_granularity": "FLOW_GRANULARITY",
             "environment": "ENVIRONMENT",
             "snowflake_account": "SNOWFLAKE_ACCOUNT",
             "snowflake_user": "SNOWFLAKE_USER",
@@ -83,26 +81,15 @@ class Settings(BaseSettings):
             "snowflake_schema": "SNOWFLAKE_SCHEMA",
             "snowflake_role": "SNOWFLAKE_ROLE",
             "snowflake_host": "SNOWFLAKE_HOST",
-            "snowflake_url": "SNOWFLAKE_URL",
             "snowflake_authmethod": "SNOWFLAKE_AUTHMETHOD",
             "snowflake_service_user": "SNOWFLAKE_SERVICE_USER",
             "snowflake_private_key_path": "SNOWFLAKE_PRIVATE_KEY_PATH",
             "snowflake_privatekey_password": "SNOWFLAKE_PRIVATEKEY_PASSWORD",
             "snowflake_private_key_raw": "SNOWFLAKE_PRIVATE_KEY_RAW",
-            "snowflake_stage_semantic_model": "SNOWFLAKE_STAGE_SEMANTIC_MODEL",
-            "snowflake_semantic_model_filename": "SNOWFLAKE_SEMANTIC_MODEL_FILENAME",
-            "snowflake_search_service_name": "SNOWFLAKE_SEARCH_SERVICE_NAME",
             "llm_provider": "LLM_PROVIDER",
             "llm_model_name": "LLM_MODEL_NAME",
             "embedding_provider": "EMBEDDING_PROVIDER",
             "embedding_model_name": "EMBEDDING_MODEL_NAME",
-            "event_logging_enabled": "EVENT_LOGGING_ENABLED",
-            "database_logging_enabled": "DATABASE_LOGGING_ENABLED",
-            "opik": "OPIK",
-            "blendx_hub_url": "BLENDX_HUB_URL",
-            "blendx_hub_database": "BLENDX_HUB_DATABASE",
-            "blendx_hub_schema": "BLENDX_HUB_SCHEMA",
-            "blendx_hub_warehouse": "BLENDX_HUB_WAREHOUSE",
             "nl_generator_default_model": "NL_GENERATOR_DEFAULT_MODEL",
             "crew_execution_database": "CREW_EXECUTION_DATABASE",
             "crew_execution_schema": "CREW_EXECUTION_SCHEMA",
@@ -115,12 +102,6 @@ class Settings(BaseSettings):
 
     # Log level setting
     log_level: str = Field("INFO")
-
-    # Persistence granularity setting
-    persistence_granularity: PersistenceGranularity = Field(PersistenceGranularity.ALL)
-
-    # Flow granularity setting
-    flow_granularity: FlowGranularity = Field(FlowGranularity.ALL)
 
     # Environment setting
     environment: str = Field("SHARED")
@@ -137,7 +118,6 @@ class Settings(BaseSettings):
     snowflake_host: str = Field("", description="Snowflake default host URL")
 
     # Snowflake LLM API settings
-    snowflake_url: Optional[str] = Field(None, description="Snowflake Cortex API URL")
     snowflake_authmethod: str = Field("oauth", description="Snowflake auth method")
     snowflake_service_user: Optional[str] = Field(
         None, description="Snowflake service user"
@@ -153,11 +133,6 @@ class Settings(BaseSettings):
         description="Raw private key content (for GitHub Actions). If set, this takes precedence over the path.",
     )
 
-    # Snowflake Tools settings
-    snowflake_stage_semantic_model: Optional[str] = Field(None)
-    snowflake_semantic_model_filename: Optional[str] = Field(None)
-    snowflake_search_service_name: str = Field("SNOWFLAKE_SEARCH_SERVICE_NAME")
-
     # LLM settings
     llm_provider: LLMProvider = Field(LLMProvider.SNOWFLAKE)
     llm_model_name: str = Field("claude-3-5-sonnet")
@@ -165,28 +140,6 @@ class Settings(BaseSettings):
     # Embedding settings (independent from LLM)
     embedding_provider: EmbeddingProvider = Field(EmbeddingProvider.SNOWFLAKE)
     embedding_model_name: str = Field("snowflake-arctic-embed-m")
-
-    # OpenAI settings (when using OpenAI provider)
-    openai_api_key: Optional[str] = Field(None)
-
-    # Event logging setting
-    event_logging_enabled: bool = Field(False)
-
-    # Database logging setting
-    database_logging_enabled: bool = Field(False)
-
-    # OpiK settings
-    opik: bool = Field(False)
-
-    # BlendX Hub settings
-    blendx_hub_url: Optional[str] = Field(None, description="BlendX Hub API URL")
-    blendx_hub_database: Optional[str] = Field(
-        None, description="BlendX Hub database name"
-    )
-    blendx_hub_schema: Optional[str] = Field(None, description="BlendX Hub schema name")
-    blendx_hub_warehouse: Optional[str] = Field(
-        None, description="BlendX Hub warehouse name"
-    )
 
     # NL Generator default model (optional override)
     nl_generator_default_model: Optional[str] = Field(

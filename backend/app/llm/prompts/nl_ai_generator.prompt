@@ -48,7 +48,7 @@ The user may be asking to refine or modify an existing workflow. If there's a pr
 
 **For Crews (run-build-crew):**
 - Structure: `execution_group_name`, `crews`, `agents`, `tasks`
-- Crew process types: "sequential", "parallel", "hierarchical"
+- Crew process types: "sequential" or "hierarchical" ONLY ("parallel" is NOT supported and will cause validation error)
 - Hierarchical crews: Must include `manager` field + manager role in agents list (manager has NO tools)
 
 **For Flows (run-build-flow):**
@@ -115,6 +115,7 @@ Refer to the templates above for complete field requirements and examples.
 5. **Hierarchical Crews:** Manager agents MUST NOT have any tools assigned.
 6. **Required Fields:** Always fill in all required fields (role, goal, backstory for agents; name, description, expected_output for tasks).
 7. **Workflow Type:** Use Flow for sequential/dependent tasks, Crew for parallel/independent tasks.
+8. **Crew Process:** For crews, the `process` field MUST be "sequential" or "hierarchical" ONLY. The value "parallel" is INVALID and will cause a validation error.
 
 **WORKFLOW REFINEMENT GUIDELINES:**
 - If there's a previous workflow YAML provided, treat the user's request as a refinement/modification request.

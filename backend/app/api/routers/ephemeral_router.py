@@ -37,6 +37,7 @@ class EphemeralRequest(BaseModel):
     yaml_text: str
     input: Optional[str] = None
     parameters: Optional[Dict[str, str]] = None
+    workflow_id: Optional[str] = None  # Optional workflow ID to associate with execution
 
 
 class EphemeralAsyncResponse(BaseModel):
@@ -262,12 +263,19 @@ async def run_flow_async_ephemeral(
             flow_name = flow_config.get_flow_name()
             flow = flow_config.create_flow(input=request.input)
 
-            # Set flow ID in state if possible
+            # Set flow ID and workflow_id in state if possible
             try:
                 if hasattr(flow.state, "id"):
                     flow.state.id = execution_id
                 elif isinstance(flow.state, dict):
                     flow.state["id"] = execution_id
+
+                # Set workflow_id if provided
+                if request.workflow_id:
+                    if hasattr(flow.state, "workflow_id"):
+                        flow.state.workflow_id = request.workflow_id
+                    elif isinstance(flow.state, dict):
+                        flow.state["workflow_id"] = request.workflow_id
             except Exception:
                 pass
 

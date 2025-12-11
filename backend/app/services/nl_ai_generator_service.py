@@ -187,21 +187,6 @@ def get_available_tools_markdown() -> str:
         lines.append("**AVAILABLE TOOLS:**")
         lines.append("")
 
-        # Add Data Analyst tools from BlendX Hub
-        lines.append("**Data Analyst Tools (from BlendX Hub):**")
-        _add_data_analyst_tools_from_hub(lines)
-        lines.append("")
-
-        # Add MCP tools from BlendX Hub
-        lines.append("**MCP Tools (from BlendX Hub):**")
-        _add_mcp_tools_from_hub(lines)
-        lines.append("")
-
-        # Add Search Services from BlendX Hub
-        lines.append("**Search Services (from BlendX Hub):**")
-        _add_search_services_from_hub(lines)
-        lines.append("")
-
         # Add static registry tools
         lines.append("**CrewAI Native Tools (from Registry):**")
         crewai_tools = ["SerperDevTool", "WebsiteSearchTool"]
