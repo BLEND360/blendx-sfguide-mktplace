@@ -41,6 +41,7 @@ APP_PACKAGE_NAME=${APP_PACKAGE_NAME:-"spcs_app_pkg_test"}
 APP_INSTANCE_NAME=${APP_INSTANCE_NAME:-"spcs_app_instance_test"}
 APP_VERSION=${APP_VERSION:-"v1"}
 COMPUTE_POOL=${COMPUTE_POOL:-"pool_nac"}
+RELEASE_CHANNEL=${RELEASE_CHANNEL:-"QA"}
 SKIP_BUILD=${SKIP_BUILD:-false}
 SKIP_PUSH=${SKIP_PUSH:-false}
 SERVICE_START_WAIT=${SERVICE_START_WAIT:-30}
@@ -298,15 +299,33 @@ fi
 echo ""
 
 # ============================================
-# Step 6: Register New Version
+# Step 6: Register New Version or Add Patch
 # ============================================
 
 echo "=========================================="
-echo "[6/9] Registering new version ${APP_VERSION}..."
+echo "[6/9] Registering version ${APP_VERSION} or adding patch..."
 echo "=========================================="
 
-run_command "Registering new version" \
-    "snow sql -q \"USE ROLE ${APP_PACKAGE_ROLE}; ALTER APPLICATION PACKAGE ${APP_PACKAGE_NAME} REGISTER VERSION ${APP_VERSION} USING @${APP_DATABASE}.${APP_SCHEMA}.${APP_STAGE};\" --connection ${SNOW_CONNECTION}"
+# Check if version already exists
+if [ "$DRY_RUN" = false ]; then
+    VERSION_EXISTS=$(snow sql -q "USE ROLE ${APP_PACKAGE_ROLE}; SHOW VERSIONS IN APPLICATION PACKAGE ${APP_PACKAGE_NAME};" --connection ${SNOW_CONNECTION} 2>&1 | grep -i "| ${APP_VERSION} " | wc -l | tr -d ' ')
+
+    if [ -z "$VERSION_EXISTS" ] || ! [[ "$VERSION_EXISTS" =~ ^[0-9]+$ ]]; then
+        VERSION_EXISTS=0
+    fi
+
+    if [ "$VERSION_EXISTS" -gt "0" ]; then
+        echo "Version ${APP_VERSION} already exists. Adding patch..."
+        run_command "Adding patch to version ${APP_VERSION}" \
+            "snow sql -q \"USE ROLE ${APP_PACKAGE_ROLE}; ALTER APPLICATION PACKAGE ${APP_PACKAGE_NAME} ADD PATCH FOR VERSION ${APP_VERSION} USING '@${APP_DATABASE}.${APP_SCHEMA}.${APP_STAGE}';\" --connection ${SNOW_CONNECTION}"
+    else
+        echo "Version ${APP_VERSION} does not exist. Registering new version..."
+        run_command "Registering new version" \
+            "snow sql -q \"USE ROLE ${APP_PACKAGE_ROLE}; ALTER APPLICATION PACKAGE ${APP_PACKAGE_NAME} REGISTER VERSION ${APP_VERSION} USING @${APP_DATABASE}.${APP_SCHEMA}.${APP_STAGE};\" --connection ${SNOW_CONNECTION}"
+    fi
+else
+    echo "[DRY RUN] Would register version or add patch"
+fi
 
 echo ""
 
@@ -346,46 +365,86 @@ run_command "Showing current versions" \
 echo ""
 
 # ============================================
-# Step 8: Upgrade Application
+# Step 7: Get Latest Patch Number
 # ============================================
 
-if [ "$SETUP_MODE" = false ]; then
-    echo "=========================================="
-    echo "[8/9] Upgrading application..."
-    echo "=========================================="
+echo "=========================================="
+echo "[7/10] Getting latest patch number..."
+echo "=========================================="
 
-    # Check if application exists before upgrading
-    APP_EXISTS=$(snow sql -q "USE ROLE ${APP_CONSUMER_ROLE}; SHOW APPLICATIONS LIKE '${APP_INSTANCE_NAME}';" --connection ${SNOW_CONNECTION} 2>&1 | grep "${APP_INSTANCE_NAME}" | wc -l | tr -d ' ')
+LATEST_PATCH=0
+if [ "$DRY_RUN" = false ]; then
+    TEMP_VERSIONS=$(mktemp)
+    snow sql -q "USE ROLE ${APP_PACKAGE_ROLE}; SHOW VERSIONS IN APPLICATION PACKAGE ${APP_PACKAGE_NAME};" --connection ${SNOW_CONNECTION} > "$TEMP_VERSIONS" 2>&1 || true
 
-    # Ensure APP_EXISTS is a valid number
-    if [ -z "$APP_EXISTS" ] || ! [[ "$APP_EXISTS" =~ ^[0-9]+$ ]]; then
-        APP_EXISTS=0
+    # Extract patch number for the specified version
+    LATEST_PATCH=$(cat "$TEMP_VERSIONS" | grep -i "| ${APP_VERSION} " | awk -F'|' '{print $3}' | tr -d ' ' | sort -n | tail -1)
+    rm -f "$TEMP_VERSIONS"
+
+    if [ -z "$LATEST_PATCH" ] || ! [[ "$LATEST_PATCH" =~ ^[0-9]+$ ]]; then
+        LATEST_PATCH=0
     fi
 
-    if [ "$APP_EXISTS" -gt "0" ]; then
-        run_command "Upgrading application instance" \
-            "snow sql -q \"USE ROLE ${APP_CONSUMER_ROLE}; ALTER APPLICATION ${APP_INSTANCE_NAME} UPGRADE USING VERSION ${APP_VERSION};\" --connection ${SNOW_CONNECTION}"
-    else
-        echo "Application instance does not exist yet - needs to be created by provider-setup.sh"
-        echo "Skipping upgrade step..."
-    fi
-
-    echo ""
-else
-    echo "=========================================="
-    echo "[8/9] Skipping upgrade (setup mode)"
-    echo "=========================================="
-    echo "Application will be created by provider-setup.sh"
-    echo ""
+    echo -e "${GREEN}✓ Latest patch for ${APP_VERSION}: ${LATEST_PATCH}${NC}"
 fi
 
+echo ""
+
 # ============================================
-# Step 9: Restart Service
+# Step 8: Update Release Channel Directive
+# ============================================
+
+echo "=========================================="
+echo "[8/10] Updating ${RELEASE_CHANNEL} release channel directive..."
+echo "=========================================="
+
+if [ "$DRY_RUN" = false ]; then
+    # Add version to release channel if not already there
+    snow sql -q "USE ROLE ${APP_PACKAGE_ROLE}; ALTER APPLICATION PACKAGE ${APP_PACKAGE_NAME} MODIFY RELEASE CHANNEL ${RELEASE_CHANNEL} ADD VERSION ${APP_VERSION};" --connection ${SNOW_CONNECTION} 2>&1 || echo "Version may already be in channel (OK)"
+
+    # Set release directive to latest patch
+    run_command "Setting ${RELEASE_CHANNEL} release directive to patch ${LATEST_PATCH}" \
+        "snow sql -q \"USE ROLE ${APP_PACKAGE_ROLE}; ALTER APPLICATION PACKAGE ${APP_PACKAGE_NAME} MODIFY RELEASE CHANNEL ${RELEASE_CHANNEL} SET DEFAULT RELEASE DIRECTIVE VERSION=${APP_VERSION} PATCH=${LATEST_PATCH};\" --connection ${SNOW_CONNECTION}"
+else
+    echo "[DRY RUN] Would update ${RELEASE_CHANNEL} release directive"
+fi
+
+echo ""
+
+# ============================================
+# Step 9: Application Upgrade Info
+# ============================================
+
+echo "=========================================="
+echo "[9/10] Application upgrade..."
+echo "=========================================="
+
+# Check if application exists
+APP_EXISTS=$(snow sql -q "USE ROLE ${APP_CONSUMER_ROLE}; SHOW APPLICATIONS LIKE '${APP_INSTANCE_NAME}';" --connection ${SNOW_CONNECTION} 2>&1 | grep "${APP_INSTANCE_NAME}" | wc -l | tr -d ' ')
+
+if [ -z "$APP_EXISTS" ] || ! [[ "$APP_EXISTS" =~ ^[0-9]+$ ]]; then
+    APP_EXISTS=0
+fi
+
+if [ "$APP_EXISTS" -gt "0" ]; then
+    echo -e "${GREEN}✓ Application ${APP_INSTANCE_NAME} exists${NC}"
+    echo ""
+    echo "The application will automatically receive the update through the ${RELEASE_CHANNEL} release channel."
+    echo "No manual upgrade needed for apps created from release channels."
+else
+    echo "Application instance does not exist yet."
+    echo "Run ./scripts/recreate-app-qa.sh to create it using the ${RELEASE_CHANNEL} channel."
+fi
+
+echo ""
+
+# ============================================
+# Step 10: Restart Service
 # ============================================
 
 if [ "$SETUP_MODE" = false ]; then
     echo "=========================================="
-    echo "[9/9] Restarting service..."
+    echo "[10/10] Restarting service..."
     echo "=========================================="
 
     # Only restart service if application exists
@@ -408,7 +467,7 @@ if [ "$SETUP_MODE" = false ]; then
     fi
 else
     echo "=========================================="
-    echo "[9/9] Skipping service restart (setup mode)"
+    echo "[10/10] Skipping service restart (setup mode)"
     echo "=========================================="
     echo "Service will be started by "
     echo ""
