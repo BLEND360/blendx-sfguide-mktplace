@@ -162,7 +162,7 @@ If you need to restart the service without deploying:
 
 ### Recreating Test Application
 
-If you need to recreate the test application (e.g., to use a different release channel):
+If you need to recreate the test application:
 
 ```bash
 ./scripts/recreate-app-qa.sh
@@ -215,20 +215,3 @@ View service logs:
 ```bash
 snow sql -q "USE ROLE nac_test; CALL spcs_app_instance_test.app_public.get_service_logs('eap-backend', 200);" --connection mkt_blendx_demo
 ```
-
-## Troubleshooting
-
-### Application instance doesn't exist
-Make sure you've run `create-application.sh` first.
-
-### Secret not found
-Ensure `consumer.sql` has been executed with the correct API key.
-
-### Service not starting
-Check the compute pool is running and accessible:
-```bash
-snow sql -q "SHOW COMPUTE POOLS;" --connection mkt_blendx_demo
-```
-
-### Permission errors
-Verify all grants in `consumer.sql` were executed successfully. 

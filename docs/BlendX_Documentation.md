@@ -147,7 +147,7 @@ agents:
     goal: "Gather and analyze market data"
     backstory: "Expert researcher with 10 years experience"
     tools:
-      - crewai_tools: ["SerperDevTool", "WebsiteSearchTool"]
+      - crewai_tools: ["SerperDevTool"]
     llm:
       provider: "snowflake"
       model: "claude-3-5-sonnet"
@@ -159,7 +159,7 @@ agents:
 
 | Tool Type | Syntax | Description |
 |-----------|--------|-------------|
-| CrewAI Native | `crewai_tools: ["SerperDevTool", "WebsiteSearchTool"]` | Built-in CrewAI tools |
+| CrewAI Native | `crewai_tools: ["SerperDevTool"]` | Built-in CrewAI tools |
 
 
 ### Task Configuration

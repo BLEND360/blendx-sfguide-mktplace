@@ -8,3 +8,11 @@ keys/
 # Local secrets directory (mirrors SPCS /secrets structure)
 backend/secrets/
 *venv
+*.log
+
+# Generated setup.sql (created from template during deploy)
+app/src/setup.sql
+
+# generated docs
+docs/BlendX_Documentation.html
+docs/BlendX_Documentation.pdf

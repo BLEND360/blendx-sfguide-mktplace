@@ -833,18 +833,21 @@
               Workflow completed successfully!
             </v-alert>
             <v-card outlined class="result-card">
-              <v-card-subtitle class="pb-1">
+              <v-card-subtitle class="pb-1 d-flex align-center">
                 <v-icon small class="mr-1">mdi-text-box-outline</v-icon>
                 Execution Result
               </v-card-subtitle>
               <v-card-text>
                 <div class="d-flex justify-end mb-2">
-                  <v-btn small text color="primary" @click="copyToClipboard(formatRunResult(runResultData))">
+                  <v-btn small text color="primary" @click="copyToClipboard(getRawOutput(runResultData))">
                     <v-icon left small>mdi-content-copy</v-icon>
                     Copy Result
                   </v-btn>
                 </div>
-                <pre class="result-text">{{ formatRunResult(runResultData) }}</pre>
+                <!-- Auto-detect content type and render appropriately -->
+                <div v-if="detectContentType(runResultData) === 'markdown'" class="markdown-content" v-html="renderMarkdown(getRawOutput(runResultData))"></div>
+                <pre v-else-if="detectContentType(runResultData) === 'json'" class="json-content">{{ formatJsonOutput(runResultData) }}</pre>
+                <pre v-else class="result-text">{{ getRawOutput(runResultData) }}</pre>
               </v-card-text>
             </v-card>
           </div>
@@ -969,18 +972,21 @@
 
           <!-- Result -->
           <v-card v-if="executionDetails.result" outlined class="result-card">
-            <v-card-subtitle class="pb-1">
+            <v-card-subtitle class="pb-1 d-flex align-center">
               <v-icon small class="mr-1">mdi-text-box-outline</v-icon>
               Execution Result
             </v-card-subtitle>
             <v-card-text>
               <div class="d-flex justify-end mb-2">
-                <v-btn small text color="primary" @click="copyToClipboard(formatExecutionResult(executionDetails.result))">
+                <v-btn small text color="primary" @click="copyToClipboard(getRawOutput(executionDetails.result))">
                   <v-icon left small>mdi-content-copy</v-icon>
                   Copy Result
                 </v-btn>
               </div>
-              <pre class="result-text">{{ formatExecutionResult(executionDetails.result) }}</pre>
+              <!-- Auto-detect content type and render appropriately -->
+              <div v-if="detectContentType(executionDetails.result) === 'markdown'" class="markdown-content" v-html="renderMarkdown(getRawOutput(executionDetails.result))"></div>
+              <pre v-else-if="detectContentType(executionDetails.result) === 'json'" class="json-content">{{ formatJsonOutput(executionDetails.result) }}</pre>
+              <pre v-else class="result-text">{{ getRawOutput(executionDetails.result) }}</pre>
             </v-card-text>
           </v-card>
 
@@ -1047,7 +1053,7 @@ agents:
     goal: "Gather and analyze the latest artificial intelligence news and developments"
     backstory: "Expert technology researcher specializing in AI industry trends and developments"
     tools:
-      - crewai_tools: ["SerperDevTool", "WebsiteSearchTool"]
+      - crewai_tools: ["SerperDevTool"]
     verbose: true
     llm:
       provider: "snowflake"
@@ -1071,7 +1077,7 @@ tasks:
     agent: "AI News Researcher"
     expected_output: "A comprehensive collection of recent AI news items with sources and key details"
     tools:
-      - crewai_tools: ["SerperDevTool", "WebsiteSearchTool"]
+      - crewai_tools: ["SerperDevTool"]
     context: []
     output_file: null
 
@@ -1106,7 +1112,6 @@ title: AI News Summary Flow
 flowchart LR
     %% Global Tools Section
     Tool_SerperDev[("SerperDev API")]
-    Tool_WebSearch[("Website Search")]
 
     %% News Research Phase
     subgraph Crew_Research["News Research Crew"]
@@ -1137,14 +1142,13 @@ flowchart LR
 
     %% Tool Usage
     Tool_SerperDev -.->|"supports research"| Agent_Researcher
-    Tool_WebSearch -.->|"supports research"| Agent_Researcher
 
     %% Apply consistent pastel colors
     class Crew_Research,Crew_Summary crewStyle
     class Agent_Researcher,Agent_Synthesizer agentStyle
     class Task_GatherNews,Task_CreateSummary taskStyle
     class Flow_Research,Flow_Summary flowStyle
-    class Tool_SerperDev,Tool_WebSearch toolStyle
+    class Tool_SerperDev toolStyle
     class FinalReport outputStyle
 
     %% Color definitions
@@ -2011,11 +2015,110 @@ flowchart LR
       }
     },
 
-    formatExecutionResult(result) {
+    // Get raw output from result (handles different result formats)
+    getRawOutput(result) {
       if (!result) return 'No result'
       if (typeof result === 'string') return result
       if (result.raw) return result.raw
       return JSON.stringify(result, null, 2)
+    },
+
+    // Detect content type: 'json', 'markdown', or 'text'
+    detectContentType(result) {
+      const raw = this.getRawOutput(result)
+      if (!raw || raw === 'No result') return 'text'
+
+      // Check if it's JSON (object or array)
+      if (typeof result === 'object' && !result.raw) {
+        return 'json'
+      }
+
+      // Check if the raw content looks like JSON
+      const trimmed = raw.trim()
+      if ((trimmed.startsWith('{') && trimmed.endsWith('}')) ||
+          (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+        try {
+          JSON.parse(trimmed)
+          return 'json'
+        } catch (e) {
+          // Not valid JSON, continue checking
+        }
+      }
+
+      // Check if it contains markdown patterns
+      const markdownPatterns = [
+        /^#{1,6}\s+.+$/m,           // Headers: # ## ### etc
+        /\*\*.+?\*\*/,              // Bold: **text**
+        /^[-*]\s+.+$/m,             // Bullet lists: - item or * item
+        /^\d+\.\s+.+$/m,            // Numbered lists: 1. item
+        /\[.+?\]\(.+?\)/,           // Links: [text](url)
+        /^>\s+.+$/m,                // Blockquotes: > text
+        /`{1,3}[^`]+`{1,3}/,        // Code: `code` or ```code```
+        /^={3,}$|^-{3,}$/m          // Horizontal rules: === or ---
+      ]
+
+      for (const pattern of markdownPatterns) {
+        if (pattern.test(raw)) {
+          return 'markdown'
+        }
+      }
+
+      return 'text'
+    },
+
+    // Format JSON output with indentation
+    formatJsonOutput(result) {
+      if (!result) return 'No result'
+      if (typeof result === 'object') {
+        return JSON.stringify(result, null, 2)
+      }
+      // Try to parse and re-format if it's a JSON string
+      const raw = this.getRawOutput(result)
+      try {
+        const parsed = JSON.parse(raw)
+        return JSON.stringify(parsed, null, 2)
+      } catch (e) {
+        return raw
+      }
+    },
+
+    // Render markdown to HTML
+    renderMarkdown(text) {
+      if (!text) return ''
+      let html = this.escapeHtml(text)
+
+      // Convert headers
+      html = html.replace(/^### (.+)$/gm, '<h4 class="mt-3 mb-2 primary--text">$1</h4>')
+      html = html.replace(/^## (.+)$/gm, '<h3 class="mt-4 mb-2 primary--text">$1</h3>')
+      html = html.replace(/^# (.+)$/gm, '<h2 class="mt-4 mb-2 primary--text">$1</h2>')
+
+      // Convert bold and italic
+      html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+      html = html.replace(/\*(.+?)\*/g, '<em>$1</em>')
+
+      // Convert inline code
+      html = html.replace(/`([^`]+)`/g, '<code class="inline-code">$1</code>')
+
+      // Convert bullet points
+      html = html.replace(/^[-*] (.+)$/gm, '<li>$1</li>')
+      html = html.replace(/(<li>.*<\/li>\n?)+/g, '<ul class="ml-4 mb-2">$&</ul>')
+
+      // Convert numbered lists
+      html = html.replace(/^\d+\. (.+)$/gm, '<li>$1</li>')
+
+      // Convert blockquotes
+      html = html.replace(/^> (.+)$/gm, '<blockquote class="blockquote">$1</blockquote>')
+
+      // Convert newlines to br
+      html = html.replace(/\n/g, '<br>')
+
+      return `<div class="markdown-rendered">${html}</div>`
+    },
+
+    escapeHtml(text) {
+      const div = document.createElement('div')
+      div.textContent = text
+      return div.innerHTML
     }
   },
 
@@ -2290,5 +2393,93 @@ flowchart LR
 
 .executions-table td {
   vertical-align: middle;
+}
+
+/* Markdown Content Styles */
+.markdown-content {
+  padding: 16px;
+  background-color: #fafafa;
+  border-radius: 4px;
+  max-height: 500px;
+  overflow-y: auto;
+}
+
+.markdown-rendered {
+  line-height: 1.7;
+  color: #333;
+}
+
+.markdown-rendered h2,
+.markdown-rendered h3,
+.markdown-rendered h4 {
+  font-weight: 600;
+  margin-top: 16px;
+  margin-bottom: 8px;
+}
+
+.markdown-rendered h2 {
+  font-size: 1.25em;
+  border-bottom: 1px solid #e0e0e0;
+  padding-bottom: 4px;
+}
+
+.markdown-rendered h3 {
+  font-size: 1.1em;
+}
+
+.markdown-rendered h4 {
+  font-size: 1em;
+}
+
+.markdown-rendered ul,
+.markdown-rendered ol {
+  padding-left: 24px;
+  margin-bottom: 12px;
+}
+
+.markdown-rendered li {
+  margin-bottom: 4px;
+}
+
+.markdown-rendered strong {
+  font-weight: 600;
+  color: #1a1a1a;
+}
+
+.markdown-rendered em {
+  font-style: italic;
+  color: #555;
+}
+
+.markdown-rendered .inline-code {
+  background-color: #e8e8e8;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-family: 'Fira Code', 'Consolas', monospace;
+  font-size: 0.9em;
+}
+
+.markdown-rendered .blockquote {
+  border-left: 3px solid #1976d2;
+  padding-left: 12px;
+  margin: 8px 0;
+  color: #555;
+  font-style: italic;
+}
+
+/* JSON Content Styles */
+.json-content {
+  background-color: #263238;
+  color: #aabfc9;
+  padding: 16px;
+  border-radius: 4px;
+  font-family: 'Fira Code', 'Consolas', monospace;
+  font-size: 0.85em;
+  overflow-x: auto;
+  max-height: 500px;
+  overflow-y: auto;
+  margin: 0;
+  white-space: pre-wrap;
+  word-wrap: break-word;
 }
 </style>

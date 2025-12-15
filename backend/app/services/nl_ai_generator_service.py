@@ -189,7 +189,7 @@ def get_available_tools_markdown() -> str:
 
         # Add static registry tools
         lines.append("**CrewAI Native Tools (from Registry):**")
-        crewai_tools = ["SerperDevTool", "WebsiteSearchTool"]
+        crewai_tools = ["SerperDevTool"]
         for tool in crewai_tools:
             if tool in registry.available_tools:
                 lines.append(f"- {tool}")

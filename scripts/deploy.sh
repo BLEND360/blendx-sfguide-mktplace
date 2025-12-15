@@ -174,7 +174,7 @@ fi
 
 if [ "$SKIP_BUILD" = false ]; then
     echo "=========================================="
-    echo "[1/9] Building Docker images..."
+    echo "[1/10] Building Docker images..."
     echo "=========================================="
 
     run_command "Building backend image" \
@@ -189,7 +189,7 @@ if [ "$SKIP_BUILD" = false ]; then
     echo ""
 else
     echo "=========================================="
-    echo "[1/9] Skipping Docker build (--skip-build)"
+    echo "[1/10] Skipping Docker build (--skip-build)"
     echo "=========================================="
     echo ""
 fi
@@ -200,7 +200,7 @@ fi
 
 if [ "$SKIP_PUSH" = false ]; then
     echo "=========================================="
-    echo "[2/9] Logging in to Snowflake Docker registry..."
+    echo "[2/10] Logging in to Snowflake Docker registry..."
     echo "=========================================="
 
     run_command "Logging in to Snowflake registry" \
@@ -209,7 +209,7 @@ if [ "$SKIP_PUSH" = false ]; then
     echo ""
 else
     echo "=========================================="
-    echo "[2/9] Skipping registry login (--skip-push)"
+    echo "[2/10] Skipping registry login (--skip-push)"
     echo "=========================================="
     echo ""
 fi
@@ -220,7 +220,7 @@ fi
 
 if [ "$SKIP_PUSH" = false ]; then
     echo "=========================================="
-    echo "[3/9] Tagging and pushing images..."
+    echo "[3/10] Tagging and pushing images..."
     echo "=========================================="
 
     run_command "Tagging and pushing backend image" \
@@ -235,17 +235,79 @@ if [ "$SKIP_PUSH" = false ]; then
     echo ""
 else
     echo "=========================================="
-    echo "[3/9] Skipping Docker push (--skip-push)"
+    echo "[3/10] Skipping Docker push (--skip-push)"
     echo "=========================================="
     echo ""
 fi
 
 # ============================================
-# Step 4: Upload Application Files
+# Step 4: Inject Table Definitions into setup.sql
 # ============================================
 
 echo "=========================================="
-echo "[4/9] Uploading application files to Snowflake stage..."
+echo "[4/10] Injecting table definitions into setup.sql..."
+echo "=========================================="
+
+inject_table_definitions() {
+    python3 << 'PYEOF'
+import re
+import sys
+
+project_root = sys.argv[1] if len(sys.argv) > 1 else '.'
+
+# Read table definitions
+with open(f'{project_root}/scripts/sql/tables_definitions.sql', 'r') as f:
+    content = f.read()
+
+# Remove comment-only lines and transform CREATE TABLE
+lines = [l for l in content.split('\n') if not l.strip().startswith('--')]
+table_defs = '\n'.join(lines)
+table_defs = table_defs.replace('CREATE TABLE IF NOT EXISTS ', 'CREATE OR REPLACE TABLE app_data.')
+
+# Find all table names and generate GRANTs
+tables = sorted(set(re.findall(r'app_data\.([a-z_]+)', table_defs)))
+grants = []
+for table in tables:
+    grants.append(f"""
+-- Grant permissions for {table} table
+GRANT SELECT ON TABLE app_data.{table} TO APPLICATION ROLE app_user;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE app_data.{table} TO APPLICATION ROLE app_admin;""")
+
+full_content = table_defs + '\n'.join(grants)
+
+# Read setup template and replace placeholder
+with open(f'{project_root}/scripts/sql/setup_template.sql', 'r') as f:
+    setup_content = f.read()
+
+if '-- {{TABLE_DEFINITIONS}}' not in setup_content:
+    print('ERROR: Placeholder -- {{TABLE_DEFINITIONS}} not found in setup_template.sql')
+    sys.exit(1)
+
+setup_content = setup_content.replace('-- {{TABLE_DEFINITIONS}}', full_content)
+
+# Write generated setup.sql to app/src/
+with open(f'{project_root}/app/src/setup.sql', 'w') as f:
+    f.write(setup_content)
+
+print(f'Generated app/src/setup.sql with {len(tables)} table definitions: {", ".join(tables)}')
+PYEOF
+}
+
+if [ "$DRY_RUN" = false ]; then
+    inject_table_definitions "$PROJECT_ROOT"
+    echo -e "${GREEN}✓ Generated app/src/setup.sql from template${NC}"
+else
+    echo "[DRY RUN] Would generate app/src/setup.sql from scripts/sql/setup_template.sql"
+fi
+
+echo ""
+
+# ============================================
+# Step 5: Upload Application Files
+# ============================================
+
+echo "=========================================="
+echo "[5/10] Uploading application files to Snowflake stage..."
 echo "=========================================="
 
 APP_SRC_PATH="$PROJECT_ROOT/app/src"
@@ -255,11 +317,11 @@ run_command "Uploading files to stage" \
 echo ""
 
 # ============================================
-# Step 5: Deregister Old Versions Not in Release Channel
+# Step 6: Deregister Old Versions Not in Release Channel
 # ============================================
 
 echo "=========================================="
-echo "[5/9] Cleaning up old versions..."
+echo "[6/10] Cleaning up old versions..."
 echo "=========================================="
 
 # Snowflake allows max 2 versions NOT in any release channel
@@ -299,11 +361,11 @@ fi
 echo ""
 
 # ============================================
-# Step 6: Register New Version or Add Patch
+# Step 7: Register New Version or Add Patch
 # ============================================
 
 echo "=========================================="
-echo "[6/9] Registering version ${APP_VERSION} or adding patch..."
+echo "[7/10] Registering version ${APP_VERSION} or adding patch..."
 echo "=========================================="
 
 # Check if version already exists
@@ -365,11 +427,11 @@ run_command "Showing current versions" \
 echo ""
 
 # ============================================
-# Step 7: Get Latest Patch Number
+# Step 8: Get Latest Patch Number
 # ============================================
 
 echo "=========================================="
-echo "[7/10] Getting latest patch number..."
+echo "[8/10] Getting latest patch number..."
 echo "=========================================="
 
 LATEST_PATCH=0
@@ -391,11 +453,11 @@ fi
 echo ""
 
 # ============================================
-# Step 8: Update Release Channel Directive
+# Step 9: Update Release Channel Directive
 # ============================================
 
 echo "=========================================="
-echo "[8/10] Updating ${RELEASE_CHANNEL} release channel directive..."
+echo "[9/10] Updating ${RELEASE_CHANNEL} release channel directive..."
 echo "=========================================="
 
 if [ "$DRY_RUN" = false ]; then
@@ -412,11 +474,11 @@ fi
 echo ""
 
 # ============================================
-# Step 9: Application Upgrade Info
+# Step 10: Application Upgrade Info
 # ============================================
 
 echo "=========================================="
-echo "[9/10] Application upgrade..."
+echo "[10/10] Application upgrade..."
 echo "=========================================="
 
 # Check if application exists
@@ -519,4 +581,7 @@ echo "    snow sql -q \"USE ROLE ${APP_CONSUMER_ROLE}; CALL ${APP_INSTANCE_NAME}
 echo ""
 echo "  Get app URL:"
 echo "    snow sql -q \"USE ROLE ${APP_CONSUMER_ROLE}; CALL ${APP_INSTANCE_NAME}.app_public.app_url();\" --connection ${SNOW_CONNECTION}"
+echo ""
+echo -e "${YELLOW}IMPORTANT: If updating an existing deployment, restart the service to see changes:${NC}"
+echo "  ./scripts/restart.sh"
 echo ""

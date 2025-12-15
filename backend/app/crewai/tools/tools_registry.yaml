@@ -5,11 +5,7 @@ tools:
     params:
       api_key: "${SERPER_API_KEY}"
 
-  WebsiteSearchTool:
-    implementation: "crewai_tools.WebsiteSearchTool"
-    params:
-      api_key: "${OPENAI_API_KEY}"
-
+  # NOTE: WebsiteSearchTool removed - uses OpenAI embeddings internally
   # NOTE: Search Services are dynamically discovered from BlendX Hub. Do not configure here.
   # NOTE: Data Analysts are dynamically discovered from BlendX Hub. Do not configure here.
   # NOTE: MCP servers are discovered via BlendX Hub. Do not configure here.
