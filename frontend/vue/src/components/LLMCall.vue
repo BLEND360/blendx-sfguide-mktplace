@@ -118,7 +118,7 @@
               dark
             >
               <v-icon left>mdi-format-list-bulleted</v-icon>
-              LIST TEST CREWS
+              LIST TEST EXECUTIONS
             </v-btn>
           </v-card-text>
 
@@ -133,11 +133,11 @@
             </v-card>
           </v-card-text>
 
-          <!-- Crew Executions Table -->
+          <!-- Execution Results Table -->
           <v-card-text v-if="crewExecutions" class="pa-3 pt-0">
             <v-divider class="mb-3"></v-divider>
             <v-card outlined dark class="crew-table-card">
-              <v-card-subtitle class="pb-1 white--text">Crew Executions:</v-card-subtitle>
+              <v-card-subtitle class="pb-1 white--text">Execution Results:</v-card-subtitle>
               <v-card-text class="pt-0">
                 <v-simple-table dense dark class="crew-table">
                   <template v-slot:default>
@@ -545,7 +545,7 @@
           <ul class="mb-4">
             <li><strong>RUN TEST CREW:</strong> Executes the default CrewAI workflow</li>
             <li><strong>RUN TEST EXTERNAL TOOL:</strong> Executes a crew with external tools (like Serper)</li>
-            <li><strong>LIST TEST CREWS:</strong> Shows recent crew execution history and their status</li>
+            <li><strong>LIST TEST EXECUTIONS:</strong> Shows recent crew execution history and their status</li>
           </ul>
 
           <v-divider class="my-4"></v-divider>
@@ -664,6 +664,25 @@
 
         <v-card-actions class="pa-4">
           <v-spacer></v-spacer>
+          <v-btn
+            color="info"
+            class="mr-2"
+            @click="listWorkflowExecutions(selectedWorkflow)"
+            :loading="loadingWorkflowExecutions"
+          >
+            <v-icon left>mdi-history</v-icon>
+            List Executions
+          </v-btn>
+          <v-btn
+            color="success"
+            class="mr-2"
+            @click="runWorkflowFromHistory(selectedWorkflow)"
+            :loading="runningWorkflow === 'history'"
+            :disabled="runningWorkflow !== null"
+          >
+            <v-icon left>mdi-play</v-icon>
+            Run Workflow
+          </v-btn>
           <v-btn color="primary" @click="showWorkflowDetails = false">
             Close
           </v-btn>
@@ -716,6 +735,276 @@
         </v-card-actions>
       </v-card>
     </v-dialog>
+
+    <!-- Run Workflow Input Dialog -->
+    <v-dialog v-model="showRunInputDialog" max-width="500">
+      <v-card>
+        <v-card-title class="success white--text">
+          <v-icon left dark>mdi-play</v-icon>
+          Run Workflow
+          <v-spacer></v-spacer>
+          <v-btn icon dark @click="showRunInputDialog = false">
+            <v-icon>mdi-close</v-icon>
+          </v-btn>
+        </v-card-title>
+
+        <v-card-text class="pa-4">
+          <p class="mb-4">
+            You are about to run this workflow using ephemeral execution (no data will be persisted).
+          </p>
+          <v-chip small outlined class="mb-4">
+            <v-icon left small>mdi-tag</v-icon>
+            {{ workflowToRun?.type === 'run-build-flow' ? 'Flow' : 'Crew' }}
+          </v-chip>
+          <v-textarea
+            v-model="runWorkflowInput"
+            label="Input (optional)"
+            outlined
+            dense
+            rows="3"
+            placeholder="Enter any input for the workflow..."
+            hint="Provide input data for your workflow. Leave empty if not needed."
+            persistent-hint
+          ></v-textarea>
+        </v-card-text>
+
+        <v-card-actions class="pa-4">
+          <v-spacer></v-spacer>
+          <v-btn text @click="showRunInputDialog = false">
+            Cancel
+          </v-btn>
+          <v-btn
+            color="success"
+            @click="confirmRunWorkflow"
+          >
+            <v-icon left>mdi-play</v-icon>
+            Run Workflow
+          </v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+
+    <!-- Run Workflow Result Dialog -->
+    <v-dialog v-model="showRunResultDialog" max-width="800" persistent scrollable>
+      <v-card>
+        <v-card-title class="primary white--text">
+          <v-icon left dark>mdi-cog</v-icon>
+          Workflow Execution
+          <v-spacer></v-spacer>
+          <v-chip
+            small
+            :color="getStatusColor(runResultStatus)"
+            dark
+            class="mr-2"
+          >
+            {{ runResultStatus }}
+          </v-chip>
+          <v-btn
+            icon
+            dark
+            @click="closeRunResultDialog"
+            :disabled="runResultStatus === 'RUNNING'"
+          >
+            <v-icon>mdi-close</v-icon>
+          </v-btn>
+        </v-card-title>
+
+        <v-card-text class="pa-4">
+          <!-- Running state -->
+          <div v-if="runResultStatus === 'RUNNING' || runResultStatus === 'STARTING'" class="text-center py-8">
+            <v-progress-circular indeterminate color="primary" size="60" width="6"></v-progress-circular>
+            <p class="mt-4 grey--text text--darken-1">
+              {{ runResultStatus === 'STARTING' ? 'Starting workflow execution...' : 'Workflow is running...' }}
+            </p>
+            <p class="text-caption grey--text">
+              Elapsed time: {{ ephemeralPollingAttempts * 5 }} seconds
+            </p>
+          </div>
+
+          <!-- Error state -->
+          <v-alert v-else-if="runResultStatus === 'FAILED' || runResultError" type="error" class="mb-0">
+            <div class="font-weight-medium mb-2">Execution Failed</div>
+            <pre class="error-result-text">{{ runResultError }}</pre>
+          </v-alert>
+
+          <!-- Success state -->
+          <div v-else-if="runResultStatus === 'COMPLETED'">
+            <v-alert type="success" dense class="mb-4">
+              Workflow completed successfully!
+            </v-alert>
+            <v-card outlined class="result-card">
+              <v-card-subtitle class="pb-1 d-flex align-center">
+                <v-icon small class="mr-1">mdi-text-box-outline</v-icon>
+                Execution Result
+              </v-card-subtitle>
+              <v-card-text>
+                <div class="d-flex justify-end mb-2">
+                  <v-btn small text color="primary" @click="copyToClipboard(getRawOutput(runResultData))">
+                    <v-icon left small>mdi-content-copy</v-icon>
+                    Copy Result
+                  </v-btn>
+                </div>
+                <!-- Auto-detect content type and render appropriately -->
+                <div v-if="detectContentType(runResultData) === 'markdown'" class="markdown-content" v-html="renderMarkdown(getRawOutput(runResultData))"></div>
+                <pre v-else-if="detectContentType(runResultData) === 'json'" class="json-content">{{ formatJsonOutput(runResultData) }}</pre>
+                <pre v-else class="result-text">{{ getRawOutput(runResultData) }}</pre>
+              </v-card-text>
+            </v-card>
+          </div>
+        </v-card-text>
+
+        <v-card-actions class="pa-4" v-if="runResultStatus !== 'RUNNING' && runResultStatus !== 'STARTING'">
+          <v-spacer></v-spacer>
+          <v-btn color="primary" @click="closeRunResultDialog">
+            Close
+          </v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+
+    <!-- Workflow Executions Dialog -->
+    <v-dialog v-model="showWorkflowExecutionsDialog" max-width="700" scrollable>
+      <v-card>
+        <v-card-title class="info white--text">
+          <v-icon left dark>mdi-history</v-icon>
+          Workflow Executions
+          <v-spacer></v-spacer>
+          <v-btn icon dark @click="showWorkflowExecutionsDialog = false">
+            <v-icon>mdi-close</v-icon>
+          </v-btn>
+        </v-card-title>
+
+        <v-card-text class="pa-4">
+          <!-- Loading state -->
+          <div v-if="loadingWorkflowExecutions" class="text-center py-8">
+            <v-progress-circular indeterminate color="info" size="50"></v-progress-circular>
+            <p class="mt-4 grey--text">Loading executions...</p>
+          </div>
+
+          <!-- Empty state -->
+          <div v-else-if="!workflowExecutions || workflowExecutions.length === 0" class="text-center grey--text py-8">
+            <v-icon size="64" color="grey lighten-1">mdi-playlist-remove</v-icon>
+            <p class="mt-4">No executions found for this workflow</p>
+          </div>
+
+          <!-- Executions Table -->
+          <v-simple-table v-else dense class="executions-table">
+            <template v-slot:default>
+              <thead>
+                <tr>
+                  <th>Execution ID</th>
+                  <th>Status</th>
+                  <th>Started</th>
+                  <th>Updated</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="exec in workflowExecutions" :key="exec.execution_id">
+                  <td class="text-monospace">{{ exec.execution_id.substring(0, 8) }}...</td>
+                  <td>
+                    <v-chip x-small :color="getStatusColor(exec.status)" dark>
+                      {{ exec.status }}
+                    </v-chip>
+                  </td>
+                  <td class="text-caption">{{ formatDate(exec.execution_timestamp) }}</td>
+                  <td class="text-caption">{{ formatDate(exec.updated_at) }}</td>
+                  <td>
+                    <v-btn
+                      x-small
+                      text
+                      color="primary"
+                      @click="viewExecutionDetails(exec)"
+                      :loading="viewingExecutionId === exec.execution_id"
+                    >
+                      <v-icon x-small left>mdi-eye</v-icon>
+                      View
+                    </v-btn>
+                  </td>
+                </tr>
+              </tbody>
+            </template>
+          </v-simple-table>
+        </v-card-text>
+
+        <v-card-actions class="pa-4">
+          <v-spacer></v-spacer>
+          <v-btn color="primary" @click="showWorkflowExecutionsDialog = false">
+            Close
+          </v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+
+    <!-- Execution Details Dialog -->
+    <v-dialog v-model="showExecutionDetailsDialog" max-width="800" scrollable>
+      <v-card>
+        <v-card-title class="primary white--text">
+          <v-icon left dark>mdi-file-document-outline</v-icon>
+          Execution Details
+          <v-spacer></v-spacer>
+          <v-chip
+            small
+            :color="getStatusColor(executionDetails?.status)"
+            dark
+            class="mr-2"
+          >
+            {{ executionDetails?.status }}
+          </v-chip>
+          <v-btn icon dark @click="showExecutionDetailsDialog = false">
+            <v-icon>mdi-close</v-icon>
+          </v-btn>
+        </v-card-title>
+
+        <v-card-text class="pa-4" v-if="executionDetails">
+          <div class="mb-3">
+            <v-chip small outlined class="mr-2">
+              <v-icon left small>mdi-identifier</v-icon>
+              {{ executionDetails.execution_id }}
+            </v-chip>
+          </div>
+
+          <!-- Error state -->
+          <v-alert v-if="executionDetails.error" type="error" class="mb-4">
+            <div class="font-weight-medium mb-2">Execution Error</div>
+            <pre class="error-result-text">{{ executionDetails.error }}</pre>
+          </v-alert>
+
+          <!-- Result -->
+          <v-card v-if="executionDetails.result" outlined class="result-card">
+            <v-card-subtitle class="pb-1 d-flex align-center">
+              <v-icon small class="mr-1">mdi-text-box-outline</v-icon>
+              Execution Result
+            </v-card-subtitle>
+            <v-card-text>
+              <div class="d-flex justify-end mb-2">
+                <v-btn small text color="primary" @click="copyToClipboard(getRawOutput(executionDetails.result))">
+                  <v-icon left small>mdi-content-copy</v-icon>
+                  Copy Result
+                </v-btn>
+              </div>
+              <!-- Auto-detect content type and render appropriately -->
+              <div v-if="detectContentType(executionDetails.result) === 'markdown'" class="markdown-content" v-html="renderMarkdown(getRawOutput(executionDetails.result))"></div>
+              <pre v-else-if="detectContentType(executionDetails.result) === 'json'" class="json-content">{{ formatJsonOutput(executionDetails.result) }}</pre>
+              <pre v-else class="result-text">{{ getRawOutput(executionDetails.result) }}</pre>
+            </v-card-text>
+          </v-card>
+
+          <!-- No result message -->
+          <div v-else-if="!executionDetails.error" class="text-center grey--text py-4">
+            <v-icon size="48" color="grey lighten-1">mdi-file-document-outline</v-icon>
+            <p class="mt-2">No result data available</p>
+          </div>
+        </v-card-text>
+
+        <v-card-actions class="pa-4">
+          <v-spacer></v-spacer>
+          <v-btn color="primary" @click="showExecutionDetailsDialog = false">
+            Close
+          </v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
   </v-container>
 </template>
 
@@ -764,7 +1053,7 @@ agents:
     goal: "Gather and analyze the latest artificial intelligence news and developments"
     backstory: "Expert technology researcher specializing in AI industry trends and developments"
     tools:
-      - crewai_tools: ["SerperDevTool", "WebsiteSearchTool"]
+      - crewai_tools: ["SerperDevTool"]
     verbose: true
     llm:
       provider: "snowflake"
@@ -788,7 +1077,7 @@ tasks:
     agent: "AI News Researcher"
     expected_output: "A comprehensive collection of recent AI news items with sources and key details"
     tools:
-      - crewai_tools: ["SerperDevTool", "WebsiteSearchTool"]
+      - crewai_tools: ["SerperDevTool"]
     context: []
     output_file: null
 
@@ -823,7 +1112,6 @@ title: AI News Summary Flow
 flowchart LR
     %% Global Tools Section
     Tool_SerperDev[("SerperDev API")]
-    Tool_WebSearch[("Website Search")]
 
     %% News Research Phase
     subgraph Crew_Research["News Research Crew"]
@@ -854,14 +1142,13 @@ flowchart LR
 
     %% Tool Usage
     Tool_SerperDev -.->|"supports research"| Agent_Researcher
-    Tool_WebSearch -.->|"supports research"| Agent_Researcher
 
     %% Apply consistent pastel colors
     class Crew_Research,Crew_Summary crewStyle
     class Agent_Researcher,Agent_Synthesizer agentStyle
     class Task_GatherNews,Task_CreateSummary taskStyle
     class Flow_Research,Flow_Summary flowStyle
-    class Tool_SerperDev,Tool_WebSearch toolStyle
+    class Tool_SerperDev toolStyle
     class FinalReport outputStyle
 
     %% Color definitions
@@ -927,6 +1214,29 @@ flowchart LR
     savingWorkflow: null,
     saveMessageIndex: null,
     saveError: null,
+
+    // Run Workflow (Ephemeral Execution)
+    runningWorkflow: null,
+    ephemeralExecutionId: null,
+    ephemeralPollingInterval: null,
+    ephemeralPollingAttempts: 0,
+    maxEphemeralPollingAttempts: 180,  // 15 minutes at 5-second intervals
+    showRunResultDialog: false,
+    runResultStatus: null,
+    runResultData: null,
+    runResultError: null,
+    runWorkflowInput: '',
+    showRunInputDialog: false,
+    workflowToRun: null,
+    runMessageIndex: null,
+
+    // Workflow Executions
+    showWorkflowExecutionsDialog: false,
+    workflowExecutions: null,
+    loadingWorkflowExecutions: false,
+    showExecutionDetailsDialog: false,
+    executionDetails: null,
+    viewingExecutionId: null,
   }),
 
   computed: {
@@ -969,6 +1279,11 @@ flowchart LR
       const message = this.userMessage.trim()
       this.userMessage = ''
       this.error = null
+
+      // If we're in history view, switch to chat view first
+      if (this.showHistoryInMain) {
+        this.showHistoryInMain = false
+      }
 
       // Add user message to chat
       this.chatMessages.push({
@@ -1359,7 +1674,7 @@ flowchart LR
       const baseUrl = process.env.VUE_APP_API_URL
 
       try {
-        const response = await axios.get(baseUrl + "/crew/executions?limit=10")
+        const response = await axios.get(baseUrl + "/crew/executions?limit=10&is_test=true")
         if (response.data.executions) {
           this.crewExecutions = response.data.executions
         } else {
@@ -1519,6 +1834,291 @@ flowchart LR
       } finally {
         this.savingWorkflow = null
       }
+    },
+
+    // Run Workflow methods
+    runWorkflow(messageIndex, workflow) {
+      this.runMessageIndex = messageIndex
+      this.workflowToRun = workflow
+      this.runWorkflowInput = ''
+      this.showRunInputDialog = true
+    },
+
+    runWorkflowFromHistory(workflow) {
+      this.runMessageIndex = 'history'
+      this.workflowToRun = workflow
+      this.runWorkflowInput = ''
+      this.showWorkflowDetails = false
+      this.showRunInputDialog = true
+    },
+
+    async confirmRunWorkflow() {
+      if (!this.workflowToRun) return
+
+      this.showRunInputDialog = false
+      this.runningWorkflow = this.runMessageIndex
+      this.runResultError = null
+      this.runResultData = null
+      this.runResultStatus = 'STARTING'
+
+      const baseUrl = process.env.VUE_APP_API_URL
+      const workflow = this.workflowToRun
+
+      // Determine endpoint based on workflow type
+      // type is "run-build-flow" or "run-build-crew"
+      const isFlow = workflow.type === 'run-build-flow'
+      const endpoint = isFlow ? '/ephemeral/run-flow-async' : '/ephemeral/run-crew-async'
+
+      try {
+        const response = await axios.post(baseUrl + endpoint, {
+          yaml_text: workflow.yaml_text,
+          input: this.runWorkflowInput || null,
+          workflow_id: workflow.workflow_id || null
+        })
+
+        this.ephemeralExecutionId = response.data.execution_id
+        this.runResultStatus = 'RUNNING'
+        this.showRunResultDialog = true
+
+        // Start polling for results
+        this.startEphemeralPolling()
+      } catch (error) {
+        console.error('Error starting workflow execution:', error)
+        this.runResultError = error.response?.data?.detail || error.message
+        this.runResultStatus = 'FAILED'
+        this.showRunResultDialog = true
+        this.runningWorkflow = null
+      }
+    },
+
+    startEphemeralPolling() {
+      this.ephemeralPollingAttempts = 0
+      this.ephemeralPollingInterval = setInterval(async () => {
+        await this.checkEphemeralStatus()
+      }, 5000)  // Poll every 5 seconds
+    },
+
+    stopEphemeralPolling() {
+      if (this.ephemeralPollingInterval) {
+        clearInterval(this.ephemeralPollingInterval)
+        this.ephemeralPollingInterval = null
+      }
+    },
+
+    async checkEphemeralStatus() {
+      this.ephemeralPollingAttempts++
+
+      if (this.ephemeralPollingAttempts > this.maxEphemeralPollingAttempts) {
+        this.stopEphemeralPolling()
+        this.runResultError = 'Timeout: Workflow execution took too long'
+        this.runResultStatus = 'FAILED'
+        this.runningWorkflow = null
+        return
+      }
+
+      const baseUrl = process.env.VUE_APP_API_URL
+
+      try {
+        const response = await axios.get(baseUrl + `/ephemeral/status/${this.ephemeralExecutionId}`)
+        const data = response.data
+
+        this.runResultStatus = data.status
+
+        if (data.status === 'COMPLETED') {
+          this.stopEphemeralPolling()
+          this.runResultData = data.result
+          this.runningWorkflow = null
+        } else if (data.status === 'FAILED' || data.status === 'NOT_FOUND') {
+          this.stopEphemeralPolling()
+          this.runResultError = data.result || 'Workflow execution failed'
+          this.runningWorkflow = null
+        }
+        // If still RUNNING, continue polling
+      } catch (error) {
+        console.error('Error checking ephemeral status:', error)
+        // Don't stop on transient errors, keep polling
+        if (this.ephemeralPollingAttempts > 5 && error.response?.status >= 500) {
+          this.stopEphemeralPolling()
+          this.runResultError = error.response?.data?.detail || error.message
+          this.runResultStatus = 'FAILED'
+          this.runningWorkflow = null
+        }
+      }
+    },
+
+    closeRunResultDialog() {
+      this.showRunResultDialog = false
+      // Cleanup the ephemeral execution from memory
+      if (this.ephemeralExecutionId) {
+        const baseUrl = process.env.VUE_APP_API_URL
+        axios.delete(baseUrl + `/ephemeral/status/${this.ephemeralExecutionId}`).catch(() => {})
+        this.ephemeralExecutionId = null
+      }
+    },
+
+    formatRunResult(result) {
+      if (!result) return 'No result'
+      if (typeof result === 'string') return result
+      if (Array.isArray(result)) {
+        return result.map((r, i) => `--- Result ${i + 1} ---\n${r}`).join('\n\n')
+      }
+      return JSON.stringify(result, null, 2)
+    },
+
+    // Workflow Executions methods
+    async listWorkflowExecutions(workflow) {
+      if (!workflow || !workflow.workflow_id) return
+
+      this.loadingWorkflowExecutions = true
+      this.workflowExecutions = null
+      this.showWorkflowExecutionsDialog = true
+
+      const baseUrl = process.env.VUE_APP_API_URL
+
+      try {
+        const response = await axios.get(
+          baseUrl + `/crew/executions/workflow/${workflow.workflow_id}?limit=20`
+        )
+        if (response.data.executions) {
+          this.workflowExecutions = response.data.executions
+        } else {
+          this.workflowExecutions = []
+        }
+      } catch (error) {
+        console.error('Error loading workflow executions:', error)
+        this.workflowExecutions = []
+      } finally {
+        this.loadingWorkflowExecutions = false
+      }
+    },
+
+    async viewExecutionDetails(exec) {
+      this.viewingExecutionId = exec.execution_id
+      this.executionDetails = null
+
+      const baseUrl = process.env.VUE_APP_API_URL
+
+      try {
+        const response = await axios.get(baseUrl + `/crew/status/${exec.execution_id}`)
+        this.executionDetails = response.data
+        this.showExecutionDetailsDialog = true
+      } catch (error) {
+        console.error('Error loading execution details:', error)
+        this.executionDetails = {
+          execution_id: exec.execution_id,
+          status: exec.status,
+          error: error.response?.data?.detail || error.message
+        }
+        this.showExecutionDetailsDialog = true
+      } finally {
+        this.viewingExecutionId = null
+      }
+    },
+
+    // Get raw output from result (handles different result formats)
+    getRawOutput(result) {
+      if (!result) return 'No result'
+      if (typeof result === 'string') return result
+      if (result.raw) return result.raw
+      return JSON.stringify(result, null, 2)
+    },
+
+    // Detect content type: 'json', 'markdown', or 'text'
+    detectContentType(result) {
+      const raw = this.getRawOutput(result)
+      if (!raw || raw === 'No result') return 'text'
+
+      // Check if it's JSON (object or array)
+      if (typeof result === 'object' && !result.raw) {
+        return 'json'
+      }
+
+      // Check if the raw content looks like JSON
+      const trimmed = raw.trim()
+      if ((trimmed.startsWith('{') && trimmed.endsWith('}')) ||
+          (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+        try {
+          JSON.parse(trimmed)
+          return 'json'
+        } catch (e) {
+          // Not valid JSON, continue checking
+        }
+      }
+
+      // Check if it contains markdown patterns
+      const markdownPatterns = [
+        /^#{1,6}\s+.+$/m,           // Headers: # ## ### etc
+        /\*\*.+?\*\*/,              // Bold: **text**
+        /^[-*]\s+.+$/m,             // Bullet lists: - item or * item
+        /^\d+\.\s+.+$/m,            // Numbered lists: 1. item
+        /\[.+?\]\(.+?\)/,           // Links: [text](url)
+        /^>\s+.+$/m,                // Blockquotes: > text
+        /`{1,3}[^`]+`{1,3}/,        // Code: `code` or ```code```
+        /^={3,}$|^-{3,}$/m          // Horizontal rules: === or ---
+      ]
+
+      for (const pattern of markdownPatterns) {
+        if (pattern.test(raw)) {
+          return 'markdown'
+        }
+      }
+
+      return 'text'
+    },
+
+    // Format JSON output with indentation
+    formatJsonOutput(result) {
+      if (!result) return 'No result'
+      if (typeof result === 'object') {
+        return JSON.stringify(result, null, 2)
+      }
+      // Try to parse and re-format if it's a JSON string
+      const raw = this.getRawOutput(result)
+      try {
+        const parsed = JSON.parse(raw)
+        return JSON.stringify(parsed, null, 2)
+      } catch (e) {
+        return raw
+      }
+    },
+
+    // Render markdown to HTML
+    renderMarkdown(text) {
+      if (!text) return ''
+      let html = this.escapeHtml(text)
+
+      // Convert headers
+      html = html.replace(/^### (.+)$/gm, '<h4 class="mt-3 mb-2 primary--text">$1</h4>')
+      html = html.replace(/^## (.+)$/gm, '<h3 class="mt-4 mb-2 primary--text">$1</h3>')
+      html = html.replace(/^# (.+)$/gm, '<h2 class="mt-4 mb-2 primary--text">$1</h2>')
+
+      // Convert bold and italic
+      html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+      html = html.replace(/\*(.+?)\*/g, '<em>$1</em>')
+
+      // Convert inline code
+      html = html.replace(/`([^`]+)`/g, '<code class="inline-code">$1</code>')
+
+      // Convert bullet points
+      html = html.replace(/^[-*] (.+)$/gm, '<li>$1</li>')
+      html = html.replace(/(<li>.*<\/li>\n?)+/g, '<ul class="ml-4 mb-2">$&</ul>')
+
+      // Convert numbered lists
+      html = html.replace(/^\d+\. (.+)$/gm, '<li>$1</li>')
+
+      // Convert blockquotes
+      html = html.replace(/^> (.+)$/gm, '<blockquote class="blockquote">$1</blockquote>')
+
+      // Convert newlines to br
+      html = html.replace(/\n/g, '<br>')
+
+      return `<div class="markdown-rendered">${html}</div>`
+    },
+
+    escapeHtml(text) {
+      const div = document.createElement('div')
+      div.textContent = text
+      return div.innerHTML
     }
   },
 
@@ -1526,6 +2126,7 @@ flowchart LR
     this.stopPolling()
     this.stopPollingExternal()
     this.stopNLPolling()
+    this.stopEphemeralPolling()
   }
 }
 </script>
@@ -1755,5 +2356,130 @@ flowchart LR
   display: -webkit-box;
   -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
+}
+
+/* Run Workflow Result Styles */
+.result-card {
+  max-height: 500px;
+  overflow-y: auto;
+}
+
+.result-text {
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  font-family: 'Fira Code', 'Consolas', monospace;
+  background-color: #263238;
+  color: #aabfc9;
+  padding: 16px;
+  border-radius: 4px;
+  font-size: 0.85em;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.error-result-text {
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  font-family: monospace;
+  font-size: 0.85em;
+  margin: 0;
+}
+
+/* Executions Table Styles */
+.executions-table th {
+  font-weight: 600;
+  background-color: #f5f5f5;
+}
+
+.executions-table td {
+  vertical-align: middle;
+}
+
+/* Markdown Content Styles */
+.markdown-content {
+  padding: 16px;
+  background-color: #fafafa;
+  border-radius: 4px;
+  max-height: 500px;
+  overflow-y: auto;
+}
+
+.markdown-rendered {
+  line-height: 1.7;
+  color: #333;
+}
+
+.markdown-rendered h2,
+.markdown-rendered h3,
+.markdown-rendered h4 {
+  font-weight: 600;
+  margin-top: 16px;
+  margin-bottom: 8px;
+}
+
+.markdown-rendered h2 {
+  font-size: 1.25em;
+  border-bottom: 1px solid #e0e0e0;
+  padding-bottom: 4px;
+}
+
+.markdown-rendered h3 {
+  font-size: 1.1em;
+}
+
+.markdown-rendered h4 {
+  font-size: 1em;
+}
+
+.markdown-rendered ul,
+.markdown-rendered ol {
+  padding-left: 24px;
+  margin-bottom: 12px;
+}
+
+.markdown-rendered li {
+  margin-bottom: 4px;
+}
+
+.markdown-rendered strong {
+  font-weight: 600;
+  color: #1a1a1a;
+}
+
+.markdown-rendered em {
+  font-style: italic;
+  color: #555;
+}
+
+.markdown-rendered .inline-code {
+  background-color: #e8e8e8;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-family: 'Fira Code', 'Consolas', monospace;
+  font-size: 0.9em;
+}
+
+.markdown-rendered .blockquote {
+  border-left: 3px solid #1976d2;
+  padding-left: 12px;
+  margin: 8px 0;
+  color: #555;
+  font-style: italic;
+}
+
+/* JSON Content Styles */
+.json-content {
+  background-color: #263238;
+  color: #aabfc9;
+  padding: 16px;
+  border-radius: 4px;
+  font-family: 'Fira Code', 'Consolas', monospace;
+  font-size: 0.85em;
+  overflow-x: auto;
+  max-height: 500px;
+  overflow-y: auto;
+  margin: 0;
+  white-space: pre-wrap;
+  word-wrap: break-word;
 }
 </style>

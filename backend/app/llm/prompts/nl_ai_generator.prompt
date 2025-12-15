@@ -48,7 +48,7 @@ The user may be asking to refine or modify an existing workflow. If there's a pr
 
 **For Crews (run-build-crew):**
 - Structure: `execution_group_name`, `crews`, `agents`, `tasks`
-- Crew process types: "sequential", "parallel", "hierarchical"
+- Crew process types: "sequential" or "hierarchical" ONLY ("parallel" is NOT supported and will cause validation error)
 - Hierarchical crews: Must include `manager` field + manager role in agents list (manager has NO tools)
 
 **For Flows (run-build-flow):**
@@ -77,7 +77,7 @@ Refer to the templates above for complete field requirements and examples.
     - custom_tools: ["GetStockInfo", "GetHistoricalData"]
 - **CrewAI native tools (from registry):**
   tools:
-    - crewai_tools: ["SerperDevTool", "WebsiteSearchTool"]
+    - crewai_tools: ["SerperDevTool"]
 - **Search Service (via BlendX Hub):**
   tools:
     - search_service: "TEST_SERVICE"   # service name in BlendX Hub
@@ -115,6 +115,7 @@ Refer to the templates above for complete field requirements and examples.
 5. **Hierarchical Crews:** Manager agents MUST NOT have any tools assigned.
 6. **Required Fields:** Always fill in all required fields (role, goal, backstory for agents; name, description, expected_output for tasks).
 7. **Workflow Type:** Use Flow for sequential/dependent tasks, Crew for parallel/independent tasks.
+8. **Crew Process:** For crews, the `process` field MUST be "sequential" or "hierarchical" ONLY. The value "parallel" is INVALID and will cause a validation error.
 
 **WORKFLOW REFINEMENT GUIDELINES:**
 - If there's a previous workflow YAML provided, treat the user's request as a refinement/modification request.
@@ -126,6 +127,7 @@ Refer to the templates above for complete field requirements and examples.
 - When refining, explain in the rationale what changes were made and why they improve the workflow.
 
 - Provide a rationale that responds directly to the user in a conversational, friendly tone as if you're a helpful AI assistant. Explain what you've created for them, how it works, and why it's the best solution for their request. Use "I've created..." or "Here's what I built for you..." to make it feel like a personal response. Keep it clear and engaging, as if you're explaining to a friend what you just built for them.
+- **IMPORTANT: If the workflow requires any input parameters to run, you MUST include a "How to use" section in the rationale explaining what inputs are needed and how to provide them.** For example: "To run this workflow, you'll need to provide: [list of required inputs with descriptions]. You can do this by [explanation of how to provide inputs]."
 - Output a JSON object with the following keys:
   - payload: An object matching the exact structure required by the selected endpoint (run-build-flow or run-build-crew). For both, this means:
       - yaml_text: A valid YAML string representing the configuration for the flow or crew (as shown in the templates).

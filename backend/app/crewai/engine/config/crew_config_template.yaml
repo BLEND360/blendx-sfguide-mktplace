@@ -28,7 +28,7 @@ agents:
     # - Search Services: search_service: "SERVICE_NAME" or ["SERVICE1", "SERVICE2"]
     # - Data Analysts: SnowflakeDataAnalyst: ["ANALYST_NAME"]
     # - MCP Servers: mcp: ["SERVER_NAME"] (must be a list)
-    # - CrewAI Native: crewai_tools: ["SerperDevTool", "WebsiteSearchTool"]
+    # - CrewAI Native: crewai_tools: ["SerperDevTool"]
     # - Custom Tools: custom_tools: ["GetStockInfo", "CalculateROI"]
     tools:
       - search_service: "TEST_SERVICE"
@@ -44,7 +44,7 @@ agents:
     goal: "Gather and analyze news, market sentiment, and industry developments"
     backstory: "Experienced market researcher specializing in news analysis, sentiment tracking, and industry trend identification."
     tools:
-      - crewai_tools: ["SerperDevTool", "WebsiteSearchTool"]
+      - crewai_tools: ["SerperDevTool"]
     verbose: true
     llm:
       provider: "snowflake"
@@ -56,7 +56,7 @@ agents:
     goal: "Create comprehensive investment reports by synthesizing financial analysis and market research"
     backstory: "Expert report writer with deep understanding of financial markets and analysis."
     tools:
-      - crewai_tools: ["SerperDevTool", "WebsiteSearchTool"]
+      - crewai_tools: ["SerperDevTool"]
       - custom_tools: ["GetStockInfo"]
     verbose: true
     allow_delegation: false

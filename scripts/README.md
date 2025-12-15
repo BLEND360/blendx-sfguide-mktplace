@@ -75,19 +75,82 @@ See [docs/EXTERNAL_ACCESS_SETUP.md](../docs/EXTERNAL_ACCESS_SETUP.md) for detail
 
 ## Updates and Maintenance
 
-### Updating Application Code
+### Development Workflow (QA Channel)
 
-When you make changes to the application code (backend, frontend, router):
+When you make changes to the application code and want to test:
 
 ```bash
+# Full deploy (build + push + deploy)
 ./scripts/deploy.sh
+
+# Skip Docker build/push (only update app files)
+./scripts/deploy.sh --skip-build --skip-push
 ```
 
 This will:
-- Rebuild and push Docker images
-- Update the application version
-- Upgrade the existing application instance
+- Build and push Docker images (unless skipped)
+- Upload application files to Snowflake stage
+- Create a new patch for the version
+- Update the **QA** release channel directive
+- Upgrade the test application instance
 - Restart the service
+
+### Production Release (DEFAULT Channel)
+
+After testing in QA, release to the marketplace:
+
+```bash
+./scripts/release.sh
+```
+
+This will:
+- **Auto-detect** the version/patch currently in the QA channel
+- Promote that exact version/patch to the DEFAULT channel
+- Make the new version available to marketplace consumers
+
+You can also specify a specific version/patch manually:
+
+```bash
+# Release specific version and patch
+./scripts/release.sh --version v1 --patch 5
+
+# Release to ALPHA channel instead of DEFAULT
+./scripts/release.sh --channel ALPHA
+
+# Use a different source channel
+./scripts/release.sh --from ALPHA --channel DEFAULT
+```
+
+### Complete Workflow
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  1. DEVELOPMENT                                             │
+│     ./scripts/deploy.sh --skip-build --skip-push            │
+│     → Creates patch, updates QA channel, upgrades test app  │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│  2. TEST                                                    │
+│     Verify changes in SPCS_APP_INSTANCE_TEST                │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│  3. PRODUCTION                                              │
+│     ./scripts/release.sh                                    │
+│     → Reads QA version/patch, promotes to DEFAULT channel   │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Release Channels
+
+| Channel | Purpose | Script |
+|---------|---------|--------|
+| **QA** | Internal testing, not reviewed by Snowflake | `deploy.sh` (automatic) |
+| **DEFAULT** | Production, marketplace listing | `release.sh` (promotes from QA) |
+| **ALPHA** | For external testing | `release.sh --channel ALPHA` |
 
 ### Restarting the Service
 
@@ -97,12 +160,12 @@ If you need to restart the service without deploying:
 ./scripts/restart.sh
 ```
 
-### Releasing a New Version
+### Recreating Test Application
 
-To create and publish a new version:
+If you need to recreate the test application:
 
 ```bash
-./scripts/release.sh
+./scripts/recreate-app-qa.sh
 ```
 
 ## Available Scripts
@@ -110,10 +173,11 @@ To create and publish a new version:
 | Script | Purpose |
 |--------|---------|
 | `provider-setup.sh` | **Initial setup** - Creates application package (Provider) |
-| `deploy.sh` | Builds and deploys application code |
+| `deploy.sh` | Builds and deploys to QA channel (development) |
+| `release.sh` | Updates DEFAULT channel (production/marketplace) |
 | `create-application.sh` | **Initial setup** - Creates application instance (Consumer) |
+| `recreate-app-qa.sh` | Recreates test app using QA release channel |
 | `restart.sh` | Restarts the SPCS service |
-| `release.sh` | Creates and publishes a new version |
 | `sql/consumer.sql` | **Initial setup** - Consumer secrets and permissions setup |
 | `sql/local_setup.sql` | Local development database setup |
 | `sql/grant_cortex_permissions.sql` | Grant Cortex AI permissions |
@@ -151,20 +215,3 @@ View service logs:
 ```bash
 snow sql -q "USE ROLE nac_test; CALL spcs_app_instance_test.app_public.get_service_logs('eap-backend', 200);" --connection mkt_blendx_demo
 ```
-
-## Troubleshooting
-
-### Application instance doesn't exist
-Make sure you've run `create-application.sh` first.
-
-### Secret not found
-Ensure `consumer.sql` has been executed with the correct API key.
-
-### Service not starting
-Check the compute pool is running and accessible:
-```bash
-snow sql -q "SHOW COMPUTE POOLS;" --connection mkt_blendx_demo
-```
-
-### Permission errors
-Verify all grants in `consumer.sql` were executed successfully. 

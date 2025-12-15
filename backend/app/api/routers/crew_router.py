@@ -24,18 +24,11 @@ logger = logging.getLogger(__name__)
 
 @router.post("/start", response_model=CrewStartResponse)
 async def start_crew_execution(background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
-    """
-    Inicia la ejecución de la crew en background.
-
-    Steps:
-    1. Genera un UUID único
-    2. Crea un registro en la BD con status='PROCESSING'
-    3. Lanza la tarea en background
-    4. Retorna el ID inmediatamente
-    """
     try:
         service = CrewService(db)
-        execution_id = service.create_execution_record(crew_name="YourCrewName")
+        execution_id = service.create_execution_record(
+            is_test=True,  # Mark as test execution from UI
+        )
 
         background_tasks.add_task(service.run_crew_background, execution_id)
 
@@ -56,16 +49,16 @@ async def start_external_tool_crew_execution(background_tasks: BackgroundTasks, 
     Inicia la ejecución de la crew con herramientas externas (Serper) en background.
 
     Steps:
-    1. Genera un UUID único
-    2. Crea un registro en la BD con status='PROCESSING'
-    3. Lanza la tarea en background
-    4. Retorna el ID inmediatamente
+    1. Generates UUID
+    2. Create registry in the DB with status='PROCESSING'
+    3. executes background task
+    4. Returns id immediately
     """
     try:
         service = CrewService(db)
         execution_id = service.create_execution_record(
-            crew_name="ExternalToolCrew",
             crew_type="external_tool",
+            is_test=True,  # Mark as test execution from UI
         )
 
         background_tasks.add_task(service.run_external_tool_crew_background, execution_id)
@@ -109,13 +102,21 @@ async def get_crew_status(execution_id: str, db: Session = Depends(get_db)):
 
 
 @router.get("/executions", response_model=CrewExecutionsResponse)
-async def list_crew_executions(limit: int = 10, db: Session = Depends(get_db)):
+async def list_crew_executions(
+    limit: int = 10,
+    is_test: bool | None = None,
+    db: Session = Depends(get_db),
+):
     """
-    Lista las últimas ejecuciones de crew (útil para debugging).
+    List latest crew executions.
+
+    Args:
+        limit: Maximum number of executions to return
+        is_test: Filter by test flag (True for test executions only, False for non-test, None for all)
     """
     try:
         service = CrewService(db)
-        executions = service.list_executions(limit)
+        executions = service.list_executions(limit, is_test=is_test)
 
         return CrewExecutionsResponse(
             executions=[CrewExecutionItem(**exec_data) for exec_data in executions]
@@ -123,4 +124,30 @@ async def list_crew_executions(limit: int = 10, db: Session = Depends(get_db)):
 
     except Exception as e:
         logger.error(f"Error listing executions: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to list executions: {str(e)}")
+
+
+@router.get("/executions/workflow/{workflow_id}", response_model=CrewExecutionsResponse)
+async def list_executions_by_workflow(
+    workflow_id: str,
+    limit: int = 10,
+    db: Session = Depends(get_db),
+):
+    """
+    List executions for a specific workflow.
+
+    Args:
+        workflow_id: The workflow ID to filter by
+        limit: Maximum number of executions to return
+    """
+    try:
+        service = CrewService(db)
+        executions = service.list_executions_by_workflow(workflow_id, limit)
+
+        return CrewExecutionsResponse(
+            executions=[CrewExecutionItem(**exec_data) for exec_data in executions]
+        )
+
+    except Exception as e:
+        logger.error(f"Error listing executions for workflow {workflow_id}: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to list executions: {str(e)}")

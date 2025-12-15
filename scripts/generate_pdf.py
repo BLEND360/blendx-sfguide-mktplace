@@ -207,7 +207,9 @@ HTML_TEMPLATE = """
 
 def generate_pdf():
     """Generate PDF from Markdown documentation."""
-    docs_dir = Path(__file__).parent
+    # Get project root (parent of scripts folder)
+    project_root = Path(__file__).parent.parent
+    docs_dir = project_root / "docs"
     md_file = docs_dir / "BlendX_Documentation.md"
     pdf_file = docs_dir / "BlendX_Documentation.pdf"
     html_file = docs_dir / "BlendX_Documentation.html"

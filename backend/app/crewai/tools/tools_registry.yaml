@@ -1,0 +1,37 @@
+# Tool Configurations
+tools:
+  SerperDevTool:
+    implementation: "crewai_tools.SerperDevTool"
+    params:
+      api_key: "${SERPER_API_KEY}"
+
+  # NOTE: WebsiteSearchTool removed - uses OpenAI embeddings internally
+  # NOTE: Search Services are dynamically discovered from BlendX Hub. Do not configure here.
+  # NOTE: Data Analysts are dynamically discovered from BlendX Hub. Do not configure here.
+  # NOTE: MCP servers are discovered via BlendX Hub. Do not configure here.
+
+  GetStockInfo:
+    implementation: "app.crewai.tools.yahoo_finance_tools.GetStockInfoTool"
+    config:
+      api_key: "${OPENAI_API_KEY}"
+
+  GetHistoricalData:
+    implementation: "app.crewai.tools.yahoo_finance_tools.GetHistoricalDataTool"
+
+  GetNews:
+    implementation: "app.crewai.tools.yahoo_finance_tools.GetNewsTool"
+
+  GetIncomeStatement:
+    implementation: "app.crewai.tools.yahoo_finance_tools.GetIncomeStatementTool"
+
+  GetBalanceSheet:
+    implementation: "app.crewai.tools.yahoo_finance_tools.GetBalanceSheetTool"
+
+  GetCashFlow:
+    implementation: "app.crewai.tools.yahoo_finance_tools.GetCashFlowTool"
+
+  GetRecommendations:
+    implementation: "app.crewai.tools.yahoo_finance_tools.GetRecommendationsTool"
+
+  CompareStocks:
+    implementation: "app.crewai.tools.yahoo_finance_tools.CompareStocksTool"
