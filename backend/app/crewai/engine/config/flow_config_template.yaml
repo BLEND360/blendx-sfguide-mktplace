@@ -54,7 +54,7 @@ agents:
     goal: "Gather and analyze news, market sentiment, and industry developments."
     backstory: "Experienced market researcher specializing in news analysis and sentiment tracking."
     tools:
-      - crewai_tools: ["SerperDevTool", "WebsiteSearchTool"]
+      - crewai_tools: ["SerperDevTool"]
     verbose: true
     llm:
       provider: "snowflake"
@@ -66,7 +66,7 @@ agents:
     goal: "Create comprehensive investment reports by synthesizing financial analysis and market research."
     backstory: "Expert report writer with deep understanding of financial markets."
     tools:
-      - crewai_tools: ["SerperDevTool", "WebsiteSearchTool"]
+      - crewai_tools: ["SerperDevTool"]
     verbose: true
     allow_delegation: false
 
@@ -122,7 +122,7 @@ tasks:
     agent: "News Researcher"
     expected_output: "A comprehensive news analysis including recent developments, market sentiment, and potential impact on the company."
     tools:
-      - crewai_tools: ["SerperDevTool", "WebsiteSearchTool"]
+      - crewai_tools: ["SerperDevTool"]
     context: []
     output_file: null
 

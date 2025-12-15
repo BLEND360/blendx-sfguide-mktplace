@@ -25,13 +25,13 @@ class CrewStatusResponse(BaseModel):
 
 
 class CrewExecutionItem(BaseModel):
-    """Item in crew executions list."""
+    """Item in executions list."""
 
     execution_id: str
-    crew_name: str | None
     status: str
     execution_timestamp: str | None
     updated_at: str | None
+    workflow_id: str | None = None
 
 
 class CrewExecutionsResponse(BaseModel):

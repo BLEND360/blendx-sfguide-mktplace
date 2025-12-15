@@ -194,6 +194,20 @@ Before creating a marketplace listing, ensure:
 2. You have a valid version registered
 3. The release directive is properly configured
 
+```sql
+USE ROLE naspcs_role;
+ALTER APPLICATION PACKAGE spcs_app_pkg_test 
+  ADD PATCH FOR VERSION v1 
+  USING '@spcs_app_test.napp.app_stage';
+SHOW VERSIONS IN APPLICATION PACKAGE spcs_app_pkg_test;
+
+
+GRANT ATTACH LISTING ON APPLICATION PACKAGE SPCS_APP_PKG_TEST TO ROLE orgadmin;
+GRANT ATTACH LISTING ON APPLICATION PACKAGE SPCS_APP_PKG_TEST TO ROLE accountadmin;
+
+
+```
+
 ## Diagnostic Commands
 
 ### Check versions and patches

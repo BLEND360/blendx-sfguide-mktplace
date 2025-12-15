@@ -41,6 +41,7 @@ APP_PACKAGE_NAME=${APP_PACKAGE_NAME:-"spcs_app_pkg_test"}
 APP_INSTANCE_NAME=${APP_INSTANCE_NAME:-"spcs_app_instance_test"}
 APP_VERSION=${APP_VERSION:-"v1"}
 COMPUTE_POOL=${COMPUTE_POOL:-"pool_nac"}
+RELEASE_CHANNEL=${RELEASE_CHANNEL:-"QA"}
 SKIP_BUILD=${SKIP_BUILD:-false}
 SKIP_PUSH=${SKIP_PUSH:-false}
 SERVICE_START_WAIT=${SERVICE_START_WAIT:-30}
@@ -173,7 +174,7 @@ fi
 
 if [ "$SKIP_BUILD" = false ]; then
     echo "=========================================="
-    echo "[1/9] Building Docker images..."
+    echo "[1/10] Building Docker images..."
     echo "=========================================="
 
     run_command "Building backend image" \
@@ -188,7 +189,7 @@ if [ "$SKIP_BUILD" = false ]; then
     echo ""
 else
     echo "=========================================="
-    echo "[1/9] Skipping Docker build (--skip-build)"
+    echo "[1/10] Skipping Docker build (--skip-build)"
     echo "=========================================="
     echo ""
 fi
@@ -199,7 +200,7 @@ fi
 
 if [ "$SKIP_PUSH" = false ]; then
     echo "=========================================="
-    echo "[2/9] Logging in to Snowflake Docker registry..."
+    echo "[2/10] Logging in to Snowflake Docker registry..."
     echo "=========================================="
 
     run_command "Logging in to Snowflake registry" \
@@ -208,7 +209,7 @@ if [ "$SKIP_PUSH" = false ]; then
     echo ""
 else
     echo "=========================================="
-    echo "[2/9] Skipping registry login (--skip-push)"
+    echo "[2/10] Skipping registry login (--skip-push)"
     echo "=========================================="
     echo ""
 fi
@@ -219,7 +220,7 @@ fi
 
 if [ "$SKIP_PUSH" = false ]; then
     echo "=========================================="
-    echo "[3/9] Tagging and pushing images..."
+    echo "[3/10] Tagging and pushing images..."
     echo "=========================================="
 
     run_command "Tagging and pushing backend image" \
@@ -234,17 +235,79 @@ if [ "$SKIP_PUSH" = false ]; then
     echo ""
 else
     echo "=========================================="
-    echo "[3/9] Skipping Docker push (--skip-push)"
+    echo "[3/10] Skipping Docker push (--skip-push)"
     echo "=========================================="
     echo ""
 fi
 
 # ============================================
-# Step 4: Upload Application Files
+# Step 4: Inject Table Definitions into setup.sql
 # ============================================
 
 echo "=========================================="
-echo "[4/9] Uploading application files to Snowflake stage..."
+echo "[4/10] Injecting table definitions into setup.sql..."
+echo "=========================================="
+
+inject_table_definitions() {
+    python3 << 'PYEOF'
+import re
+import sys
+
+project_root = sys.argv[1] if len(sys.argv) > 1 else '.'
+
+# Read table definitions
+with open(f'{project_root}/scripts/sql/tables_definitions.sql', 'r') as f:
+    content = f.read()
+
+# Remove comment-only lines and transform CREATE TABLE
+lines = [l for l in content.split('\n') if not l.strip().startswith('--')]
+table_defs = '\n'.join(lines)
+table_defs = table_defs.replace('CREATE TABLE IF NOT EXISTS ', 'CREATE OR REPLACE TABLE app_data.')
+
+# Find all table names and generate GRANTs
+tables = sorted(set(re.findall(r'app_data\.([a-z_]+)', table_defs)))
+grants = []
+for table in tables:
+    grants.append(f"""
+-- Grant permissions for {table} table
+GRANT SELECT ON TABLE app_data.{table} TO APPLICATION ROLE app_user;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE app_data.{table} TO APPLICATION ROLE app_admin;""")
+
+full_content = table_defs + '\n'.join(grants)
+
+# Read setup template and replace placeholder
+with open(f'{project_root}/scripts/sql/setup_template.sql', 'r') as f:
+    setup_content = f.read()
+
+if '-- {{TABLE_DEFINITIONS}}' not in setup_content:
+    print('ERROR: Placeholder -- {{TABLE_DEFINITIONS}} not found in setup_template.sql')
+    sys.exit(1)
+
+setup_content = setup_content.replace('-- {{TABLE_DEFINITIONS}}', full_content)
+
+# Write generated setup.sql to app/src/
+with open(f'{project_root}/app/src/setup.sql', 'w') as f:
+    f.write(setup_content)
+
+print(f'Generated app/src/setup.sql with {len(tables)} table definitions: {", ".join(tables)}')
+PYEOF
+}
+
+if [ "$DRY_RUN" = false ]; then
+    inject_table_definitions "$PROJECT_ROOT"
+    echo -e "${GREEN}✓ Generated app/src/setup.sql from template${NC}"
+else
+    echo "[DRY RUN] Would generate app/src/setup.sql from scripts/sql/setup_template.sql"
+fi
+
+echo ""
+
+# ============================================
+# Step 5: Upload Application Files
+# ============================================
+
+echo "=========================================="
+echo "[5/10] Uploading application files to Snowflake stage..."
 echo "=========================================="
 
 APP_SRC_PATH="$PROJECT_ROOT/app/src"
@@ -254,11 +317,11 @@ run_command "Uploading files to stage" \
 echo ""
 
 # ============================================
-# Step 5: Deregister Old Versions Not in Release Channel
+# Step 6: Deregister Old Versions Not in Release Channel
 # ============================================
 
 echo "=========================================="
-echo "[5/9] Cleaning up old versions..."
+echo "[6/10] Cleaning up old versions..."
 echo "=========================================="
 
 # Snowflake allows max 2 versions NOT in any release channel
@@ -298,15 +361,33 @@ fi
 echo ""
 
 # ============================================
-# Step 6: Register New Version
+# Step 7: Register New Version or Add Patch
 # ============================================
 
 echo "=========================================="
-echo "[6/9] Registering new version ${APP_VERSION}..."
+echo "[7/10] Registering version ${APP_VERSION} or adding patch..."
 echo "=========================================="
 
-run_command "Registering new version" \
-    "snow sql -q \"USE ROLE ${APP_PACKAGE_ROLE}; ALTER APPLICATION PACKAGE ${APP_PACKAGE_NAME} REGISTER VERSION ${APP_VERSION} USING @${APP_DATABASE}.${APP_SCHEMA}.${APP_STAGE};\" --connection ${SNOW_CONNECTION}"
+# Check if version already exists
+if [ "$DRY_RUN" = false ]; then
+    VERSION_EXISTS=$(snow sql -q "USE ROLE ${APP_PACKAGE_ROLE}; SHOW VERSIONS IN APPLICATION PACKAGE ${APP_PACKAGE_NAME};" --connection ${SNOW_CONNECTION} 2>&1 | grep -i "| ${APP_VERSION} " | wc -l | tr -d ' ')
+
+    if [ -z "$VERSION_EXISTS" ] || ! [[ "$VERSION_EXISTS" =~ ^[0-9]+$ ]]; then
+        VERSION_EXISTS=0
+    fi
+
+    if [ "$VERSION_EXISTS" -gt "0" ]; then
+        echo "Version ${APP_VERSION} already exists. Adding patch..."
+        run_command "Adding patch to version ${APP_VERSION}" \
+            "snow sql -q \"USE ROLE ${APP_PACKAGE_ROLE}; ALTER APPLICATION PACKAGE ${APP_PACKAGE_NAME} ADD PATCH FOR VERSION ${APP_VERSION} USING '@${APP_DATABASE}.${APP_SCHEMA}.${APP_STAGE}';\" --connection ${SNOW_CONNECTION}"
+    else
+        echo "Version ${APP_VERSION} does not exist. Registering new version..."
+        run_command "Registering new version" \
+            "snow sql -q \"USE ROLE ${APP_PACKAGE_ROLE}; ALTER APPLICATION PACKAGE ${APP_PACKAGE_NAME} REGISTER VERSION ${APP_VERSION} USING @${APP_DATABASE}.${APP_SCHEMA}.${APP_STAGE};\" --connection ${SNOW_CONNECTION}"
+    fi
+else
+    echo "[DRY RUN] Would register version or add patch"
+fi
 
 echo ""
 
@@ -346,46 +427,86 @@ run_command "Showing current versions" \
 echo ""
 
 # ============================================
-# Step 8: Upgrade Application
+# Step 8: Get Latest Patch Number
 # ============================================
 
-if [ "$SETUP_MODE" = false ]; then
-    echo "=========================================="
-    echo "[8/9] Upgrading application..."
-    echo "=========================================="
+echo "=========================================="
+echo "[8/10] Getting latest patch number..."
+echo "=========================================="
 
-    # Check if application exists before upgrading
-    APP_EXISTS=$(snow sql -q "USE ROLE ${APP_CONSUMER_ROLE}; SHOW APPLICATIONS LIKE '${APP_INSTANCE_NAME}';" --connection ${SNOW_CONNECTION} 2>&1 | grep "${APP_INSTANCE_NAME}" | wc -l | tr -d ' ')
+LATEST_PATCH=0
+if [ "$DRY_RUN" = false ]; then
+    TEMP_VERSIONS=$(mktemp)
+    snow sql -q "USE ROLE ${APP_PACKAGE_ROLE}; SHOW VERSIONS IN APPLICATION PACKAGE ${APP_PACKAGE_NAME};" --connection ${SNOW_CONNECTION} > "$TEMP_VERSIONS" 2>&1 || true
 
-    # Ensure APP_EXISTS is a valid number
-    if [ -z "$APP_EXISTS" ] || ! [[ "$APP_EXISTS" =~ ^[0-9]+$ ]]; then
-        APP_EXISTS=0
+    # Extract patch number for the specified version
+    LATEST_PATCH=$(cat "$TEMP_VERSIONS" | grep -i "| ${APP_VERSION} " | awk -F'|' '{print $3}' | tr -d ' ' | sort -n | tail -1)
+    rm -f "$TEMP_VERSIONS"
+
+    if [ -z "$LATEST_PATCH" ] || ! [[ "$LATEST_PATCH" =~ ^[0-9]+$ ]]; then
+        LATEST_PATCH=0
     fi
 
-    if [ "$APP_EXISTS" -gt "0" ]; then
-        run_command "Upgrading application instance" \
-            "snow sql -q \"USE ROLE ${APP_CONSUMER_ROLE}; ALTER APPLICATION ${APP_INSTANCE_NAME} UPGRADE USING VERSION ${APP_VERSION};\" --connection ${SNOW_CONNECTION}"
-    else
-        echo "Application instance does not exist yet - needs to be created by provider-setup.sh"
-        echo "Skipping upgrade step..."
-    fi
-
-    echo ""
-else
-    echo "=========================================="
-    echo "[8/9] Skipping upgrade (setup mode)"
-    echo "=========================================="
-    echo "Application will be created by provider-setup.sh"
-    echo ""
+    echo -e "${GREEN}✓ Latest patch for ${APP_VERSION}: ${LATEST_PATCH}${NC}"
 fi
 
+echo ""
+
 # ============================================
-# Step 9: Restart Service
+# Step 9: Update Release Channel Directive
+# ============================================
+
+echo "=========================================="
+echo "[9/10] Updating ${RELEASE_CHANNEL} release channel directive..."
+echo "=========================================="
+
+if [ "$DRY_RUN" = false ]; then
+    # Add version to release channel if not already there
+    snow sql -q "USE ROLE ${APP_PACKAGE_ROLE}; ALTER APPLICATION PACKAGE ${APP_PACKAGE_NAME} MODIFY RELEASE CHANNEL ${RELEASE_CHANNEL} ADD VERSION ${APP_VERSION};" --connection ${SNOW_CONNECTION} 2>&1 || echo "Version may already be in channel (OK)"
+
+    # Set release directive to latest patch
+    run_command "Setting ${RELEASE_CHANNEL} release directive to patch ${LATEST_PATCH}" \
+        "snow sql -q \"USE ROLE ${APP_PACKAGE_ROLE}; ALTER APPLICATION PACKAGE ${APP_PACKAGE_NAME} MODIFY RELEASE CHANNEL ${RELEASE_CHANNEL} SET DEFAULT RELEASE DIRECTIVE VERSION=${APP_VERSION} PATCH=${LATEST_PATCH};\" --connection ${SNOW_CONNECTION}"
+else
+    echo "[DRY RUN] Would update ${RELEASE_CHANNEL} release directive"
+fi
+
+echo ""
+
+# ============================================
+# Step 10: Application Upgrade Info
+# ============================================
+
+echo "=========================================="
+echo "[10/10] Application upgrade..."
+echo "=========================================="
+
+# Check if application exists
+APP_EXISTS=$(snow sql -q "USE ROLE ${APP_CONSUMER_ROLE}; SHOW APPLICATIONS LIKE '${APP_INSTANCE_NAME}';" --connection ${SNOW_CONNECTION} 2>&1 | grep "${APP_INSTANCE_NAME}" | wc -l | tr -d ' ')
+
+if [ -z "$APP_EXISTS" ] || ! [[ "$APP_EXISTS" =~ ^[0-9]+$ ]]; then
+    APP_EXISTS=0
+fi
+
+if [ "$APP_EXISTS" -gt "0" ]; then
+    echo -e "${GREEN}✓ Application ${APP_INSTANCE_NAME} exists${NC}"
+    echo ""
+    echo "The application will automatically receive the update through the ${RELEASE_CHANNEL} release channel."
+    echo "No manual upgrade needed for apps created from release channels."
+else
+    echo "Application instance does not exist yet."
+    echo "Run ./scripts/recreate-app-qa.sh to create it using the ${RELEASE_CHANNEL} channel."
+fi
+
+echo ""
+
+# ============================================
+# Step 10: Restart Service
 # ============================================
 
 if [ "$SETUP_MODE" = false ]; then
     echo "=========================================="
-    echo "[9/9] Restarting service..."
+    echo "[10/10] Restarting service..."
     echo "=========================================="
 
     # Only restart service if application exists
@@ -408,7 +529,7 @@ if [ "$SETUP_MODE" = false ]; then
     fi
 else
     echo "=========================================="
-    echo "[9/9] Skipping service restart (setup mode)"
+    echo "[10/10] Skipping service restart (setup mode)"
     echo "=========================================="
     echo "Service will be started by "
     echo ""
@@ -460,4 +581,7 @@ echo "    snow sql -q \"USE ROLE ${APP_CONSUMER_ROLE}; CALL ${APP_INSTANCE_NAME}
 echo ""
 echo "  Get app URL:"
 echo "    snow sql -q \"USE ROLE ${APP_CONSUMER_ROLE}; CALL ${APP_INSTANCE_NAME}.app_public.app_url();\" --connection ${SNOW_CONNECTION}"
+echo ""
+echo -e "${YELLOW}IMPORTANT: If updating an existing deployment, restart the service to see changes:${NC}"
+echo "  ./scripts/restart.sh"
 echo ""

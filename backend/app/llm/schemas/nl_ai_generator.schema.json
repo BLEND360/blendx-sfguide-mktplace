@@ -6,7 +6,7 @@
       "type": "object",
       "properties": {
         "yaml_text": { "type": "string", "description": "YAML configuration for CrewAI (flow or group)" },
-        "input": { "type": ["string", "null"], "description": "Optional input for the flow or crew" }
+        "input": { "type": ["string", "object", "null"], "description": "Optional input for the flow or crew. Can be a string, object with parameters, or null." }
       },
       "required": ["yaml_text"],
       "description": "Payload for BuildFlowRequest or BuildCrewRequest: must include yaml_text (YAML string), and optionally input."

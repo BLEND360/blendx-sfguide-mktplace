@@ -32,65 +32,13 @@ CREATE SCHEMA IF NOT EXISTS app_data;
 GRANT USAGE ON SCHEMA app_data TO APPLICATION ROLE app_admin;
 GRANT USAGE ON SCHEMA app_data TO APPLICATION ROLE app_user;
 
--- Create table to store Crew execution results
-CREATE OR REPLACE TABLE app_data.crew_execution_results (
-    id VARCHAR(36) PRIMARY KEY,
-    execution_timestamp TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP(),
-    updated_at TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP(),
-    crew_name VARCHAR(255),
-    raw_output VARIANT,
-    result_text TEXT,
-    status VARCHAR(50),
-    error_message TEXT,
-    metadata VARIANT
-);
-
--- Grant permissions to read results
-GRANT SELECT ON TABLE app_data.crew_execution_results TO APPLICATION ROLE app_user;
-GRANT SELECT, INSERT, UPDATE ON TABLE app_data.crew_execution_results TO APPLICATION ROLE app_admin;
-
--- Create table to store Crew executions (used by backend ORM)
-CREATE OR REPLACE TABLE app_data.crew_executions (
-    id VARCHAR(36) PRIMARY KEY,
-    status VARCHAR(50) NOT NULL DEFAULT 'PENDING',
-    name VARCHAR(255),
-    input TEXT,
-    output TEXT,
-    context VARIANT,
-    created_at TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP(),
-    updated_at TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP(),
-    finished_at TIMESTAMP_NTZ,
-    execution_group_id VARCHAR(36),
-    flow_execution_id VARCHAR(36)
-);
-
--- Grant permissions for crew_executions table
-GRANT SELECT ON TABLE app_data.crew_executions TO APPLICATION ROLE app_user;
-GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE app_data.crew_executions TO APPLICATION ROLE app_admin;
-
--- Create table to store Workflows (execution groups and flows from NL generator)
-CREATE OR REPLACE TABLE app_data.workflows (
-    workflow_id VARCHAR(255) NOT NULL,
-    version INTEGER NOT NULL DEFAULT 1,
-    type VARCHAR(50) NOT NULL,
-    mermaid TEXT,
-    title VARCHAR(255),
-    status VARCHAR(50) NOT NULL DEFAULT 'PENDING',
-    rationale TEXT,
-    yaml_text TEXT NOT NULL,
-    chat_id VARCHAR(255),
-    message_id VARCHAR(255),
-    user_id VARCHAR(255),
-    model VARCHAR(100),
-    stable BOOLEAN NOT NULL DEFAULT TRUE,
-    created_at TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP(),
-    updated_at TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP(),
-    PRIMARY KEY (workflow_id, version)
-);
-
--- Grant permissions for workflows table
-GRANT SELECT ON TABLE app_data.workflows TO APPLICATION ROLE app_user;
-GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE app_data.workflows TO APPLICATION ROLE app_admin;
+-- =============================================================================
+-- TABLE DEFINITIONS
+-- Auto-generated from scripts/sql/tables_definitions.sql during deploy
+-- DO NOT EDIT MANUALLY - Edit tables_definitions.sql instead
+-- =============================================================================
+-- {{TABLE_DEFINITIONS}}
+-- =============================================================================
 
 CREATE OR REPLACE PROCEDURE app_public.start_app(poolname VARCHAR)
     RETURNS string
@@ -172,13 +120,12 @@ END
 $$;
 GRANT USAGE ON PROCEDURE app_public.get_service_status() TO APPLICATION ROLE app_admin;
 
--- Procedure to get the last crew execution result
+-- Procedure to get the last execution result
 CREATE OR REPLACE PROCEDURE app_public.get_last_crew_execution()
     RETURNS TABLE (
         id VARCHAR,
         execution_timestamp TIMESTAMP_NTZ,
         updated_at TIMESTAMP_NTZ,
-        crew_name VARCHAR,
         raw_output VARIANT,
         result_text TEXT,
         status VARCHAR,
@@ -194,7 +141,6 @@ BEGIN
             id,
             execution_timestamp,
             updated_at,
-            crew_name,
             raw_output,
             result_text,
             status,
@@ -210,13 +156,12 @@ $$;
 GRANT USAGE ON PROCEDURE app_public.get_last_crew_execution() TO APPLICATION ROLE app_admin;
 GRANT USAGE ON PROCEDURE app_public.get_last_crew_execution() TO APPLICATION ROLE app_user;
 
--- Procedure to get recent crew executions (last N)
+-- Procedure to get recent executions (last N)
 CREATE OR REPLACE PROCEDURE app_public.get_recent_crew_executions(num_results NUMBER)
     RETURNS TABLE (
         id VARCHAR,
         execution_timestamp TIMESTAMP_NTZ,
         updated_at TIMESTAMP_NTZ,
-        crew_name VARCHAR,
         raw_output VARIANT,
         result_text TEXT,
         status VARCHAR,
@@ -232,7 +177,6 @@ BEGIN
             id,
             execution_timestamp,
             updated_at,
-            crew_name,
             raw_output,
             result_text,
             status,

@@ -14,3 +14,4 @@ crewai-tools>=0.0.1
 crewai>=0.28.0
 oscrypto @ git+https://github.com/wbond/oscrypto.git@d5f3437ed24257895ae1edd9e503cfb352e635a8
 gunicorn
+snowflake

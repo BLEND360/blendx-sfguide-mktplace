@@ -91,6 +91,44 @@ jobs:
           docker tag ${{ env.ROUTER_IMAGE }}:latest ${{ env.SNOWFLAKE_REPO }}/${{ env.ROUTER_IMAGE }}
           docker push ${{ env.SNOWFLAKE_REPO }}/${{ env.ROUTER_IMAGE }}
 
+      - name: Generate setup.sql from template
+        run: |
+          python3 << 'EOF'
+          import re
+
+          # Read table definitions
+          with open('scripts/sql/tables_definitions.sql', 'r') as f:
+              content = f.read()
+
+          # Remove comment-only lines and transform CREATE TABLE
+          lines = [l for l in content.split('\n') if not l.strip().startswith('--')]
+          table_defs = '\n'.join(lines)
+          table_defs = table_defs.replace('CREATE TABLE IF NOT EXISTS ', 'CREATE OR REPLACE TABLE app_data.')
+
+          # Find all table names and generate GRANTs
+          tables = sorted(set(re.findall(r'app_data\.([a-z_]+)', table_defs)))
+          grants = []
+          for table in tables:
+              grants.append(f"""
+          -- Grant permissions for {table} table
+          GRANT SELECT ON TABLE app_data.{table} TO APPLICATION ROLE app_user;
+          GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE app_data.{table} TO APPLICATION ROLE app_admin;""")
+
+          full_content = table_defs + '\n'.join(grants)
+
+          # Read setup template and replace placeholder
+          with open('scripts/sql/setup_template.sql', 'r') as f:
+              setup_content = f.read()
+
+          setup_content = setup_content.replace('-- {{TABLE_DEFINITIONS}}', full_content)
+
+          # Write generated setup.sql to app/src/
+          with open('app/src/setup.sql', 'w') as f:
+              f.write(setup_content)
+
+          print(f"✅ Generated app/src/setup.sql with {len(tables)} table definitions: {', '.join(tables)}")
+          EOF
+
       - name: Upload application files to Snowflake stage
         run: |
           snow sql -q "PUT file://${{ github.workspace }}/app/src/* @spcs_app_test.napp.app_stage AUTO_COMPRESS=FALSE OVERWRITE=TRUE;" --connection mkt_blendx_demo

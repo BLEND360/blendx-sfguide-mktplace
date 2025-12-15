@@ -29,20 +29,7 @@ BlendX Snowflake Native Application enables you to run CrewAI agent workflows di
 
 Click "Get" in the Snowflake Marketplace to install the application in your Snowflake account.
 
-### Step 2: Grant Privileges
-
-When prompted, grant the following privileges:
-
-| Privilege | Purpose |
-|-----------|---------|
-| IMPORTED PRIVILEGES ON SNOWFLAKE DB | Access to Cortex LLMs |
-| CREATE COMPUTE POOL | Create SPCS compute resources |
-| BIND SERVICE ENDPOINT | Expose web interface |
-| CREATE WAREHOUSE | Create warehouse for processing |
-| EXECUTE MANAGED TASK | Run scheduled tasks |
-| CREATE EXTERNAL ACCESS INTEGRATION | Connect to external APIs |
-
-### Step 3: Configure Serper API (Optional)
+### Step 2: Configure Serper API (Optional)
 
 For web search capabilities, create a secret with your Serper API key:
 
@@ -57,24 +44,29 @@ CREATE SECRET IF NOT EXISTS secrets_db.app_secrets.serper_api_key
 
 Get your API key from: https://serper.dev
 
-### Step 4: Grant Cortex Permissions
+### Step 3: Grant Privileges
 
-```sql
--- Grant Cortex user role to the application
-GRANT DATABASE ROLE SNOWFLAKE.CORTEX_USER TO APPLICATION <your_app_name>
-```
+When prompted, grant the following privileges:
 
-### Step 5: Activate and Start
+| Privilege | Purpose |
+|-----------|---------|
+| IMPORTED PRIVILEGES ON SNOWFLAKE DB | Access to Cortex LLMs |
+| ENABLE USAGE ON INTEGRATION | For Serper API access (if used) |
+
+### Step 4: Activate
 
 1. Click "Activate" in the application page
 2. Configure references (Serper secret if using web search)
-3. Start the application:
+
+### Step5 : Configure Serper Reference (if applicable)
+
+Go to Connections and set up the Serper API key
+
+### Step 6: Start the application:
 
 ```sql
 CALL <app_name>.app_public.start_app('<pool_name>');
 ```
-
-### Step 6: Access the Application
 
 Get the application URL:
 
@@ -85,6 +77,8 @@ CALL <app_name>.app_public.app_url();
 Open the URL in your browser to access the web interface.
 
 ---
+
+# Features
 
 ## Using the Natural Language Generator
 
@@ -153,7 +147,7 @@ agents:
     goal: "Gather and analyze market data"
     backstory: "Expert researcher with 10 years experience"
     tools:
-      - crewai_tools: ["SerperDevTool", "WebsiteSearchTool"]
+      - crewai_tools: ["SerperDevTool"]
     llm:
       provider: "snowflake"
       model: "claude-3-5-sonnet"
@@ -165,7 +159,7 @@ agents:
 
 | Tool Type | Syntax | Description |
 |-----------|--------|-------------|
-| CrewAI Native | `crewai_tools: ["SerperDevTool", "WebsiteSearchTool"]` | Built-in CrewAI tools |
+| CrewAI Native | `crewai_tools: ["SerperDevTool"]` | Built-in CrewAI tools |
 
 
 ### Task Configuration
@@ -216,14 +210,6 @@ llm:
 | Provider | Models |
 |----------|--------|
 | Snowflake | claude-3-5-sonnet, llama3.1-70b, mistral-large2 |
-
-### Temperature Guidelines
-
-| Temperature | Use Case |
-|-------------|----------|
-| 0.1 - 0.3 | Code generation, data analysis, consistent outputs |
-| 0.5 - 0.7 | General tasks, balanced creativity |
-| 0.7 - 1.0 | Creative writing, brainstorming |
 
 ---
 
@@ -281,15 +267,6 @@ Each saved workflow includes:
 
 ### Common Issues
 
-#### "Cortex test failed"
-
-**Cause**: Missing Cortex permissions
-
-**Solution**:
-```sql
-GRANT DATABASE ROLE SNOWFLAKE.CORTEX_USER TO APPLICATION <your_app_name>;
-```
-
 #### "Serper test failed"
 
 **Cause**: Missing or invalid Serper API key
@@ -308,7 +285,7 @@ GRANT DATABASE ROLE SNOWFLAKE.CORTEX_USER TO APPLICATION <your_app_name>;
 
 **Cause**: Long-running LLM processing
 
-**Solution**: Wait up to 2-3 minutes. If still pending, check compute pool status.
+**Solution**: Wait up to 2-3 minutes. If still pending, check compute pool status and app logs.
 
 ---
 
@@ -321,13 +298,8 @@ Usage of this application incurs Snowflake compute costs for:
 | SPCS Compute Pool | Container runtime for the application |
 | Snowflake Cortex | LLM token usage |
 | Warehouse | Query processing |
-
-### Cost Optimization Tips
-
-1. Use smaller compute pool sizes for testing
-2. Stop the application when not in use
-3. Use lower temperature settings to reduce token usage
-4. Batch similar workflows together
+| Cortex LLM Costs | Based on model and token usage |
+| External API Calls | Serper API usage (if applicable) |
 
 ---
 
@@ -351,7 +323,6 @@ If configured, the application may connect to:
 
 - API keys are stored as Snowflake Secrets
 - Secrets are accessed via secure references
-- Never exposed in logs or outputs
 
 ---
 
@@ -386,8 +357,6 @@ CALL <app_name>.app_public.service_status();
 ## Support
 
 ### Getting Help
-
-- **Documentation**: This guide
 - **Issues**: Contact support@blend360.com
 
 ### Reporting Issues
@@ -396,7 +365,6 @@ When reporting issues, please include:
 1. Error message (if any)
 2. Steps to reproduce
 3. Workflow YAML (if applicable)
-4. Browser and version
 
 ---
 
