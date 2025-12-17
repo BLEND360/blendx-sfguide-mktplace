@@ -14,7 +14,7 @@ crews:
   - name: "Investment Crew"
     process: "sequential"  # sequential or hierarchical (parallel not supported)
     verbose: true
-    memory: false
+    memory: false  # IMPORTANT: Always set to false - memory feature is not supported
     manager: null  # Optional crew manager for hierarchical process
     agents: ["Investment Advisor", "News Researcher", "Report Synthesizer"]
     tasks: ["Financial Analysis Task", "Market News Analysis Task", "Investment Report Task"]

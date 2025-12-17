@@ -22,7 +22,7 @@ crews:
   - name: "Research Crew"
     process: "sequential"  # sequential, parallel, or hierarchical
     verbose: true
-    memory: true
+    memory: false  # IMPORTANT: Always set to false - memory feature is not supported
     manager: null  # Required only for hierarchical process
     agents: ["Investment Advisor", "News Researcher"]
     tasks: ["Financial Analysis Task", "Market News Analysis Task"]
@@ -30,7 +30,7 @@ crews:
   - name: "Analysis Crew"
     process: "sequential"
     verbose: true
-    memory: true
+    memory: false  # IMPORTANT: Always set to false - memory feature is not supported
     manager: null
     agents: ["Report Synthesizer"]
     tasks: ["Investment Report Task"]
