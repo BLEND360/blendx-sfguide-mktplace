@@ -166,6 +166,15 @@ jobs:
         run: |
           snow sql -q "PUT file://${{ github.workspace }}/app/src/* @spcs_app_test.napp.app_stage AUTO_COMPRESS=FALSE OVERWRITE=TRUE;" --connection mkt_blendx_demo
 
+      - name: Create Application Package if not exists
+        run: |
+          echo "Creating Application Package ${{ secrets.SNOWFLAKE_APP_PACKAGE }} if it doesn't exist..."
+          snow sql -q "CREATE APPLICATION PACKAGE IF NOT EXISTS ${{ secrets.SNOWFLAKE_APP_PACKAGE }} DISTRIBUTION = INTERNAL;" --connection mkt_blendx_demo
+
+          # Create QA release channel if it doesn't exist
+          echo "Creating QA release channel if it doesn't exist..."
+          snow sql -q "ALTER APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }} ADD RELEASE CHANNEL IF NOT EXISTS QA;" --connection mkt_blendx_demo || echo "QA channel may already exist (OK)"
+
       - name: Clean up old versions not in release channel
         run: |
           echo "Using version: $VERSION"
