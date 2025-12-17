@@ -1,0 +1,181 @@
+name: Release to Production (main)
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (leave empty to auto-detect from QA)'
+        required: false
+        default: ''
+      patch:
+        description: 'Patch number to release (leave empty to auto-detect from QA)'
+        required: false
+        default: ''
+
+jobs:
+  release-to-production:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Snowflake CLI
+        run: |
+          pip install snowflake-cli-labs
+
+      - name: Configure Snowflake connection
+        run: |
+          mkdir -p ~/.snowflake
+          cat > ~/.snowflake/config.toml << EOF
+          [connections.mkt_blendx_demo]
+          account = "${{ secrets.SNOWFLAKE_ACCOUNT }}"
+          user = "${{ secrets.SNOWFLAKE_USER }}"
+          authenticator = "SNOWFLAKE_JWT"
+          private_key_raw = "${{ secrets.SNOWFLAKE_PRIVATE_KEY_RAW }}"
+          warehouse = "${{ secrets.SNOWFLAKE_WAREHOUSE }}"
+          database = "${{ secrets.SNOWFLAKE_DATABASE }}"
+          schema = "${{ secrets.SNOWFLAKE_SCHEMA }}"
+          EOF
+
+      - name: Auto-detect version and patch from QA channel
+        id: detect_version
+        run: |
+          VERSION="${{ github.event.inputs.version }}"
+          PATCH="${{ github.event.inputs.patch }}"
+
+          # If version not specified, auto-detect from QA channel
+          if [ -z "$VERSION" ]; then
+            echo "Auto-detecting version from QA channel..."
+
+            # Get release directives
+            DIRECTIVES=$(snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_NASPCS_ROLE }}; SHOW RELEASE DIRECTIVES IN APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }};" --connection mkt_blendx_demo 2>&1 || true)
+
+            # Extract QA channel line
+            QA_LINE=$(echo "$DIRECTIVES" | grep -i "| QA " | head -1)
+
+            if [ -z "$QA_LINE" ]; then
+              echo "Error: No release directive found for QA channel"
+              echo "Available release directives:"
+              echo "$DIRECTIVES"
+              exit 1
+            fi
+
+            # Parse version (looks for v followed by digits)
+            VERSION=$(echo "$QA_LINE" | awk -F'|' '{for(i=1;i<=NF;i++) if($i ~ /v[0-9]/) print $i}' | tr -d ' ' | head -1)
+
+            if [ -z "$VERSION" ]; then
+              echo "Could not detect version, using default v1"
+              VERSION="v1"
+            fi
+
+            echo "Detected version from QA: $VERSION"
+          fi
+
+          # If patch not specified, auto-detect from QA channel
+          if [ -z "$PATCH" ]; then
+            echo "Auto-detecting patch from QA channel..."
+
+            # Get release directives again if needed
+            if [ -z "$DIRECTIVES" ]; then
+              DIRECTIVES=$(snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_NASPCS_ROLE }}; SHOW RELEASE DIRECTIVES IN APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }};" --connection mkt_blendx_demo 2>&1 || true)
+              QA_LINE=$(echo "$DIRECTIVES" | grep -i "| QA " | head -1)
+            fi
+
+            # Try to extract patch from QA directive
+            PATCH=$(echo "$QA_LINE" | awk -F'|' '{for(i=1;i<=NF;i++) if($i ~ /^[[:space:]]*[0-9]+[[:space:]]*$/ && $(i-1) ~ /v[0-9]/) print $i}' | tr -d ' ' | head -1)
+
+            # Fallback: get latest patch from versions list
+            if [ -z "$PATCH" ] || ! [[ "$PATCH" =~ ^[0-9]+$ ]]; then
+              echo "Getting latest patch from versions list..."
+              PATCH=$(snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_NASPCS_ROLE }}; SHOW VERSIONS IN APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }};" --connection mkt_blendx_demo 2>&1 | grep -i "| ${VERSION} " | awk -F'|' '{print $3}' | tr -d ' ' | sort -n | tail -1 || echo "0")
+            fi
+
+            if [ -z "$PATCH" ] || ! [[ "$PATCH" =~ ^[0-9]+$ ]]; then
+              PATCH=0
+            fi
+
+            echo "Detected patch from QA: $PATCH"
+          fi
+
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "patch=$PATCH" >> $GITHUB_OUTPUT
+
+          echo "=========================================="
+          echo "Release Configuration:"
+          echo "  Version: $VERSION"
+          echo "  Patch: $PATCH"
+          echo "  Source Channel: QA"
+          echo "  Target Channel: DEFAULT"
+          echo "=========================================="
+
+      - name: Verify version exists
+        run: |
+          VERSION="${{ steps.detect_version.outputs.version }}"
+          PATCH="${{ steps.detect_version.outputs.patch }}"
+
+          echo "Verifying version $VERSION patch $PATCH exists..."
+
+          VERSION_EXISTS=$(snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_NASPCS_ROLE }}; SHOW VERSIONS IN APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }};" --connection mkt_blendx_demo 2>&1 | grep -i "| ${VERSION} " | wc -l | tr -d ' ' || echo "0")
+
+          if [ "$VERSION_EXISTS" -eq "0" ]; then
+            echo "Error: Version ${VERSION} does not exist in package ${{ secrets.SNOWFLAKE_APP_PACKAGE }}"
+            echo ""
+            echo "Available versions:"
+            snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_NASPCS_ROLE }}; SHOW VERSIONS IN APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }};" --connection mkt_blendx_demo
+            exit 1
+          fi
+
+          echo "Version ${VERSION} exists"
+
+      - name: Add version to DEFAULT release channel
+        run: |
+          VERSION="${{ steps.detect_version.outputs.version }}"
+
+          echo "Adding version $VERSION to DEFAULT release channel..."
+          snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_NASPCS_ROLE }}; ALTER APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }} MODIFY RELEASE CHANNEL DEFAULT ADD VERSION ${VERSION};" --connection mkt_blendx_demo 2>&1 || echo "Version may already be in DEFAULT channel (OK)"
+
+      - name: Set DEFAULT release directive
+        run: |
+          VERSION="${{ steps.detect_version.outputs.version }}"
+          PATCH="${{ steps.detect_version.outputs.patch }}"
+
+          echo "Setting DEFAULT release directive to version $VERSION patch $PATCH..."
+          snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_NASPCS_ROLE }}; ALTER APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }} MODIFY RELEASE CHANNEL DEFAULT SET DEFAULT RELEASE DIRECTIVE VERSION=${VERSION} PATCH=${PATCH};" --connection mkt_blendx_demo
+
+      - name: Show current release status
+        run: |
+          echo ""
+          echo "=========================================="
+          echo "Current Release Status"
+          echo "=========================================="
+
+          echo ""
+          echo "Versions:"
+          snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_NASPCS_ROLE }}; SHOW VERSIONS IN APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }};" --connection mkt_blendx_demo
+
+          echo ""
+          echo "Release Directives:"
+          snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_NASPCS_ROLE }}; SHOW RELEASE DIRECTIVES IN APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }};" --connection mkt_blendx_demo
+
+      - name: Summary
+        run: |
+          VERSION="${{ steps.detect_version.outputs.version }}"
+          PATCH="${{ steps.detect_version.outputs.patch }}"
+
+          echo ""
+          echo "=========================================="
+          echo "Production Release completed!"
+          echo "=========================================="
+          echo ""
+          echo "Version $VERSION patch $PATCH has been promoted to the DEFAULT channel."
+          echo ""
+          echo "Next steps:"
+          echo "  1. If not yet done, submit for security review in Provider Studio"
+          echo "  2. Wait for Snowflake to approve the version (1-3 business days)"
+          echo "  3. Once approved, the version will be available to marketplace consumers"
+          echo ""
+          echo "Provider Studio: https://app.snowflake.com > Provider Studio > Listings"
