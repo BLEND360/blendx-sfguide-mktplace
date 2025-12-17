@@ -41,6 +41,7 @@ jobs:
           database = "${{ secrets.SNOWFLAKE_DATABASE }}"
           schema = "${{ secrets.SNOWFLAKE_SCHEMA }}"
           EOF
+          chmod 0600 ~/.snowflake/config.toml
 
       - name: Auto-detect version and patch from QA channel
         id: detect_version

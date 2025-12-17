@@ -60,6 +60,7 @@ jobs:
           database = "${{ secrets.SNOWFLAKE_DATABASE }}"
           schema = "${{ secrets.SNOWFLAKE_SCHEMA }}"
           EOF
+          chmod 0600 ~/.snowflake/config.toml
 
       - name: Build backend image
         uses: docker/build-push-action@v5
