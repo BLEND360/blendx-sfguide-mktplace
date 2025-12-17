@@ -14,6 +14,7 @@ env:
 jobs:
   build-and-deploy-qa:
     runs-on: ubuntu-latest
+    environment: qa
 
     steps:
       - name: Checkout code
@@ -162,7 +163,7 @@ jobs:
 
           # Query versions to temp file
           TEMP_VERSIONS=$(mktemp)
-          snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_NASPCS_ROLE }}; SHOW VERSIONS IN APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }};" --connection mkt_blendx_demo > "$TEMP_VERSIONS" 2>&1 || true
+          snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_ROLE }}; SHOW VERSIONS IN APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }};" --connection mkt_blendx_demo > "$TEMP_VERSIONS" 2>&1 || true
 
           # Find versions with "None" in release_channel_names column (not in any channel)
           # Exclude the current version we're working with
@@ -180,7 +181,7 @@ jobs:
               for ORPHAN_VERSION in $ORPHAN_VERSIONS; do
                   if [ -n "$ORPHAN_VERSION" ] && [ "$ORPHAN_VERSION" != "${VERSION}" ]; then
                       echo "Deregistering version $ORPHAN_VERSION..."
-                      snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_NASPCS_ROLE }}; ALTER APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }} DEREGISTER VERSION ${ORPHAN_VERSION};" --connection mkt_blendx_demo || echo "Could not deregister $ORPHAN_VERSION (OK)"
+                      snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_ROLE }}; ALTER APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }} DEREGISTER VERSION ${ORPHAN_VERSION};" --connection mkt_blendx_demo || echo "Could not deregister $ORPHAN_VERSION (OK)"
                   fi
               done
           else
@@ -190,20 +191,20 @@ jobs:
       - name: Register version or add patch
         run: |
           # Check if version exists
-          VERSION_EXISTS=$(snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_NASPCS_ROLE }}; SHOW VERSIONS IN APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }};" --connection mkt_blendx_demo 2>&1 | grep -i "| ${VERSION} " | wc -l | tr -d ' ' || echo "0")
+          VERSION_EXISTS=$(snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_ROLE }}; SHOW VERSIONS IN APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }};" --connection mkt_blendx_demo 2>&1 | grep -i "| ${VERSION} " | wc -l | tr -d ' ' || echo "0")
 
           if [ "$VERSION_EXISTS" -gt "0" ]; then
             echo "Version ${VERSION} exists. Adding patch..."
-            snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_NASPCS_ROLE }}; ALTER APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }} ADD PATCH FOR VERSION ${VERSION} USING '@spcs_app_test.napp.app_stage';" --connection mkt_blendx_demo
+            snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_ROLE }}; ALTER APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }} ADD PATCH FOR VERSION ${VERSION} USING '@spcs_app_test.napp.app_stage';" --connection mkt_blendx_demo
           else
             echo "Version ${VERSION} does not exist. Registering new version..."
-            snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_NASPCS_ROLE }}; ALTER APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }} REGISTER VERSION ${VERSION} USING @spcs_app_test.napp.app_stage;" --connection mkt_blendx_demo
+            snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_ROLE }}; ALTER APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }} REGISTER VERSION ${VERSION} USING @spcs_app_test.napp.app_stage;" --connection mkt_blendx_demo
           fi
 
       - name: Get latest patch number
         id: get_patch
         run: |
-          LATEST_PATCH=$(snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_NASPCS_ROLE }}; SHOW VERSIONS IN APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }};" --connection mkt_blendx_demo 2>&1 | grep -i "| ${VERSION} " | awk -F'|' '{print $3}' | tr -d ' ' | sort -n | tail -1 || echo "0")
+          LATEST_PATCH=$(snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_ROLE }}; SHOW VERSIONS IN APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }};" --connection mkt_blendx_demo 2>&1 | grep -i "| ${VERSION} " | awk -F'|' '{print $3}' | tr -d ' ' | sort -n | tail -1 || echo "0")
 
           if [ -z "$LATEST_PATCH" ] || ! [[ "$LATEST_PATCH" =~ ^[0-9]+$ ]]; then
             LATEST_PATCH=0
@@ -217,10 +218,10 @@ jobs:
           PATCH="${{ steps.get_patch.outputs.patch }}"
 
           # Add version to QA channel if not already there
-          snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_NASPCS_ROLE }}; ALTER APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }} MODIFY RELEASE CHANNEL QA ADD VERSION ${VERSION};" --connection mkt_blendx_demo 2>&1 || echo "Version may already be in QA channel (OK)"
+          snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_ROLE }}; ALTER APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }} MODIFY RELEASE CHANNEL QA ADD VERSION ${VERSION};" --connection mkt_blendx_demo 2>&1 || echo "Version may already be in QA channel (OK)"
 
           # Set release directive to latest patch
-          snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_NASPCS_ROLE }}; ALTER APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }} MODIFY RELEASE CHANNEL QA SET DEFAULT RELEASE DIRECTIVE VERSION=${VERSION} PATCH=${PATCH};" --connection mkt_blendx_demo
+          snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_ROLE }}; ALTER APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }} MODIFY RELEASE CHANNEL QA SET DEFAULT RELEASE DIRECTIVE VERSION=${VERSION} PATCH=${PATCH};" --connection mkt_blendx_demo
 
       - name: Check if QA application exists and restart
         run: |
