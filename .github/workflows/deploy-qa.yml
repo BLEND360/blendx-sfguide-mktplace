@@ -164,7 +164,7 @@ jobs:
 
       - name: Upload application files to Snowflake stage
         run: |
-          snow sql -q "PUT file://${{ github.workspace }}/app/src/* @spcs_app_test.napp.app_stage AUTO_COMPRESS=FALSE OVERWRITE=TRUE;" --connection mkt_blendx_demo
+          snow sql -q "PUT file://${{ github.workspace }}/app/src/* @${{ secrets.SNOWFLAKE_DATABASE }}.${{ secrets.SNOWFLAKE_SCHEMA }}.app_stage AUTO_COMPRESS=FALSE OVERWRITE=TRUE;" --connection mkt_blendx_demo
 
       - name: Create Application Package if not exists
         run: |
@@ -217,10 +217,10 @@ jobs:
 
           if [ "$VERSION_EXISTS" -gt "0" ]; then
             echo "Version ${VERSION} exists. Adding patch..."
-            snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; ALTER APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }} ADD PATCH FOR VERSION ${VERSION} USING '@spcs_app_test.napp.app_stage';" --connection mkt_blendx_demo
+            snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; ALTER APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }} ADD PATCH FOR VERSION ${VERSION} USING '@${{ secrets.SNOWFLAKE_DATABASE }}.${{ secrets.SNOWFLAKE_SCHEMA }}.app_stage';" --connection mkt_blendx_demo
           else
             echo "Version ${VERSION} does not exist. Registering new version..."
-            snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; ALTER APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }} REGISTER VERSION ${VERSION} USING @spcs_app_test.napp.app_stage;" --connection mkt_blendx_demo
+            snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; ALTER APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }} REGISTER VERSION ${VERSION} USING @${{ secrets.SNOWFLAKE_DATABASE }}.${{ secrets.SNOWFLAKE_SCHEMA }}.app_stage;" --connection mkt_blendx_demo
           fi
 
       - name: Get latest patch number
