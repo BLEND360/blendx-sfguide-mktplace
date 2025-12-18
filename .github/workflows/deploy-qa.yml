@@ -75,6 +75,21 @@ jobs:
       - name: Test Snowflake connection
         run: snow connection test --connection mkt_blendx_demo
 
+      - name: Generate manifest.yml from template
+        run: |
+          # Extract image repo name from SNOWFLAKE_REPO (format: org-account.registry.snowflakecomputing.com/db/schema/repo)
+          IMG_REPO=$(echo "${{ secrets.SNOWFLAKE_REPO }}" | awk -F'/' '{print $NF}')
+
+          sed -e "s/{{SNOWFLAKE_DATABASE}}/${{ secrets.SNOWFLAKE_DATABASE }}/g" \
+              -e "s/{{SNOWFLAKE_SCHEMA}}/${{ secrets.SNOWFLAKE_SCHEMA }}/g" \
+              -e "s/{{SNOWFLAKE_IMG_REPO}}/${IMG_REPO}/g" \
+              templates/manifest_template.yml > app/src/manifest.yml
+
+          echo "Generated app/src/manifest.yml with:"
+          echo "  DATABASE: ${{ secrets.SNOWFLAKE_DATABASE }}"
+          echo "  SCHEMA: ${{ secrets.SNOWFLAKE_SCHEMA }}"
+          echo "  IMG_REPO: ${IMG_REPO}"
+
       - name: Generate setup.sql from template
         run: |
           python3 << 'EOF'
@@ -101,7 +116,7 @@ jobs:
           full_content = table_defs + '\n'.join(grants)
 
           # Read setup template and replace placeholder
-          with open('scripts/sql/setup_template.sql', 'r') as f:
+          with open('templates/setup_template.sql', 'r') as f:
               setup_content = f.read()
 
           setup_content = setup_content.replace('-- {{TABLE_DEFINITIONS}}', full_content)

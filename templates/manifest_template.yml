@@ -13,9 +13,9 @@ artifacts:
   setup_script: setup.sql
   container_services:
     images:
-      - /spcs_app/napp/img_repo/eap_frontend
-      - /spcs_app/napp/img_repo/eap_backend
-      - /spcs_app/napp/img_repo/eap_router
+      - /{{SNOWFLAKE_DATABASE}}/{{SNOWFLAKE_SCHEMA}}/{{SNOWFLAKE_IMG_REPO}}/eap_frontend
+      - /{{SNOWFLAKE_DATABASE}}/{{SNOWFLAKE_SCHEMA}}/{{SNOWFLAKE_IMG_REPO}}/eap_backend
+      - /{{SNOWFLAKE_DATABASE}}/{{SNOWFLAKE_SCHEMA}}/{{SNOWFLAKE_IMG_REPO}}/eap_router
 
 privileges:
  - IMPORTED PRIVILEGES ON SNOWFLAKE DB:
