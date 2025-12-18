@@ -116,12 +116,10 @@ jobs:
       - name: Upload application files to Snowflake stage
         env:
           SNOWFLAKE_INSECURE_MODE: "true"
+          REQUESTS_CA_BUNDLE: ""
+          CURL_CA_BUNDLE: ""
         run: |
-          snow stage copy \
-            "${{ github.workspace }}/app/src/*" \
-            @${{ secrets.SNOWFLAKE_DATABASE }}.${{ secrets.SNOWFLAKE_SCHEMA }}.app_stage \
-            --connection mkt_blendx_demo \
-            --overwrite
+          snow sql --query "PUT file://${{ github.workspace }}/app/src/* @${{ secrets.SNOWFLAKE_DATABASE }}.${{ secrets.SNOWFLAKE_SCHEMA }}.app_stage AUTO_COMPRESS=FALSE OVERWRITE=TRUE;" --connection mkt_blendx_demo
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
