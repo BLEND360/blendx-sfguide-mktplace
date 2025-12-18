@@ -44,7 +44,7 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Install Snowflake CLI
-        uses: snowflakedb/snowflake-cli-action@v1.5
+        uses: snowflakedb/snowflake-cli-action@v2.0.1
         with:
           cli-version: "3.6.0"
 
