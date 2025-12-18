@@ -42,8 +42,8 @@ jobs:
           snow connection add \
             --connection-name mkt_blendx_demo \
             --account ${{ secrets.SNOWFLAKE_ACCOUNT }} \
-            --user ${{ secrets.SNOWFLAKE_USER }} \
-            --role ${{ secrets.SNOWFLAKE_ROLE }} \
+            --user ${{ secrets.SNOWFLAKE_DEPLOY_USER }} \
+            --role ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }} \
             --warehouse ${{ secrets.SNOWFLAKE_WAREHOUSE }} \
             --database ${{ secrets.SNOWFLAKE_DATABASE }} \
             --schema ${{ secrets.SNOWFLAKE_SCHEMA }} \
@@ -67,7 +67,7 @@ jobs:
             echo "Auto-detecting version from QA channel..."
 
             # Get release directives
-            DIRECTIVES=$(snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_NASPCS_ROLE }}; SHOW RELEASE DIRECTIVES IN APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }};" --connection mkt_blendx_demo 2>&1 || true)
+            DIRECTIVES=$(snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; SHOW RELEASE DIRECTIVES IN APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }};" --connection mkt_blendx_demo 2>&1 || true)
 
             # Extract QA channel line
             QA_LINE=$(echo "$DIRECTIVES" | grep -i "| QA " | head -1)
@@ -96,7 +96,7 @@ jobs:
 
             # Get release directives again if needed
             if [ -z "$DIRECTIVES" ]; then
-              DIRECTIVES=$(snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_NASPCS_ROLE }}; SHOW RELEASE DIRECTIVES IN APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }};" --connection mkt_blendx_demo 2>&1 || true)
+              DIRECTIVES=$(snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; SHOW RELEASE DIRECTIVES IN APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }};" --connection mkt_blendx_demo 2>&1 || true)
               QA_LINE=$(echo "$DIRECTIVES" | grep -i "| QA " | head -1)
             fi
 
@@ -106,7 +106,7 @@ jobs:
             # Fallback: get latest patch from versions list
             if [ -z "$PATCH" ] || ! [[ "$PATCH" =~ ^[0-9]+$ ]]; then
               echo "Getting latest patch from versions list..."
-              PATCH=$(snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_NASPCS_ROLE }}; SHOW VERSIONS IN APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }};" --connection mkt_blendx_demo 2>&1 | grep -i "| ${VERSION} " | awk -F'|' '{print $3}' | tr -d ' ' | sort -n | tail -1 || echo "0")
+              PATCH=$(snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; SHOW VERSIONS IN APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }};" --connection mkt_blendx_demo 2>&1 | grep -i "| ${VERSION} " | awk -F'|' '{print $3}' | tr -d ' ' | sort -n | tail -1 || echo "0")
             fi
 
             if [ -z "$PATCH" ] || ! [[ "$PATCH" =~ ^[0-9]+$ ]]; then
@@ -134,13 +134,13 @@ jobs:
 
           echo "Verifying version $VERSION patch $PATCH exists..."
 
-          VERSION_EXISTS=$(snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_NASPCS_ROLE }}; SHOW VERSIONS IN APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }};" --connection mkt_blendx_demo 2>&1 | grep -i "| ${VERSION} " | wc -l | tr -d ' ' || echo "0")
+          VERSION_EXISTS=$(snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; SHOW VERSIONS IN APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }};" --connection mkt_blendx_demo 2>&1 | grep -i "| ${VERSION} " | wc -l | tr -d ' ' || echo "0")
 
           if [ "$VERSION_EXISTS" -eq "0" ]; then
             echo "Error: Version ${VERSION} does not exist in package ${{ secrets.SNOWFLAKE_APP_PACKAGE }}"
             echo ""
             echo "Available versions:"
-            snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_NASPCS_ROLE }}; SHOW VERSIONS IN APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }};" --connection mkt_blendx_demo
+            snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; SHOW VERSIONS IN APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }};" --connection mkt_blendx_demo
             exit 1
           fi
 
@@ -151,7 +151,7 @@ jobs:
           VERSION="${{ steps.detect_version.outputs.version }}"
 
           echo "Adding version $VERSION to DEFAULT release channel..."
-          snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_NASPCS_ROLE }}; ALTER APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }} MODIFY RELEASE CHANNEL DEFAULT ADD VERSION ${VERSION};" --connection mkt_blendx_demo 2>&1 || echo "Version may already be in DEFAULT channel (OK)"
+          snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; ALTER APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }} MODIFY RELEASE CHANNEL DEFAULT ADD VERSION ${VERSION};" --connection mkt_blendx_demo 2>&1 || echo "Version may already be in DEFAULT channel (OK)"
 
       - name: Set DEFAULT release directive
         run: |
@@ -159,7 +159,7 @@ jobs:
           PATCH="${{ steps.detect_version.outputs.patch }}"
 
           echo "Setting DEFAULT release directive to version $VERSION patch $PATCH..."
-          snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_NASPCS_ROLE }}; ALTER APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }} MODIFY RELEASE CHANNEL DEFAULT SET DEFAULT RELEASE DIRECTIVE VERSION=${VERSION} PATCH=${PATCH};" --connection mkt_blendx_demo
+          snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; ALTER APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }} MODIFY RELEASE CHANNEL DEFAULT SET DEFAULT RELEASE DIRECTIVE VERSION=${VERSION} PATCH=${PATCH};" --connection mkt_blendx_demo
 
       - name: Show current release status
         run: |
@@ -170,11 +170,11 @@ jobs:
 
           echo ""
           echo "Versions:"
-          snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_NASPCS_ROLE }}; SHOW VERSIONS IN APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }};" --connection mkt_blendx_demo
+          snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; SHOW VERSIONS IN APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }};" --connection mkt_blendx_demo
 
           echo ""
           echo "Release Directives:"
-          snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_NASPCS_ROLE }}; SHOW RELEASE DIRECTIVES IN APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }};" --connection mkt_blendx_demo
+          snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; SHOW RELEASE DIRECTIVES IN APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }};" --connection mkt_blendx_demo
 
       - name: Summary
         run: |
