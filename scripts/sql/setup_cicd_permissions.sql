@@ -11,7 +11,7 @@
 -- CICD_USER: MK_BLENDX_DEPLOY_USER
 
 -- Database objects
--- DATABASE: SPCS_APP_TEST
+-- DATABASE: BLENDX_APP
 -- SCHEMA: NAPP
 -- STAGE: APP_STAGE
 -- IMAGE_REPO: img_repo
@@ -63,18 +63,18 @@ GRANT USAGE ON WAREHOUSE DEV_WH TO ROLE MK_BLENDX_DEPLOY_ROLE;
 -- ============================================================================
 -- 4. Database and Schema permissions
 -- ============================================================================
-GRANT USAGE ON DATABASE SPCS_APP_TEST TO ROLE MK_BLENDX_DEPLOY_ROLE;
-GRANT USAGE ON SCHEMA SPCS_APP_TEST.NAPP TO ROLE MK_BLENDX_DEPLOY_ROLE;
+GRANT USAGE ON DATABASE BLENDX_APP TO ROLE MK_BLENDX_DEPLOY_ROLE;
+GRANT USAGE ON SCHEMA BLENDX_APP.NAPP TO ROLE MK_BLENDX_DEPLOY_ROLE;
 
 -- ============================================================================
 -- 5. Stage permissions (to upload app files)
 -- ============================================================================
-GRANT READ, WRITE ON STAGE SPCS_APP_TEST.NAPP.APP_STAGE TO ROLE MK_BLENDX_DEPLOY_ROLE;
+GRANT READ, WRITE ON STAGE BLENDX_APP.NAPP.APP_STAGE TO ROLE MK_BLENDX_DEPLOY_ROLE;
 
 -- ============================================================================
 -- 6. Image Repository permissions (for Docker image push)
 -- ============================================================================
-GRANT READ, WRITE ON IMAGE REPOSITORY SPCS_APP_TEST.NAPP.img_repo TO ROLE MK_BLENDX_DEPLOY_ROLE;
+GRANT READ, WRITE ON IMAGE REPOSITORY BLENDX_APP.NAPP.img_repo TO ROLE MK_BLENDX_DEPLOY_ROLE;
 
 -- ============================================================================
 -- 7. Permission to create Application Packages
@@ -101,15 +101,16 @@ SHOW GRANTS TO ROLE MK_BLENDX_DEPLOY_ROLE;
 -- ============================================================================
 -- SNOWFLAKE_ACCOUNT: Your Snowflake account identifier
 -- SNOWFLAKE_HOST: Your Snowflake host (e.g., xxx.snowflakecomputing.com)
--- SNOWFLAKE_USER: MK_BLENDX_DEPLOY_USER
--- SNOWFLAKE_ROLE: MK_BLENDX_DEPLOY_ROLE
+-- SNOWFLAKE_DEPLOY_USER: MK_BLENDX_DEPLOY_USER
+-- SNOWFLAKE_DEPLOY_ROLE: MK_BLENDX_DEPLOY_ROLE
 -- SNOWFLAKE_WAREHOUSE: DEV_WH
--- SNOWFLAKE_DATABASE: SPCS_APP_TEST
+-- SNOWFLAKE_DATABASE: BLENDX_APP
 -- SNOWFLAKE_SCHEMA: NAPP
+-- SNOWFLAKE_REPO: img_repo
 -- SNOWFLAKE_PRIVATE_KEY_RAW: Content of snowflake_key.p8 file
 -- SNOWFLAKE_REPO: Your image repository URL
 -- SNOWFLAKE_APP_PACKAGE: Name for your app package (e.g., MK_BLENDX_APP_PKG)
--- SNOWFLAKE_APP_INSTANCE: Name of the installed app instance (for restart)
--- SNOWFLAKE_COMPUTE_POOL: Compute pool for the app
--- SNOWFLAKE_NAC_ROLE: Role with permissions on the installed app (optional)
+-- SNOWFLAKE_APP_INSTANCE: Name of the installed app instance (for restart) e.g. BLENDX_APP_INSTANCE
+-- SNOWFLAKE_COMPUTE_POOL: Compute pool for the app e.g BLENDX_CP
+-- SNOWFLAKE_ROLE: Role with permissions on the installed app (optional) e.g. BLENDX_APP_ROLE
 -- ============================================================================

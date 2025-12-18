@@ -59,17 +59,17 @@ In your GitHub repository, go to **Settings > Secrets and variables > Actions** 
 |--------|-------------|---------|
 | `SNOWFLAKE_ACCOUNT` | Snowflake account identifier | `xy12345.us-east-1` |
 | `SNOWFLAKE_HOST` | Snowflake host URL | `xy12345.us-east-1.snowflakecomputing.com` |
-| `SNOWFLAKE_USER` | CI/CD user name | `MK_BLENDX_DEPLOY_USER` |
-| `SNOWFLAKE_ROLE` | CI/CD role name | `MK_BLENDX_DEPLOY_ROLE` |
+| `SNOWFLAKE_DEPLOY_USER` | CI/CD user name | `MK_BLENDX_DEPLOY_USER` |
+| `SNOWFLAKE_DEPLOY_ROLE` | CI/CD role name | `MK_BLENDX_DEPLOY_ROLE` |
 | `SNOWFLAKE_WAREHOUSE` | Warehouse name | `DEV_WH` |
 | `SNOWFLAKE_DATABASE` | Database name | `SPCS_APP_TEST` |
 | `SNOWFLAKE_SCHEMA` | Schema name | `NAPP` |
 | `SNOWFLAKE_PRIVATE_KEY_RAW` | Content of `snowflake_key.p8` | (full PEM content) |
 | `SNOWFLAKE_REPO` | Image repository URL | `xy12345.registry.snowflakecomputing.com/spcs_app_test/napp/img_repo` |
 | `SNOWFLAKE_APP_PACKAGE` | Application package name | `MK_BLENDX_APP_PKG` |
-| `SNOWFLAKE_APP_INSTANCE` | Installed app instance name | `MK_BLENDX_APP` |
+| `SNOWFLAKE_APP_INSTANCE` | Installed app instance name | `BLENDX_APP` |
 | `SNOWFLAKE_COMPUTE_POOL` | Compute pool for the app | `MY_COMPUTE_POOL` |
-| `SNOWFLAKE_NAC_ROLE` | Role for app management | `nac_test` |
+| `SNOWFLAKE_ROLE` | Role for app management | `nac_test` |
 
 #### Environment: `production`
 

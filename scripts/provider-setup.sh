@@ -2,9 +2,10 @@
 
 # Provider Setup Script - Initial Setup for CI/CD Pipeline
 # This script should be run ONCE by an ACCOUNTADMIN to setup:
-# 1. CI/CD User with JWT authentication
-# 2. CI/CD Role with necessary permissions
-# 3. Application Package (optional, pipeline can also create it)
+# 1. Database, Schema, Stage, and Image Repository
+# 2. CI/CD User with JWT authentication
+# 3. CI/CD Role with necessary permissions
+# 4. Application Package (optional, pipeline can also create it)
 #
 # After this, the GitHub Actions pipeline will handle all deployments.
 
@@ -36,7 +37,7 @@ CICD_USER=${CICD_USER:-"MK_BLENDX_DEPLOY_USER"}
 CICD_ROLE=${CICD_ROLE:-"MK_BLENDX_DEPLOY_ROLE"}
 
 # Database objects
-DATABASE_NAME=${DATABASE_NAME:-"SPCS_APP_TEST"}
+DATABASE_NAME=${DATABASE_NAME:-"BLENDX_APP"}
 SCHEMA_NAME=${SCHEMA_NAME:-"NAPP"}
 STAGE_NAME=${STAGE_NAME:-"APP_STAGE"}
 IMAGE_REPO_NAME=${IMAGE_REPO_NAME:-"img_repo"}
@@ -46,7 +47,7 @@ WAREHOUSE_NAME=${WAREHOUSE_NAME:-"DEV_WH"}
 APP_PACKAGE_NAME=${APP_PACKAGE_NAME:-"MK_BLENDX_APP_PKG"}
 
 # Consumer role (for app installation permissions)
-APP_CONSUMER_ROLE=${APP_CONSUMER_ROLE:-"nac_test"}
+APP_CONSUMER_ROLE=${APP_CONSUMER_ROLE:-"BLENDX_APP_ROLE"}
 
 # Path to public key file
 PUBLIC_KEY_FILE=${PUBLIC_KEY_FILE:-"$PROJECT_ROOT/keys/pipeline/snowflake_key.pub"}
@@ -145,10 +146,34 @@ if [[ ! $REPLY =~ ^[Yy]$ ]]; then
 fi
 
 # ============================================
-# Step 1: Create CI/CD User
+# Step 1: Create Database Infrastructure
 # ============================================
 
-log_step "Step 1: Creating CI/CD User"
+log_step "Step 1: Creating Database Infrastructure"
+
+run_sql "Creating database" \
+    "USE ROLE ACCOUNTADMIN;
+     CREATE DATABASE IF NOT EXISTS ${DATABASE_NAME};"
+
+run_sql "Creating schema" \
+    "USE ROLE ACCOUNTADMIN;
+     CREATE SCHEMA IF NOT EXISTS ${DATABASE_NAME}.${SCHEMA_NAME};"
+
+run_sql "Creating stage" \
+    "USE ROLE ACCOUNTADMIN;
+     CREATE STAGE IF NOT EXISTS ${DATABASE_NAME}.${SCHEMA_NAME}.${STAGE_NAME};"
+
+run_sql "Creating image repository" \
+    "USE ROLE ACCOUNTADMIN;
+     CREATE IMAGE REPOSITORY IF NOT EXISTS ${DATABASE_NAME}.${SCHEMA_NAME}.${IMAGE_REPO_NAME};"
+
+log_info "Database infrastructure created"
+
+# ============================================
+# Step 2: Create CI/CD User
+# ============================================
+
+log_step "Step 2: Creating CI/CD User"
 
 run_sql "Creating CI/CD user" \
     "USE ROLE ACCOUNTADMIN;
@@ -160,10 +185,10 @@ run_sql "Creating CI/CD user" \
 log_info "CI/CD user created"
 
 # ============================================
-# Step 2: Create CI/CD Role
+# Step 3: Create CI/CD Role
 # ============================================
 
-log_step "Step 2: Creating CI/CD Role"
+log_step "Step 3: Creating CI/CD Role"
 
 run_sql "Creating CI/CD role" \
     "USE ROLE ACCOUNTADMIN;
@@ -181,10 +206,10 @@ run_sql "Setting default role and warehouse" \
 log_info "CI/CD role created and assigned"
 
 # ============================================
-# Step 3: Grant Warehouse Permissions
+# Step 4: Grant Warehouse Permissions
 # ============================================
 
-log_step "Step 3: Granting Warehouse Permissions"
+log_step "Step 4: Granting Warehouse Permissions"
 
 run_sql "Granting warehouse usage" \
     "USE ROLE ACCOUNTADMIN;
@@ -193,10 +218,10 @@ run_sql "Granting warehouse usage" \
 log_info "Warehouse permissions granted"
 
 # ============================================
-# Step 4: Grant Database and Schema Permissions
+# Step 5: Grant Database and Schema Permissions
 # ============================================
 
-log_step "Step 4: Granting Database and Schema Permissions"
+log_step "Step 5: Granting Database and Schema Permissions"
 
 run_sql "Granting database usage" \
     "USE ROLE ACCOUNTADMIN;
@@ -209,10 +234,10 @@ run_sql "Granting schema usage" \
 log_info "Database and schema permissions granted"
 
 # ============================================
-# Step 5: Grant Stage Permissions
+# Step 6: Grant Stage Permissions
 # ============================================
 
-log_step "Step 5: Granting Stage Permissions"
+log_step "Step 6: Granting Stage Permissions"
 
 run_sql "Granting stage read/write" \
     "USE ROLE ACCOUNTADMIN;
@@ -221,10 +246,10 @@ run_sql "Granting stage read/write" \
 log_info "Stage permissions granted"
 
 # ============================================
-# Step 6: Grant Image Repository Permissions
+# Step 7: Grant Image Repository Permissions
 # ============================================
 
-log_step "Step 6: Granting Image Repository Permissions"
+log_step "Step 7: Granting Image Repository Permissions"
 
 run_sql "Granting image repository read/write" \
     "USE ROLE ACCOUNTADMIN;
@@ -233,10 +258,10 @@ run_sql "Granting image repository read/write" \
 log_info "Image repository permissions granted"
 
 # ============================================
-# Step 7: Grant Application Package Creation Permission
+# Step 8: Grant Application Package Creation Permission
 # ============================================
 
-log_step "Step 7: Granting Application Package Creation Permission"
+log_step "Step 8: Granting Application Package Creation Permission"
 
 run_sql "Granting create application package" \
     "USE ROLE ACCOUNTADMIN;
@@ -245,10 +270,10 @@ run_sql "Granting create application package" \
 log_info "Application package creation permission granted"
 
 # ============================================
-# Step 8: Create Application Package (Optional)
+# Step 9: Create Application Package (Optional)
 # ============================================
 
-log_step "Step 8: Creating Application Package (Optional)"
+log_step "Step 9: Creating Application Package (Optional)"
 
 echo "The pipeline can create the application package automatically."
 read -p "Do you want to create the application package now? (y/n) " -n 1 -r
@@ -273,10 +298,10 @@ else
 fi
 
 # ============================================
-# Step 9: Verify Permissions
+# Step 10: Verify Permissions
 # ============================================
 
-log_step "Step 9: Verifying Permissions"
+log_step "Step 10: Verifying Permissions"
 
 run_sql "Showing grants to CI/CD role" \
     "SHOW GRANTS TO ROLE ${CICD_ROLE};"
@@ -294,8 +319,8 @@ echo "GitHub Secrets to configure:"
 echo ""
 echo "  SNOWFLAKE_ACCOUNT: <your-account-identifier>"
 echo "  SNOWFLAKE_HOST: <your-account>.snowflakecomputing.com"
-echo "  SNOWFLAKE_USER: ${CICD_USER}"
-echo "  SNOWFLAKE_ROLE: ${CICD_ROLE}"
+echo "  SNOWFLAKE_DEPLOY_USER: ${CICD_USER}"
+echo "  SNOWFLAKE_DEPLOY_ROLE: ${CICD_ROLE}"
 echo "  SNOWFLAKE_WAREHOUSE: ${WAREHOUSE_NAME}"
 echo "  SNOWFLAKE_DATABASE: ${DATABASE_NAME}"
 echo "  SNOWFLAKE_SCHEMA: ${SCHEMA_NAME}"
@@ -304,12 +329,12 @@ echo "  SNOWFLAKE_REPO: <your-image-repo-url>"
 echo "  SNOWFLAKE_APP_PACKAGE: ${APP_PACKAGE_NAME}"
 echo "  SNOWFLAKE_APP_INSTANCE: <name-for-installed-app>"
 echo "  SNOWFLAKE_COMPUTE_POOL: <your-compute-pool>"
-echo "  SNOWFLAKE_NAC_ROLE: ${APP_CONSUMER_ROLE}"
+echo "  SNOWFLAKE_ROLE: ${APP_CONSUMER_ROLE}"
 echo ""
 echo "To get the private key content for GitHub secret:"
 echo "  cat $PROJECT_ROOT/keys/pipeline/snowflake_key.p8"
 echo ""
 echo "Next steps:"
 echo "  1. Configure the GitHub secrets in your repository"
-echo "  2. Push to the 'develop' branch to trigger the QA deployment"
+echo "  2. Create a PR to the 'develop' branch and merge it to trigger the QA deployment"
 echo ""
