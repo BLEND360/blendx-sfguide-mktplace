@@ -162,15 +162,14 @@ jobs:
           print(f"Generated app/src/setup.sql with {len(tables)} table definitions: {', '.join(tables)}")
           EOF
 
-      - name: Update CA certificates
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y ca-certificates
-          sudo update-ca-certificates
 
       - name: Upload application files to Snowflake stage
         run: |
-          snow sql --query="PUT file://${{ github.workspace }}/app/src/* @${{ secrets.SNOWFLAKE_DATABASE }}/${{ secrets.SNOWFLAKE_SCHEMA }}/app_stage AUTO_COMPRESS=FALSE OVERWRITE=TRUE;" --connection mkt_blendx_demo
+          snow stage put \
+            "${{ github.workspace }}/app/src/*" \
+            @${{ secrets.SNOWFLAKE_DATABASE }}.${{ secrets.SNOWFLAKE_SCHEMA }}.app_stage \
+            --connection mkt_blendx_demo \
+            --overwrite
 
       - name: Create Application Package if not exists
         run: |
