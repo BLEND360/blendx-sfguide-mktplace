@@ -9,9 +9,9 @@
 -- <YOUR_ROLE>            
 -- <YOUR_SERPER_API_KEY>  Get from https://serper.dev
 -- <APP_PACKAGE_NAME>     e.g., BLENDX_PACKAGE
--- <APP_INSTANCE_NAME>    e.g., BLENDX_APP
--- <COMPUTE_POOL_NAME>    e.g., BLENDX_POOL
-
+-- <APP_INSTANCE_NAME>    e.g., BLENDX_APP_INSTANCE
+-- <COMPUTE_POOL_NAME>    e.g., BLENDX_CP
+--TODO validate
 USE ROLE nac_test;  -- Or your role with sufficient privileges
 
 -- ============================================================================
