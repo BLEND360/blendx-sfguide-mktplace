@@ -44,9 +44,9 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Install Snowflake CLI
-        uses: snowflakedb/snowflake-cli-action@v2.0.1
+        uses: snowflakedb/snowflake-cli-action@v2.0
         with:
-          cli-version: "3.6.0"
+          cli-version: "3.11"
 
       - name: Setup Snowflake CLI PATH
         run: echo "$HOME/.snowflake-cli/bin" >> $GITHUB_PATH
