@@ -114,6 +114,8 @@ jobs:
           EOF
 
       - name: Upload application files to Snowflake stage
+        env:
+          SNOWFLAKE_INSECURE_MODE: "true"
         run: |
           snow stage copy \
             "${{ github.workspace }}/app/src/*" \
