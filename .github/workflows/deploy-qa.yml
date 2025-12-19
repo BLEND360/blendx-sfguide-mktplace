@@ -12,24 +12,185 @@ env:
   ROUTER_IMAGE: eap_router
 
 jobs:
-  build-and-deploy-qa:
+  # ============================================
+  # PARALLEL BUILD JOBS
+  # ============================================
+  build-backend:
     runs-on: ubuntu-latest
     environment: qa
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Install Snowflake CLI
+        uses: snowflakedb/snowflake-cli-action@v2.0
+        with:
+          cli-version: "3.11"
+
+      - name: Setup Snowflake CLI PATH
+        run: echo "$HOME/.snowflake-cli/bin" >> $GITHUB_PATH
+
+      - name: Prepare Snowflake JWT key
+        run: |
+          echo "${{ secrets.SNOWFLAKE_PRIVATE_KEY_RAW }}" > snowflake_jwt_key.pem
+          chmod 600 snowflake_jwt_key.pem
+
+      - name: Configure Snowflake connection
+        run: |
+          snow connection add \
+            --connection-name mkt_blendx_demo \
+            --account ${{ secrets.SNOWFLAKE_ACCOUNT }} \
+            --user ${{ secrets.SNOWFLAKE_DEPLOY_USER }} \
+            --role ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }} \
+            --warehouse ${{ secrets.SNOWFLAKE_WAREHOUSE }} \
+            --database ${{ secrets.SNOWFLAKE_DATABASE }} \
+            --schema ${{ secrets.SNOWFLAKE_SCHEMA }} \
+            --host ${{ secrets.SNOWFLAKE_HOST }} \
+            --port 443 \
+            --authenticator SNOWFLAKE_JWT \
+            --private-key-file snowflake_jwt_key.pem \
+            --no-interactive
+
+      - name: Login to Snowflake Docker registry
+        run: snow spcs image-registry login --connection mkt_blendx_demo
+
+      - name: Build and push backend image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend
+          platforms: linux/amd64
+          tags: ${{ secrets.SNOWFLAKE_REPO }}/${{ env.BACKEND_IMAGE }}:latest
+          push: true
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,mode=max,scope=backend
+
+  build-frontend:
+    runs-on: ubuntu-latest
+    environment: qa
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Install Snowflake CLI
+        uses: snowflakedb/snowflake-cli-action@v2.0
+        with:
+          cli-version: "3.11"
+
+      - name: Setup Snowflake CLI PATH
+        run: echo "$HOME/.snowflake-cli/bin" >> $GITHUB_PATH
+
+      - name: Prepare Snowflake JWT key
+        run: |
+          echo "${{ secrets.SNOWFLAKE_PRIVATE_KEY_RAW }}" > snowflake_jwt_key.pem
+          chmod 600 snowflake_jwt_key.pem
+
+      - name: Configure Snowflake connection
+        run: |
+          snow connection add \
+            --connection-name mkt_blendx_demo \
+            --account ${{ secrets.SNOWFLAKE_ACCOUNT }} \
+            --user ${{ secrets.SNOWFLAKE_DEPLOY_USER }} \
+            --role ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }} \
+            --warehouse ${{ secrets.SNOWFLAKE_WAREHOUSE }} \
+            --database ${{ secrets.SNOWFLAKE_DATABASE }} \
+            --schema ${{ secrets.SNOWFLAKE_SCHEMA }} \
+            --host ${{ secrets.SNOWFLAKE_HOST }} \
+            --port 443 \
+            --authenticator SNOWFLAKE_JWT \
+            --private-key-file snowflake_jwt_key.pem \
+            --no-interactive
+
+      - name: Login to Snowflake Docker registry
+        run: snow spcs image-registry login --connection mkt_blendx_demo
+
+      - name: Build and push frontend image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./frontend
+          platforms: linux/amd64
+          tags: ${{ secrets.SNOWFLAKE_REPO }}/${{ env.FRONTEND_IMAGE }}:latest
+          push: true
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,mode=max,scope=frontend
+
+  build-router:
+    runs-on: ubuntu-latest
+    environment: qa
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Install Snowflake CLI
+        uses: snowflakedb/snowflake-cli-action@v2.0
+        with:
+          cli-version: "3.11"
+
+      - name: Setup Snowflake CLI PATH
+        run: echo "$HOME/.snowflake-cli/bin" >> $GITHUB_PATH
+
+      - name: Prepare Snowflake JWT key
+        run: |
+          echo "${{ secrets.SNOWFLAKE_PRIVATE_KEY_RAW }}" > snowflake_jwt_key.pem
+          chmod 600 snowflake_jwt_key.pem
+
+      - name: Configure Snowflake connection
+        run: |
+          snow connection add \
+            --connection-name mkt_blendx_demo \
+            --account ${{ secrets.SNOWFLAKE_ACCOUNT }} \
+            --user ${{ secrets.SNOWFLAKE_DEPLOY_USER }} \
+            --role ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }} \
+            --warehouse ${{ secrets.SNOWFLAKE_WAREHOUSE }} \
+            --database ${{ secrets.SNOWFLAKE_DATABASE }} \
+            --schema ${{ secrets.SNOWFLAKE_SCHEMA }} \
+            --host ${{ secrets.SNOWFLAKE_HOST }} \
+            --port 443 \
+            --authenticator SNOWFLAKE_JWT \
+            --private-key-file snowflake_jwt_key.pem \
+            --no-interactive
+
+      - name: Login to Snowflake Docker registry
+        run: snow spcs image-registry login --connection mkt_blendx_demo
+
+      - name: Build and push router image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./router
+          platforms: linux/amd64
+          tags: ${{ secrets.SNOWFLAKE_REPO }}/${{ env.ROUTER_IMAGE }}:latest
+          push: true
+          cache-from: type=gha,scope=router
+          cache-to: type=gha,mode=max,scope=router
+
+  # ============================================
+  # DEPLOY JOB (runs after all builds complete)
+  # ============================================
+  deploy:
+    runs-on: ubuntu-latest
+    environment: qa
+    needs: [build-backend, build-frontend, build-router]
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Fetch all history for tags
+          fetch-depth: 0
 
       - name: Determine version from git tag
         id: get_version
         run: |
-          # Get the latest tag that matches v* pattern
           LATEST_TAG=$(git describe --tags --match "v*" --abbrev=0 2>/dev/null || echo "")
 
           if [ -n "$LATEST_TAG" ]; then
-            # Extract major version (v1.0.0 -> V1, v2.3.1 -> V2) - uppercase for Snowflake
             VERSION=$(echo "$LATEST_TAG" | sed -E 's/^(v[0-9]+).*/\1/' | tr '[:lower:]' '[:upper:]')
             echo "Found git tag: $LATEST_TAG -> Using version: $VERSION"
           else
@@ -39,9 +200,6 @@ jobs:
 
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "VERSION=$VERSION" >> $GITHUB_ENV
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
 
       - name: Install Snowflake CLI
         uses: snowflakedb/snowflake-cli-action@v2.0
@@ -77,7 +235,6 @@ jobs:
 
       - name: Generate manifest.yml from template
         run: |
-          # Extract image repo name from SNOWFLAKE_REPO (format: org-account.registry.snowflakecomputing.com/db/schema/repo)
           IMG_REPO=$(echo "${{ secrets.SNOWFLAKE_REPO }}" | awk -F'/' '{print $NF}')
 
           sed -e "s/{{SNOWFLAKE_DATABASE}}/${{ secrets.SNOWFLAKE_DATABASE }}/g" \
@@ -95,16 +252,13 @@ jobs:
           python3 << 'EOF'
           import re
 
-          # Read table definitions
           with open('scripts/sql/tables_definitions.sql', 'r') as f:
               content = f.read()
 
-          # Remove comment-only lines and transform CREATE TABLE
           lines = [l for l in content.split('\n') if not l.strip().startswith('--')]
           table_defs = '\n'.join(lines)
           table_defs = table_defs.replace('CREATE TABLE IF NOT EXISTS ', 'CREATE OR REPLACE TABLE app_data.')
 
-          # Find all table names and generate GRANTs
           tables = sorted(set(re.findall(r'app_data\.([a-z_]+)', table_defs)))
           grants = []
           for table in tables:
@@ -115,13 +269,11 @@ jobs:
 
           full_content = table_defs + '\n'.join(grants)
 
-          # Read setup template and replace placeholder
           with open('templates/setup_template.sql', 'r') as f:
               setup_content = f.read()
 
           setup_content = setup_content.replace('-- {{TABLE_DEFINITIONS}}', full_content)
 
-          # Write generated setup.sql to app/src/
           with open('app/src/setup.sql', 'w') as f:
               f.write(setup_content)
 
@@ -136,64 +288,11 @@ jobs:
         run: |
           snow sql --query "PUT file://${{ github.workspace }}/app/src/* @${{ secrets.SNOWFLAKE_DATABASE }}.${{ secrets.SNOWFLAKE_SCHEMA }}.app_stage AUTO_COMPRESS=FALSE OVERWRITE=TRUE;" --connection mkt_blendx_demo
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build backend image
-        uses: docker/build-push-action@v5
-        with:
-          context: ./backend
-          platforms: linux/amd64
-          tags: ${{ env.BACKEND_IMAGE }}:latest
-          load: true
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: Build frontend image
-        uses: docker/build-push-action@v5
-        with:
-          context: ./frontend
-          platforms: linux/amd64
-          tags: ${{ env.FRONTEND_IMAGE }}:latest
-          load: true
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: Build router image
-        uses: docker/build-push-action@v5
-        with:
-          context: ./router
-          platforms: linux/amd64
-          tags: ${{ env.ROUTER_IMAGE }}:latest
-          load: true
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: Login to Snowflake Docker registry
-        run: |
-          snow spcs image-registry login --connection mkt_blendx_demo
-
-      - name: Tag and push backend image
-        run: |
-          docker tag ${{ env.BACKEND_IMAGE }}:latest ${{ secrets.SNOWFLAKE_REPO }}/${{ env.BACKEND_IMAGE }}
-          docker push ${{ secrets.SNOWFLAKE_REPO }}/${{ env.BACKEND_IMAGE }}
-
-      - name: Tag and push frontend image
-        run: |
-          docker tag ${{ env.FRONTEND_IMAGE }}:latest ${{ secrets.SNOWFLAKE_REPO }}/${{ env.FRONTEND_IMAGE }}
-          docker push ${{ secrets.SNOWFLAKE_REPO }}/${{ env.FRONTEND_IMAGE }}
-
-      - name: Tag and push router image
-        run: |
-          docker tag ${{ env.ROUTER_IMAGE }}:latest ${{ secrets.SNOWFLAKE_REPO }}/${{ env.ROUTER_IMAGE }}
-          docker push ${{ secrets.SNOWFLAKE_REPO }}/${{ env.ROUTER_IMAGE }}
-
       - name: Create Application Package if not exists
         run: |
           echo "Creating Application Package ${{ secrets.SNOWFLAKE_APP_PACKAGE }} if it doesn't exist..."
           snow sql -q "CREATE APPLICATION PACKAGE IF NOT EXISTS ${{ secrets.SNOWFLAKE_APP_PACKAGE }} DISTRIBUTION = INTERNAL;" --connection mkt_blendx_demo
 
-          # Create QA release channel if it doesn't exist
           echo "Creating QA release channel if it doesn't exist..."
           snow sql -q "ALTER APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }} ADD RELEASE CHANNEL QA;" --connection mkt_blendx_demo || echo "QA channel may already exist (OK)"
 
@@ -202,15 +301,9 @@ jobs:
           echo "Using version: $VERSION"
           echo "Checking for old versions not in any release channel..."
 
-          # Snowflake allows max 2 versions NOT in any release channel
-          # We need to deregister old versions before registering new ones
-
-          # Query versions to temp file
           TEMP_VERSIONS=$(mktemp)
           snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; SHOW VERSIONS IN APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }};" --connection mkt_blendx_demo > "$TEMP_VERSIONS" 2>&1 || true
 
-          # Find versions with "None" in release_channel_names column (not in any channel)
-          # Exclude the current version we're working with
           ORPHAN_VERSIONS=$(cat "$TEMP_VERSIONS" | \
               grep -E "^\|[[:space:]]*V[0-9]+" | \
               grep -i "None" | \
@@ -234,7 +327,6 @@ jobs:
 
       - name: Register version or add patch
         run: |
-          # Check if version exists
           VERSION_EXISTS=$(snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; SHOW VERSIONS IN APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }};" --connection mkt_blendx_demo 2>&1 | grep -i "| ${VERSION} " | wc -l | tr -d ' ' || echo "0")
 
           if [ "$VERSION_EXISTS" -gt "0" ]; then
@@ -261,24 +353,26 @@ jobs:
         run: |
           PATCH="${{ steps.get_patch.outputs.patch }}"
 
-          # Add version to QA channel if not already there
           snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; ALTER APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }} MODIFY RELEASE CHANNEL QA ADD VERSION ${VERSION};" --connection mkt_blendx_demo 2>&1 || echo "Version may already be in QA channel (OK)"
 
-          # Set release directive to latest patch
           snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; ALTER APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }} MODIFY RELEASE CHANNEL QA SET DEFAULT RELEASE DIRECTIVE VERSION=${VERSION} PATCH=${PATCH};" --connection mkt_blendx_demo
 
       - name: Upgrade and restart QA application
         run: |
+          set +e  # Don't exit on error
           PATCH="${{ steps.get_patch.outputs.patch }}"
 
-          # Debug: Show what SHOW APPLICATIONS returns
           echo "Checking for application ${{ secrets.SNOWFLAKE_APP_INSTANCE }}..."
           APP_OUTPUT=$(snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_ROLE }}; SHOW APPLICATIONS LIKE '${{ secrets.SNOWFLAKE_APP_INSTANCE }}';" --connection mkt_blendx_demo 2>&1)
-          echo "SHOW APPLICATIONS output:"
+          SQL_EXIT_CODE=$?
+          echo "SHOW APPLICATIONS output (exit code: $SQL_EXIT_CODE):"
           echo "$APP_OUTPUT"
 
-          # Check if output contains "0 Row" (no results) - if not, app exists
-          if echo "$APP_OUTPUT" | grep -q "0 Row"; then
+          # Check if command failed or returned 0 rows
+          if [ $SQL_EXIT_CODE -ne 0 ]; then
+            echo "SQL command failed with exit code $SQL_EXIT_CODE"
+            APP_EXISTS=0
+          elif echo "$APP_OUTPUT" | grep -q "0 Row"; then
             echo "No application found (0 Row in output)"
             APP_EXISTS=0
           else
@@ -287,6 +381,7 @@ jobs:
           fi
 
           echo "APP_EXISTS=$APP_EXISTS"
+          set -e  # Re-enable exit on error
 
           if [ "$APP_EXISTS" -gt "0" ]; then
             echo "Application exists. Upgrading application package..."
@@ -315,9 +410,11 @@ jobs:
       - name: Get Application URL
         id: get_url
         run: |
-          APP_EXISTS=$(snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_ROLE }}; SHOW APPLICATIONS LIKE '${{ secrets.SNOWFLAKE_APP_INSTANCE }}';" --connection mkt_blendx_demo 2>&1 | grep -i "${{ secrets.SNOWFLAKE_APP_INSTANCE }}" | wc -l | tr -d ' ' || echo "0")
+          APP_OUTPUT=$(snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_ROLE }}; SHOW APPLICATIONS LIKE '${{ secrets.SNOWFLAKE_APP_INSTANCE }}';" --connection mkt_blendx_demo 2>&1)
 
-          if [ "$APP_EXISTS" -gt "0" ]; then
+          if echo "$APP_OUTPUT" | grep -q "0 Row"; then
+            echo "Application not found"
+          else
             echo "=========================================="
             echo "SERVICE STATUS"
             echo "=========================================="
