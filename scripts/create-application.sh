@@ -1,9 +1,14 @@
 #!/bin/bash
 
-# Create Application Instance Script - Step 5: Create Application Instance
-# This script creates the application instance from the deployed application package
-# Run this AFTER provider-setup.sh and deploy.sh --setup-mode
-# Prerequisites: consumer.sql must have been executed to setup secrets and permissions
+# Create Application Instance Script
+# Run this AFTER:
+#   1. provider-setup.sh (creates CI/CD user, roles, permissions)
+#   2. First pipeline run (deploys the application package with a version)
+#
+# This script:
+#   1. Creates the application instance from the deployed package
+#   2. Grants required account-level permissions to the application
+#   3. Optionally starts the application service
 
 set -e  # Exit on error
 
@@ -23,18 +28,26 @@ CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
 # ============================================
-# Load Configuration
+# Configuration - Same values as provider-setup.sh
 # ============================================
 
 SNOW_CONNECTION=${SNOW_CONNECTION:-"mkt_blendx_demo"}
-APP_CONSUMER_ROLE=${APP_CONSUMER_ROLE:-"nac_test"}
-APP_PACKAGE_NAME=${APP_PACKAGE_NAME:-"spcs_app_pkg_test"}
-APP_INSTANCE_NAME=${APP_INSTANCE_NAME:-"spcs_app_instance_test"}
-APP_VERSION=${APP_VERSION:-"v1"}
-COMPUTE_POOL=${COMPUTE_POOL:-"pool_nac"}
-SECRET_DATABASE=${SECRET_DATABASE:-"secrets_db"}
-SECRET_SCHEMA=${SECRET_SCHEMA:-"app_secrets"}
-SECRET_NAME=${SECRET_NAME:-"serper_api_key"}
+
+# CI/CD Role (from provider-setup.sh)
+CICD_ROLE=${CICD_ROLE:-"MK_BLENDX_DEPLOY_ROLE"}
+
+# Consumer role (for app installation)
+APP_CONSUMER_ROLE=${APP_CONSUMER_ROLE:-"BLENDX_APP_ROLE"}
+
+# Application Package (from provider-setup.sh)
+APP_PACKAGE_NAME=${APP_PACKAGE_NAME:-"MK_BLENDX_APP_PKG"}
+
+# Application Instance
+APP_INSTANCE_NAME=${APP_INSTANCE_NAME:-"BLENDX_APP_INSTANCE"}
+APP_VERSION=${APP_VERSION:-"V1"}
+
+# Compute Pool
+COMPUTE_POOL_NAME=${COMPUTE_POOL_NAME:-"BLENDX_CP"}
 
 # Load .env file if it exists
 if [ -f "$SCRIPT_DIR/.env" ]; then
@@ -72,6 +85,11 @@ run_sql() {
     snow sql -q "$sql" --connection ${SNOW_CONNECTION}
 }
 
+run_sql_silent() {
+    local sql=$1
+    snow sql -q "$sql" --connection ${SNOW_CONNECTION} 2>/dev/null || true
+}
+
 # ============================================
 # Display Configuration
 # ============================================
@@ -83,64 +101,152 @@ echo "=========================================="
 echo ""
 echo "Configuration:"
 echo "  Connection: $SNOW_CONNECTION"
+echo "  CI/CD Role: $CICD_ROLE"
 echo "  Consumer Role: $APP_CONSUMER_ROLE"
 echo "  Package: $APP_PACKAGE_NAME"
 echo "  Instance: $APP_INSTANCE_NAME"
 echo "  Version: $APP_VERSION"
-echo "  Compute Pool: $COMPUTE_POOL"
-echo "  Secret: $SECRET_DATABASE.$SECRET_SCHEMA.$SECRET_NAME"
+echo "  Compute Pool: $COMPUTE_POOL_NAME"
 echo ""
 
-# ============================================
-# Prerequisites Check
-# ============================================
-
-log_step "Checking Prerequisites"
-
-echo -e "${BLUE}▶${NC} Checking if secret exists..."
-SECRET_EXISTS=$(snow sql -q "USE ROLE ${APP_CONSUMER_ROLE}; USE SCHEMA ${SECRET_DATABASE}.${SECRET_SCHEMA}; SHOW SECRETS LIKE '${SECRET_NAME}';" --connection ${SNOW_CONNECTION} 2>&1 | grep -c "${SECRET_NAME}" || echo "0")
-
-if [ "$SECRET_EXISTS" -eq "0" ]; then
-    log_error "Secret does not exist!"
-    echo ""
-    echo "Please run the consumer.sql script first to setup secrets and permissions:"
-    echo -e "${CYAN}snow sql -f scripts/sql/consumer.sql --connection ${SNOW_CONNECTION}${NC}"
-    echo ""
-    exit 1
-else
-    log_info "Secret exists"
+read -p "Continue with application creation? (y/n) " -n 1 -r
+echo
+if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+    echo "Setup cancelled."
+    exit 0
 fi
 
 # ============================================
-# Step 1: Create Application Instance
+# Step 1: Check Prerequisites
 # ============================================
 
-log_step "Creating Application Instance"
+log_step "Step 1: Checking Prerequisites"
+
+# Check if a version exists in the application package
+echo -e "${BLUE}▶${NC} Checking for available versions in application package..."
+VERSION_EXISTS=$(run_sql_silent "USE ROLE ${CICD_ROLE}; SHOW VERSIONS IN APPLICATION PACKAGE ${APP_PACKAGE_NAME};" | grep -i "| V" | wc -l | tr -d ' ' || echo "0")
+
+if [ "$VERSION_EXISTS" -eq "0" ]; then
+    log_error "No versions found in application package ${APP_PACKAGE_NAME}"
+    echo ""
+    echo "Please run the pipeline first to deploy a version, then run this script again."
+    echo ""
+    exit 1
+fi
+
+log_info "Version found in application package"
+
+# ============================================
+# Step 2: Set Release Directive (if using release channels)
+# ============================================
+
+log_step "Step 2: Setting Release Directive"
+
+run_sql "Setting QA release channel default directive" \
+    "USE ROLE ${CICD_ROLE};
+     ALTER APPLICATION PACKAGE ${APP_PACKAGE_NAME} MODIFY RELEASE CHANNEL QA SET DEFAULT RELEASE DIRECTIVE VERSION=${APP_VERSION} PATCH=0;" || log_warning "Could not set release directive (channel may not exist)"
+
+# ============================================
+# Step 3: Create Application Instance
+# ============================================
+
+log_step "Step 3: Creating Application Instance"
 
 # Check if application exists
 echo -e "${BLUE}▶${NC} Checking if application instance exists..."
-
-# Query and check if application exists
-APP_EXISTS=$(snow sql -q "USE ROLE ${APP_CONSUMER_ROLE}; SHOW APPLICATIONS LIKE '${APP_INSTANCE_NAME}';" --connection ${SNOW_CONNECTION} 2>&1 | grep -c "^|.*${APP_INSTANCE_NAME}.*|" || echo "0")
-
-# Ensure APP_EXISTS is a valid number
-if [ -z "$APP_EXISTS" ] || ! [[ "$APP_EXISTS" =~ ^[0-9]+$ ]]; then
-    APP_EXISTS=0
-fi
+APP_EXISTS=$(run_sql_silent "USE ROLE ${APP_CONSUMER_ROLE}; SHOW APPLICATIONS LIKE '${APP_INSTANCE_NAME}';" | grep -ci "${APP_INSTANCE_NAME}" || echo "0")
 
 if [ "$APP_EXISTS" -gt "0" ]; then
     log_warning "Application instance already exists. Upgrading..."
     run_sql "Upgrading application" \
-        "USE ROLE ${APP_CONSUMER_ROLE}; ALTER APPLICATION ${APP_INSTANCE_NAME} UPGRADE USING VERSION ${APP_VERSION};"
+        "USE ROLE ${APP_CONSUMER_ROLE};
+         ALTER APPLICATION ${APP_INSTANCE_NAME} UPGRADE USING VERSION ${APP_VERSION};"
 else
     log_info "Creating new application instance..."
     run_sql "Creating application instance" \
         "USE ROLE ${APP_CONSUMER_ROLE};
          CREATE APPLICATION ${APP_INSTANCE_NAME}
          FROM APPLICATION PACKAGE ${APP_PACKAGE_NAME}
-         USING VERSION ${APP_VERSION}
-         COMMENT = 'BlendX Native Application with CrewAI and Serper search integration';"
+         USING VERSION ${APP_VERSION} PATCH 0
+         COMMENT = 'BlendX Native Application';"
 fi
 
-log_info "Application instance ready"
+log_info "Application instance created/upgraded"
 
+# ============================================
+# Step 4: Grant Account-Level Permissions to Application
+# ============================================
+
+log_step "Step 4: Granting Account-Level Permissions to Application"
+
+run_sql "Granting CREATE COMPUTE POOL to application" \
+    "USE ROLE ACCOUNTADMIN;
+     GRANT CREATE COMPUTE POOL ON ACCOUNT TO APPLICATION ${APP_INSTANCE_NAME};"
+
+run_sql "Granting BIND SERVICE ENDPOINT to application" \
+    "USE ROLE ACCOUNTADMIN;
+     GRANT BIND SERVICE ENDPOINT ON ACCOUNT TO APPLICATION ${APP_INSTANCE_NAME};"
+
+run_sql "Granting CREATE WAREHOUSE to application" \
+    "USE ROLE ACCOUNTADMIN;
+     GRANT CREATE WAREHOUSE ON ACCOUNT TO APPLICATION ${APP_INSTANCE_NAME};"
+
+run_sql "Granting CREATE EXTERNAL ACCESS INTEGRATION to application" \
+    "USE ROLE ACCOUNTADMIN;
+     GRANT CREATE EXTERNAL ACCESS INTEGRATION ON ACCOUNT TO APPLICATION ${APP_INSTANCE_NAME};"
+
+log_info "Account-level permissions granted to application"
+
+# ============================================
+# Step 5: Start Application Service (Optional)
+# ============================================
+
+log_step "Step 5: Start Application Service"
+
+echo ""
+read -p "Do you want to start the application service now? (y/n) " -n 1 -r
+echo
+
+if [[ $REPLY =~ ^[Yy]$ ]]; then
+    run_sql "Starting application service" \
+        "USE ROLE ${APP_CONSUMER_ROLE};
+         CALL ${APP_INSTANCE_NAME}.app_public.start_app('${COMPUTE_POOL_NAME}');"
+    log_info "Application service started"
+
+    echo ""
+    echo "To check service status:"
+    echo "  CALL ${APP_INSTANCE_NAME}.app_public.get_service_status();"
+    echo ""
+    echo "To get the application URL (once service is ready):"
+    echo "  CALL ${APP_INSTANCE_NAME}.app_public.app_url();"
+else
+    log_info "Skipped - Start the service manually when ready:"
+    echo ""
+    echo "  USE ROLE ${APP_CONSUMER_ROLE};"
+    echo "  CALL ${APP_INSTANCE_NAME}.app_public.start_app('${COMPUTE_POOL_NAME}');"
+fi
+
+# ============================================
+# Completion Message
+# ============================================
+
+echo ""
+echo "=========================================="
+echo -e "${GREEN}Application Instance Setup Complete!${NC}"
+echo "=========================================="
+echo ""
+echo "Application: ${APP_INSTANCE_NAME}"
+echo ""
+echo "Useful commands:"
+echo "  -- Check service status"
+echo "  CALL ${APP_INSTANCE_NAME}.app_public.get_service_status();"
+echo ""
+echo "  -- Get application URL"
+echo "  CALL ${APP_INSTANCE_NAME}.app_public.app_url();"
+echo ""
+echo "  -- View service logs"
+echo "  CALL ${APP_INSTANCE_NAME}.app_public.get_service_logs('frontend', 100);"
+echo ""
+echo "  -- Stop the service"
+echo "  CALL ${APP_INSTANCE_NAME}.app_public.stop_app();"
+echo ""

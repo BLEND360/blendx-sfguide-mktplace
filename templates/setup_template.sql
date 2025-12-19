@@ -9,23 +9,8 @@ GRANT USAGE ON SCHEMA app_public TO APPLICATION ROLE app_user;
 CREATE OR ALTER VERSIONED SCHEMA v1;
 GRANT USAGE ON SCHEMA v1 TO APPLICATION ROLE app_admin;
 
--- Create network rule for Serper API access (required for EAI)
-CREATE OR REPLACE NETWORK RULE app_public.serper_network_rule
-    TYPE = HOST_PORT
-    VALUE_LIST = ('google.serper.dev')
-    MODE = EGRESS;
-
--- Create external access integration for Serper API
-CREATE OR REPLACE EXTERNAL ACCESS INTEGRATION serper_eai
-    ALLOWED_NETWORK_RULES = (app_public.serper_network_rule)
-    ENABLED = TRUE;
-
--- Define app specification for external access (required for Marketplace)
-ALTER APPLICATION SET SPECIFICATION serper_api_spec
-    TYPE = EXTERNAL_ACCESS
-    LABEL = 'Serper Web Search API'
-    DESCRIPTION = 'Allows the application to connect to google.serper.dev for web search functionality'
-    HOST_PORTS = ('google.serper.dev');
+-- Network rule and External Access Integration are created in start_app() procedure
+-- after the application has been granted CREATE EXTERNAL ACCESS INTEGRATION privilege
 
 -- Create schema for application data
 CREATE SCHEMA IF NOT EXISTS app_data;
@@ -58,7 +43,18 @@ BEGIN
         EXECUTE IMMEDIATE 'CREATE COMPUTE POOL IF NOT EXISTS ' || poolname ||
             ' MIN_NODES = 1 MAX_NODES = 3 INSTANCE_FAMILY = CPU_X64_M AUTO_RESUME = TRUE AUTO_SUSPEND_SECS = 300';
 
-        -- Create the service with the app's external access integration (EAI created at setup time)
+        -- Create network rule for Serper API access
+        CREATE NETWORK RULE IF NOT EXISTS app_public.serper_network_rule
+            TYPE = HOST_PORT
+            VALUE_LIST = ('google.serper.dev')
+            MODE = EGRESS;
+
+        -- Create external access integration for Serper API
+        CREATE EXTERNAL ACCESS INTEGRATION IF NOT EXISTS serper_eai
+            ALLOWED_NETWORK_RULES = (app_public.serper_network_rule)
+            ENABLED = TRUE;
+
+        -- Create the service with the app's external access integration
         EXECUTE IMMEDIATE 'CREATE SERVICE app_public.st_spcs IN COMPUTE POOL ' || poolname ||
             ' FROM SPECIFICATION_FILE=''/fullstack.yaml'' QUERY_WAREHOUSE=' || app_warehouse ||
             ' EXTERNAL_ACCESS_INTEGRATIONS = (serper_eai)';
