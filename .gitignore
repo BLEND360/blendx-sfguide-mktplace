@@ -10,8 +10,10 @@ backend/secrets/
 *venv
 *.log
 
-# Generated setup.sql (created from template during deploy)
+# Generated files (created from templates during deploy)
 app/src/setup.sql
+app/src/manifest.yml
+app/src/fullstack.yaml
 
 # generated docs
 docs/BlendX_Documentation.html
