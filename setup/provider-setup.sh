@@ -204,7 +204,7 @@ run_sql "Granting CREATE APPLICATION to consumer role" \
 
 run_sql "Granting CI/CD role to user" \
     "USE ROLE ACCOUNTADMIN;
-     GRANT ROLE ${CICD_ROLE} TO USER ${CICD_USER};"
+     GRANT ROLE ${CICD_ROLE} TO USER ${CICD_USER};USE ROLE ACCOUNTADMIN; GRANT ROLE ${APP_CONSUMER_ROLE} TO ROLE ${CICD_ROLE};"
 
 run_sql "Granting App Consumer role to CI/CD role" \
     "USE ROLE ACCOUNTADMIN;
