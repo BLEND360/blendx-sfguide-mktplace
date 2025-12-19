@@ -43,24 +43,24 @@ BEGIN
         EXECUTE IMMEDIATE 'CREATE COMPUTE POOL IF NOT EXISTS ' || poolname ||
             ' MIN_NODES = 1 MAX_NODES = 3 INSTANCE_FAMILY = CPU_X64_M AUTO_RESUME = TRUE AUTO_SUSPEND_SECS = 300';
 
-        -- Create network rule for Serper API access
-        CREATE NETWORK RULE IF NOT EXISTS app_public.serper_network_rule
+        -- Create network rule for Serper API access (prefixed to avoid conflicts)
+        CREATE NETWORK RULE IF NOT EXISTS app_public.blendx_serper_network_rule
             TYPE = HOST_PORT
             VALUE_LIST = ('google.serper.dev')
             MODE = EGRESS;
 
-        -- Create external access integration for Serper API
-        CREATE EXTERNAL ACCESS INTEGRATION IF NOT EXISTS serper_eai
-            ALLOWED_NETWORK_RULES = (app_public.serper_network_rule)
+        -- Create external access integration for Serper API (prefixed to avoid conflicts)
+        CREATE EXTERNAL ACCESS INTEGRATION IF NOT EXISTS blendx_serper_eai
+            ALLOWED_NETWORK_RULES = (app_public.blendx_serper_network_rule)
             ENABLED = TRUE;
 
-        -- Create the service with the app's external access integration
-        EXECUTE IMMEDIATE 'CREATE SERVICE app_public.st_spcs IN COMPUTE POOL ' || poolname ||
+        -- Create the service (prefixed to avoid conflicts)
+        EXECUTE IMMEDIATE 'CREATE SERVICE app_public.blendx_st_spcs IN COMPUTE POOL ' || poolname ||
             ' FROM SPECIFICATION_FILE=''/fullstack.yaml'' QUERY_WAREHOUSE=' || app_warehouse ||
-            ' EXTERNAL_ACCESS_INTEGRATIONS = (serper_eai)';
+            ' EXTERNAL_ACCESS_INTEGRATIONS = (blendx_serper_eai)';
 
-        GRANT USAGE ON SERVICE app_public.st_spcs TO APPLICATION ROLE app_user;
-        GRANT SERVICE ROLE app_public.st_spcs!ALL_ENDPOINTS_USAGE TO APPLICATION ROLE app_user;
+        GRANT USAGE ON SERVICE app_public.blendx_st_spcs TO APPLICATION ROLE app_user;
+        GRANT SERVICE ROLE app_public.blendx_st_spcs!ALL_ENDPOINTS_USAGE TO APPLICATION ROLE app_user;
 
         RETURN 'Service started with warehouse ' || app_warehouse || '. Check status, and when ready, get URL';
 END;
@@ -74,7 +74,8 @@ CREATE OR REPLACE PROCEDURE app_public.stop_app()
     AS
 $$
 BEGIN
-    DROP SERVICE IF EXISTS app_public.st_spcs;
+    DROP SERVICE IF EXISTS app_public.blendx_st_spcs;
+    RETURN 'Service stopped';
 END
 $$;
 GRANT USAGE ON PROCEDURE app_public.stop_app() TO APPLICATION ROLE app_admin;
@@ -86,7 +87,7 @@ CREATE OR REPLACE PROCEDURE app_public.app_url()
 $$
 BEGIN
     LET ingress_url VARCHAR;
-    SHOW ENDPOINTS IN SERVICE app_public.st_spcs;
+    SHOW ENDPOINTS IN SERVICE app_public.blendx_st_spcs;
     SELECT "ingress_url" INTO :ingress_url FROM TABLE (RESULT_SCAN (LAST_QUERY_ID())) LIMIT 1;
     RETURN ingress_url;
 END
@@ -100,7 +101,7 @@ CREATE OR REPLACE PROCEDURE app_public.get_service_logs(container_name VARCHAR, 
     AS
 $$
 BEGIN
-    RETURN SYSTEM$GET_SERVICE_LOGS('app_public.st_spcs', 0, :container_name, :num_lines);
+    RETURN SYSTEM$GET_SERVICE_LOGS('app_public.blendx_st_spcs', 0, :container_name, :num_lines);
 END
 $$;
 GRANT USAGE ON PROCEDURE app_public.get_service_logs(VARCHAR, NUMBER) TO APPLICATION ROLE app_admin;
@@ -111,7 +112,7 @@ CREATE OR REPLACE PROCEDURE app_public.get_service_status()
     AS
 $$
 BEGIN
-    RETURN SYSTEM$GET_SERVICE_STATUS('app_public.st_spcs');
+    RETURN SYSTEM$GET_SERVICE_STATUS('app_public.blendx_st_spcs');
 END
 $$;
 GRANT USAGE ON PROCEDURE app_public.get_service_status() TO APPLICATION ROLE app_admin;
