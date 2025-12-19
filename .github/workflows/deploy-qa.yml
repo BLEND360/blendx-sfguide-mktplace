@@ -29,11 +29,11 @@ jobs:
           LATEST_TAG=$(git describe --tags --match "v*" --abbrev=0 2>/dev/null || echo "")
 
           if [ -n "$LATEST_TAG" ]; then
-            # Extract major version (v1.0.0 -> v1, v2.3.1 -> v2)
-            VERSION=$(echo "$LATEST_TAG" | sed -E 's/^(v[0-9]+).*/\1/')
+            # Extract major version (v1.0.0 -> V1, v2.3.1 -> V2) - uppercase for Snowflake
+            VERSION=$(echo "$LATEST_TAG" | sed -E 's/^(v[0-9]+).*/\1/' | tr '[:lower:]' '[:upper:]')
             echo "Found git tag: $LATEST_TAG -> Using version: $VERSION"
           else
-            VERSION="v1"
+            VERSION="V1"
             echo "No git tag found. Using default version: $VERSION"
           fi
 
@@ -278,7 +278,7 @@ jobs:
             snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_ROLE }}; CALL ${{ secrets.SNOWFLAKE_APP_INSTANCE }}.app_public.stop_app();" --connection mkt_blendx_demo || echo "Service not running (OK)"
             snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_ROLE }}; CALL ${{ secrets.SNOWFLAKE_APP_INSTANCE }}.app_public.start_app('${{ secrets.SNOWFLAKE_COMPUTE_POOL }}');" --connection mkt_blendx_demo
           else
-            echo "::warning::Application does not exist. Please run scripts/provider-setup.sh to install the application first."
+            echo "::warning::Application does not exist. Please run setup/create-application.sh to install the application first."
             echo "Skipping upgrade and restart."
           fi
 

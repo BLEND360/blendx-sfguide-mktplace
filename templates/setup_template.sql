@@ -30,9 +30,9 @@ CREATE OR REPLACE PROCEDURE app_public.start_app(poolname VARCHAR)
     LANGUAGE sql
     AS $$
 BEGIN
-        LET app_warehouse VARCHAR DEFAULT 'APP_WH';
+        LET app_warehouse VARCHAR DEFAULT 'BLENDX_APP_WH';
 
-        -- First, create the application warehouse
+        -- First, create the application warehouse (unique name to avoid conflicts)
         CREATE WAREHOUSE IF NOT EXISTS IDENTIFIER(:app_warehouse)
             WAREHOUSE_SIZE = 'X-SMALL'
             AUTO_SUSPEND = 60

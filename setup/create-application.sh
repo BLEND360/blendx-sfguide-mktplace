@@ -137,14 +137,25 @@ fi
 log_info "Version found in application package"
 
 # ============================================
-# Step 2: Set Release Directive (if using release channels)
+# Step 2: Get Latest Patch Number
 # ============================================
 
-log_step "Step 2: Setting Release Directive"
+log_step "Step 2: Getting Latest Patch Number"
 
-run_sql "Setting QA release channel default directive" \
-    "USE ROLE ${CICD_ROLE};
-     ALTER APPLICATION PACKAGE ${APP_PACKAGE_NAME} MODIFY RELEASE CHANNEL QA SET DEFAULT RELEASE DIRECTIVE VERSION=${APP_VERSION} PATCH=0;" || log_warning "Could not set release directive (channel may not exist)"
+echo -e "${BLUE}▶${NC} Querying latest patch for version ${APP_VERSION}..."
+# Get versions output - format is pipe-separated table: | version | patch | label | ...
+VERSIONS_OUTPUT=$(snow sql -q "USE ROLE ${CICD_ROLE}; SHOW VERSIONS IN APPLICATION PACKAGE ${APP_PACKAGE_NAME};" --connection ${SNOW_CONNECTION} 2>&1)
+
+# Extract patch number from pipe-separated output
+# Lines look like: | V1      | 2     | Version One | ...
+LATEST_PATCH=$(echo "$VERSIONS_OUTPUT" | grep -i "| ${APP_VERSION} " | awk -F'|' '{print $3}' | tr -d ' ' | sort -n | tail -1 || echo "0")
+
+# Ensure LATEST_PATCH is a valid number
+if [ -z "$LATEST_PATCH" ] || ! [[ "$LATEST_PATCH" =~ ^[0-9]+$ ]]; then
+    LATEST_PATCH=0
+fi
+
+log_info "Latest patch: ${LATEST_PATCH}"
 
 # ============================================
 # Step 3: Create Application Instance
@@ -152,22 +163,27 @@ run_sql "Setting QA release channel default directive" \
 
 log_step "Step 3: Creating Application Instance"
 
-# Check if application exists
+# Check if application exists using SELECT COUNT
 echo -e "${BLUE}▶${NC} Checking if application instance exists..."
-APP_EXISTS=$(run_sql_silent "USE ROLE ${APP_CONSUMER_ROLE}; SHOW APPLICATIONS LIKE '${APP_INSTANCE_NAME}';" | grep -ci "${APP_INSTANCE_NAME}" || echo "0")
+APP_EXISTS=$(snow sql -q "SELECT COUNT(*) FROM SNOWFLAKE.INFORMATION_SCHEMA.DATABASES WHERE DATABASE_NAME = '${APP_INSTANCE_NAME}' AND TYPE = 'APPLICATION';" --connection ${SNOW_CONNECTION} 2>/dev/null | grep -E "^\| *[0-9]+ *\|$" | tr -d '| ' || echo "0")
+
+# Ensure APP_EXISTS is a valid number
+if [ -z "$APP_EXISTS" ] || ! [[ "$APP_EXISTS" =~ ^[0-9]+$ ]]; then
+    APP_EXISTS=0
+fi
 
 if [ "$APP_EXISTS" -gt "0" ]; then
     log_warning "Application instance already exists. Upgrading..."
     run_sql "Upgrading application" \
         "USE ROLE ${APP_CONSUMER_ROLE};
-         ALTER APPLICATION ${APP_INSTANCE_NAME} UPGRADE USING VERSION ${APP_VERSION};"
+         ALTER APPLICATION ${APP_INSTANCE_NAME} UPGRADE USING VERSION ${APP_VERSION} PATCH ${LATEST_PATCH};"
 else
-    log_info "Creating new application instance..."
+    log_info "Creating new application instance with version ${APP_VERSION} patch ${LATEST_PATCH}..."
     run_sql "Creating application instance" \
         "USE ROLE ${APP_CONSUMER_ROLE};
          CREATE APPLICATION ${APP_INSTANCE_NAME}
          FROM APPLICATION PACKAGE ${APP_PACKAGE_NAME}
-         USING VERSION ${APP_VERSION} PATCH 0
+         USING VERSION ${APP_VERSION} PATCH ${LATEST_PATCH}
          COMMENT = 'BlendX Native Application';"
 fi
 
