@@ -267,16 +267,19 @@ jobs:
           # Set release directive to latest patch
           snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; ALTER APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }} MODIFY RELEASE CHANNEL QA SET DEFAULT RELEASE DIRECTIVE VERSION=${VERSION} PATCH=${PATCH};" --connection mkt_blendx_demo
 
-      - name: Check if QA application exists and restart
+      - name: Upgrade and restart QA application
         run: |
-          APP_EXISTS=$(snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_ROLE }}; SHOW APPLICATIONS LIKE '${{ secrets.SNOWFLAKE_APP_INSTANCE }}';" --connection mkt_blendx_demo 2>&1 | grep "${{ secrets.SNOWFLAKE_APP_INSTANCE }}" | wc -l | tr -d ' ' || echo "0")
+          PATCH="${{ steps.get_patch.outputs.patch }}"
+          APP_EXISTS=$(snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_ROLE }}; SHOW APPLICATIONS LIKE '${{ secrets.SNOWFLAKE_APP_INSTANCE }}';" --connection mkt_blendx_demo 2>&1 | grep -i "${{ secrets.SNOWFLAKE_APP_INSTANCE }}" | wc -l | tr -d ' ' || echo "0")
 
           if [ "$APP_EXISTS" -gt "0" ]; then
-            echo "Application exists. Restarting service..."
+            echo "Application exists. Upgrading and restarting service..."
+            snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_ROLE }}; ALTER APPLICATION ${{ secrets.SNOWFLAKE_APP_INSTANCE }} UPGRADE USING VERSION ${VERSION} PATCH ${PATCH};" --connection mkt_blendx_demo || echo "Upgrade not needed or failed (OK)"
             snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_ROLE }}; CALL ${{ secrets.SNOWFLAKE_APP_INSTANCE }}.app_public.stop_app();" --connection mkt_blendx_demo || echo "Service not running (OK)"
             snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_ROLE }}; CALL ${{ secrets.SNOWFLAKE_APP_INSTANCE }}.app_public.start_app('${{ secrets.SNOWFLAKE_COMPUTE_POOL }}');" --connection mkt_blendx_demo
           else
-            echo "Application does not exist yet. Skipping restart."
+            echo "::warning::Application does not exist. Please run scripts/provider-setup.sh to install the application first."
+            echo "Skipping upgrade and restart."
           fi
 
       - name: Wait for service to start

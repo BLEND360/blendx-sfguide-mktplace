@@ -298,10 +298,88 @@ else
 fi
 
 # ============================================
-# Step 10: Verify Permissions
+# Step 10: Create Application Instance (First Install)
 # ============================================
 
-log_step "Step 10: Verifying Permissions"
+log_step "Step 10: Creating Application Instance"
+
+# Application instance name
+APP_INSTANCE_NAME=${APP_INSTANCE_NAME:-"BLENDX_APP_INSTANCE"}
+COMPUTE_POOL_NAME=${COMPUTE_POOL_NAME:-"BLENDX_CP"}
+
+echo "This step will:"
+echo "  1. Install the application from the package (requires a version to be registered first)"
+echo "  2. Grant required account-level permissions to the application"
+echo ""
+echo "  App Instance: $APP_INSTANCE_NAME"
+echo "  Compute Pool: $COMPUTE_POOL_NAME"
+echo ""
+read -p "Do you want to install the application now? (y/n) " -n 1 -r
+echo
+
+if [[ $REPLY =~ ^[Yy]$ ]]; then
+    # Check if a version exists
+    echo "Checking for available versions..."
+    VERSION_EXISTS=$(run_sql_silent "USE ROLE ${CICD_ROLE}; SHOW VERSIONS IN APPLICATION PACKAGE ${APP_PACKAGE_NAME};" | grep -i "| V" | wc -l | tr -d ' ' || echo "0")
+
+    if [ "$VERSION_EXISTS" -gt "0" ]; then
+        run_sql "Installing application" \
+            "USE ROLE ${APP_CONSUMER_ROLE};
+             CREATE APPLICATION IF NOT EXISTS ${APP_INSTANCE_NAME}
+             FROM APPLICATION PACKAGE ${APP_PACKAGE_NAME}
+             USING VERSION V1 PATCH 0;"
+
+        run_sql "Granting CREATE COMPUTE POOL to application" \
+            "USE ROLE ACCOUNTADMIN;
+             GRANT CREATE COMPUTE POOL ON ACCOUNT TO APPLICATION ${APP_INSTANCE_NAME};"
+
+        run_sql "Granting BIND SERVICE ENDPOINT to application" \
+            "USE ROLE ACCOUNTADMIN;
+             GRANT BIND SERVICE ENDPOINT ON ACCOUNT TO APPLICATION ${APP_INSTANCE_NAME};"
+
+        run_sql "Granting CREATE WAREHOUSE to application" \
+            "USE ROLE ACCOUNTADMIN;
+             GRANT CREATE WAREHOUSE ON ACCOUNT TO APPLICATION ${APP_INSTANCE_NAME};"
+
+        log_info "Application installed and permissions granted"
+
+        echo ""
+        read -p "Do you want to start the application service now? (y/n) " -n 1 -r
+        echo
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            run_sql "Starting application service" \
+                "USE ROLE ${APP_CONSUMER_ROLE};
+                 CALL ${APP_INSTANCE_NAME}.app_public.start_app('${COMPUTE_POOL_NAME}');"
+            log_info "Application service started"
+        fi
+    else
+        log_warning "No versions found in application package. Run the pipeline first to register a version, then run this step again."
+    fi
+else
+    log_info "Skipped - Application will need to be installed manually after first pipeline run"
+    echo ""
+    echo "After the first pipeline run registers a version, run these commands:"
+    echo ""
+    echo "  -- Install the application"
+    echo "  USE ROLE ${APP_CONSUMER_ROLE};"
+    echo "  CREATE APPLICATION ${APP_INSTANCE_NAME} FROM APPLICATION PACKAGE ${APP_PACKAGE_NAME} USING VERSION V1 PATCH 0;"
+    echo ""
+    echo "  -- Grant required permissions (as ACCOUNTADMIN)"
+    echo "  USE ROLE ACCOUNTADMIN;"
+    echo "  GRANT CREATE COMPUTE POOL ON ACCOUNT TO APPLICATION ${APP_INSTANCE_NAME};"
+    echo "  GRANT BIND SERVICE ENDPOINT ON ACCOUNT TO APPLICATION ${APP_INSTANCE_NAME};"
+    echo "  GRANT CREATE WAREHOUSE ON ACCOUNT TO APPLICATION ${APP_INSTANCE_NAME};"
+    echo ""
+    echo "  -- Start the service"
+    echo "  USE ROLE ${APP_CONSUMER_ROLE};"
+    echo "  CALL ${APP_INSTANCE_NAME}.app_public.start_app('${COMPUTE_POOL_NAME}');"
+fi
+
+# ============================================
+# Step 11: Verify Permissions
+# ============================================
+
+log_step "Step 11: Verifying Permissions"
 
 run_sql "Showing grants to CI/CD role" \
     "SHOW GRANTS TO ROLE ${CICD_ROLE};"
@@ -327,7 +405,7 @@ echo "  SNOWFLAKE_SCHEMA: ${SCHEMA_NAME}"
 echo "  SNOWFLAKE_PRIVATE_KEY_RAW: <content of keys/pipeline/snowflake_key.p8>"
 echo "  SNOWFLAKE_REPO: <your-image-repo-url>"
 echo "  SNOWFLAKE_APP_PACKAGE: ${APP_PACKAGE_NAME}"
-echo "  SNOWFLAKE_APP_INSTANCE: <name-for-installed-app>"
+echo "  SNOWFLAKE_APP_INSTANCE: BLENDX_APP_INSTANCE"
 echo "  SNOWFLAKE_COMPUTE_POOL: <your-compute-pool>"
 echo "  SNOWFLAKE_ROLE: ${APP_CONSUMER_ROLE}"
 echo ""
