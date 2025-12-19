@@ -268,7 +268,7 @@
               <!-- Welcome message -->
               <div v-if="chatMessages.length === 0" class="text-center grey--text py-8">
                 <v-icon size="64" color="grey lighten-1">mdi-chat-processing-outline</v-icon>
-                <p class="mt-4">Send a message to generate a workflow with the NL Generator</p>
+                <p class="mt-4">Send a message to generate a workflow</p>
               </div>
 
               <!-- Chat messages -->
