@@ -50,6 +50,7 @@ CREATE USER IF NOT EXISTS MK_BLENDX_DEPLOY_USER
 -- ============================================================================
 CREATE ROLE IF NOT EXISTS MK_BLENDX_DEPLOY_ROLE;
 GRANT ROLE MK_BLENDX_DEPLOY_ROLE TO USER MK_BLENDX_DEPLOY_USER;
+GRANT ROLE MK_BLENDX_DEPLOY_ROLE TO ROLE BLENDX_TEAM;
 
 -- Set default role and warehouse for the user
 ALTER USER MK_BLENDX_DEPLOY_USER SET DEFAULT_ROLE = 'MK_BLENDX_DEPLOY_ROLE';
@@ -92,7 +93,18 @@ GRANT CREATE APPLICATION PACKAGE ON ACCOUNT TO ROLE MK_BLENDX_DEPLOY_ROLE;
 -- GRANT USAGE ON APPLICATION <APP_INSTANCE_NAME> TO ROLE MK_BLENDX_DEPLOY_ROLE;
 
 -- ============================================================================
--- 9. Verify assigned permissions
+-- 9. Application grants (run AFTER first app installation)
+-- ============================================================================
+-- These grants allow the installed application to create compute resources.
+-- Run these commands after the application is installed for the first time.
+-- Replace <APP_INSTANCE_NAME> with the actual application instance name.
+--
+-- GRANT CREATE COMPUTE POOL ON ACCOUNT TO APPLICATION <APP_INSTANCE_NAME>;
+-- GRANT BIND SERVICE ENDPOINT ON ACCOUNT TO APPLICATION <APP_INSTANCE_NAME>;
+-- GRANT CREATE WAREHOUSE ON ACCOUNT TO APPLICATION <APP_INSTANCE_NAME>;
+
+-- ============================================================================
+-- 10. Verify assigned permissions
 -- ============================================================================
 SHOW GRANTS TO ROLE MK_BLENDX_DEPLOY_ROLE;
 
