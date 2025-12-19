@@ -9,7 +9,7 @@ spec:
       env:
         ENVIRONMENT: PRODUCTION
         SNOWFLAKE_AUTHMETHOD: oauth
-        SNOWFLAKE_WAREHOUSE: APP_WH
+        SNOWFLAKE_WAREHOUSE: BLENDX_APP_WH
         # SNOWFLAKE_DATABASE is intentionally not set - will use session context from OAuth
         # Tables are accessed as schema.table_name using the app's database context
         SNOWFLAKE_SCHEMA: app_data
