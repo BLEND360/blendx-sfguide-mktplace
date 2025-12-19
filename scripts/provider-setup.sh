@@ -194,16 +194,28 @@ run_sql "Creating CI/CD role" \
     "USE ROLE ACCOUNTADMIN;
      CREATE ROLE IF NOT EXISTS ${CICD_ROLE};"
 
-run_sql "Granting role to user" \
+run_sql "Creating App Consumer role" \
+    "USE ROLE ACCOUNTADMIN;
+     CREATE ROLE IF NOT EXISTS ${APP_CONSUMER_ROLE};"
+
+run_sql "Granting CREATE APPLICATION to consumer role" \
+    "USE ROLE ACCOUNTADMIN;
+     GRANT CREATE APPLICATION ON ACCOUNT TO ROLE ${APP_CONSUMER_ROLE};"
+
+run_sql "Granting CI/CD role to user" \
     "USE ROLE ACCOUNTADMIN;
      GRANT ROLE ${CICD_ROLE} TO USER ${CICD_USER};"
+
+run_sql "Granting App Consumer role to CI/CD role" \
+    "USE ROLE ACCOUNTADMIN;
+     GRANT ROLE ${APP_CONSUMER_ROLE} TO ROLE ${CICD_ROLE};"
 
 run_sql "Setting default role and warehouse" \
     "USE ROLE ACCOUNTADMIN;
      ALTER USER ${CICD_USER} SET DEFAULT_ROLE = '${CICD_ROLE}';
      ALTER USER ${CICD_USER} SET DEFAULT_WAREHOUSE = '${WAREHOUSE_NAME}';"
 
-log_info "CI/CD role created and assigned"
+log_info "CI/CD and App Consumer roles created and assigned"
 
 # ============================================
 # Step 4: Grant Warehouse Permissions
@@ -211,9 +223,13 @@ log_info "CI/CD role created and assigned"
 
 log_step "Step 4: Granting Warehouse Permissions"
 
-run_sql "Granting warehouse usage" \
+run_sql "Granting warehouse usage to CI/CD role" \
     "USE ROLE ACCOUNTADMIN;
      GRANT USAGE ON WAREHOUSE ${WAREHOUSE_NAME} TO ROLE ${CICD_ROLE};"
+
+run_sql "Granting warehouse usage to App Consumer role" \
+    "USE ROLE ACCOUNTADMIN;
+     GRANT USAGE ON WAREHOUSE ${WAREHOUSE_NAME} TO ROLE ${APP_CONSUMER_ROLE};"
 
 log_info "Warehouse permissions granted"
 
@@ -286,7 +302,7 @@ if [[ $REPLY =~ ^[Yy]$ ]]; then
 
     run_sql "Creating QA release channel" \
         "USE ROLE ${CICD_ROLE};
-         ALTER APPLICATION PACKAGE ${APP_PACKAGE_NAME} ADD RELEASE CHANNEL IF NOT EXISTS QA;" || log_warning "QA channel may already exist"
+         ALTER APPLICATION PACKAGE ${APP_PACKAGE_NAME} ADD RELEASE CHANNEL QA;" || log_warning "QA channel may already exist"
 
     run_sql "Granting install permission to consumer role" \
         "USE ROLE ${CICD_ROLE};
@@ -298,88 +314,10 @@ else
 fi
 
 # ============================================
-# Step 10: Create Application Instance (First Install)
+# Step 10: Verify Permissions
 # ============================================
 
-log_step "Step 10: Creating Application Instance"
-
-# Application instance name
-APP_INSTANCE_NAME=${APP_INSTANCE_NAME:-"BLENDX_APP_INSTANCE"}
-COMPUTE_POOL_NAME=${COMPUTE_POOL_NAME:-"BLENDX_CP"}
-
-echo "This step will:"
-echo "  1. Install the application from the package (requires a version to be registered first)"
-echo "  2. Grant required account-level permissions to the application"
-echo ""
-echo "  App Instance: $APP_INSTANCE_NAME"
-echo "  Compute Pool: $COMPUTE_POOL_NAME"
-echo ""
-read -p "Do you want to install the application now? (y/n) " -n 1 -r
-echo
-
-if [[ $REPLY =~ ^[Yy]$ ]]; then
-    # Check if a version exists
-    echo "Checking for available versions..."
-    VERSION_EXISTS=$(run_sql_silent "USE ROLE ${CICD_ROLE}; SHOW VERSIONS IN APPLICATION PACKAGE ${APP_PACKAGE_NAME};" | grep -i "| V" | wc -l | tr -d ' ' || echo "0")
-
-    if [ "$VERSION_EXISTS" -gt "0" ]; then
-        run_sql "Installing application" \
-            "USE ROLE ${APP_CONSUMER_ROLE};
-             CREATE APPLICATION IF NOT EXISTS ${APP_INSTANCE_NAME}
-             FROM APPLICATION PACKAGE ${APP_PACKAGE_NAME}
-             USING VERSION V1 PATCH 0;"
-
-        run_sql "Granting CREATE COMPUTE POOL to application" \
-            "USE ROLE ACCOUNTADMIN;
-             GRANT CREATE COMPUTE POOL ON ACCOUNT TO APPLICATION ${APP_INSTANCE_NAME};"
-
-        run_sql "Granting BIND SERVICE ENDPOINT to application" \
-            "USE ROLE ACCOUNTADMIN;
-             GRANT BIND SERVICE ENDPOINT ON ACCOUNT TO APPLICATION ${APP_INSTANCE_NAME};"
-
-        run_sql "Granting CREATE WAREHOUSE to application" \
-            "USE ROLE ACCOUNTADMIN;
-             GRANT CREATE WAREHOUSE ON ACCOUNT TO APPLICATION ${APP_INSTANCE_NAME};"
-
-        log_info "Application installed and permissions granted"
-
-        echo ""
-        read -p "Do you want to start the application service now? (y/n) " -n 1 -r
-        echo
-        if [[ $REPLY =~ ^[Yy]$ ]]; then
-            run_sql "Starting application service" \
-                "USE ROLE ${APP_CONSUMER_ROLE};
-                 CALL ${APP_INSTANCE_NAME}.app_public.start_app('${COMPUTE_POOL_NAME}');"
-            log_info "Application service started"
-        fi
-    else
-        log_warning "No versions found in application package. Run the pipeline first to register a version, then run this step again."
-    fi
-else
-    log_info "Skipped - Application will need to be installed manually after first pipeline run"
-    echo ""
-    echo "After the first pipeline run registers a version, run these commands:"
-    echo ""
-    echo "  -- Install the application"
-    echo "  USE ROLE ${APP_CONSUMER_ROLE};"
-    echo "  CREATE APPLICATION ${APP_INSTANCE_NAME} FROM APPLICATION PACKAGE ${APP_PACKAGE_NAME} USING VERSION V1 PATCH 0;"
-    echo ""
-    echo "  -- Grant required permissions (as ACCOUNTADMIN)"
-    echo "  USE ROLE ACCOUNTADMIN;"
-    echo "  GRANT CREATE COMPUTE POOL ON ACCOUNT TO APPLICATION ${APP_INSTANCE_NAME};"
-    echo "  GRANT BIND SERVICE ENDPOINT ON ACCOUNT TO APPLICATION ${APP_INSTANCE_NAME};"
-    echo "  GRANT CREATE WAREHOUSE ON ACCOUNT TO APPLICATION ${APP_INSTANCE_NAME};"
-    echo ""
-    echo "  -- Start the service"
-    echo "  USE ROLE ${APP_CONSUMER_ROLE};"
-    echo "  CALL ${APP_INSTANCE_NAME}.app_public.start_app('${COMPUTE_POOL_NAME}');"
-fi
-
-# ============================================
-# Step 11: Verify Permissions
-# ============================================
-
-log_step "Step 11: Verifying Permissions"
+log_step "Step 10: Verifying Permissions"
 
 run_sql "Showing grants to CI/CD role" \
     "SHOW GRANTS TO ROLE ${CICD_ROLE};"
@@ -414,5 +352,7 @@ echo "  cat $PROJECT_ROOT/keys/pipeline/snowflake_key.p8"
 echo ""
 echo "Next steps:"
 echo "  1. Configure the GitHub secrets in your repository"
-echo "  2. Create a PR to the 'develop' branch and merge it to trigger the QA deployment"
+echo "  2. Run the pipeline to deploy the first version of the application package"
+echo "  3. Run ./scripts/create-application.sh to create the application instance"
+echo "  4. For subsequent updates, the pipeline will handle upgrades automatically"
 echo ""

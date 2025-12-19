@@ -195,7 +195,7 @@ jobs:
 
           # Create QA release channel if it doesn't exist
           echo "Creating QA release channel if it doesn't exist..."
-          snow sql -q "ALTER APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }} ADD RELEASE CHANNEL IF NOT EXISTS QA;" --connection mkt_blendx_demo || echo "QA channel may already exist (OK)"
+          snow sql -q "ALTER APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }} ADD RELEASE CHANNEL QA;" --connection mkt_blendx_demo || echo "QA channel may already exist (OK)"
 
       - name: Clean up old versions not in release channel
         run: |
