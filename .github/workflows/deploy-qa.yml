@@ -270,13 +270,32 @@ jobs:
       - name: Upgrade and restart QA application
         run: |
           PATCH="${{ steps.get_patch.outputs.patch }}"
-          APP_EXISTS=$(snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_ROLE }}; SHOW APPLICATIONS LIKE '${{ secrets.SNOWFLAKE_APP_INSTANCE }}';" --connection mkt_blendx_demo 2>&1 | grep -i "${{ secrets.SNOWFLAKE_APP_INSTANCE }}" | wc -l | tr -d ' ' || echo "0")
+
+          # Debug: Show what SHOW APPLICATIONS returns
+          echo "Checking for application ${{ secrets.SNOWFLAKE_APP_INSTANCE }}..."
+          APP_OUTPUT=$(snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_ROLE }}; SHOW APPLICATIONS LIKE '${{ secrets.SNOWFLAKE_APP_INSTANCE }}';" --connection mkt_blendx_demo 2>&1)
+          echo "SHOW APPLICATIONS output:"
+          echo "$APP_OUTPUT"
+
+          # Check if output contains "0 Row" (no results) - if not, app exists
+          if echo "$APP_OUTPUT" | grep -q "0 Row"; then
+            echo "No application found (0 Row in output)"
+            APP_EXISTS=0
+          else
+            echo "Application found"
+            APP_EXISTS=1
+          fi
+
+          echo "APP_EXISTS=$APP_EXISTS"
 
           if [ "$APP_EXISTS" -gt "0" ]; then
             echo "Application exists. Upgrading application package..."
             snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_ROLE }}; ALTER APPLICATION ${{ secrets.SNOWFLAKE_APP_INSTANCE }} UPGRADE USING VERSION ${VERSION} PATCH ${PATCH};" --connection mkt_blendx_demo || echo "Upgrade not needed or failed (OK)"
 
             echo "Restarting service with force pull..."
+            echo "Using ROLE=${{ secrets.SNOWFLAKE_ROLE }}"
+            echo "Using APP_INSTANCE=${{ secrets.SNOWFLAKE_APP_INSTANCE }}"
+            echo "Using COMPUTE_POOL=${{ secrets.SNOWFLAKE_COMPUTE_POOL }}"
             export SNOWFLAKE_ROLE="${{ secrets.SNOWFLAKE_ROLE }}"
             export SNOWFLAKE_APP_INSTANCE="${{ secrets.SNOWFLAKE_APP_INSTANCE }}"
             export SNOWFLAKE_COMPUTE_POOL="${{ secrets.SNOWFLAKE_COMPUTE_POOL }}"
@@ -288,11 +307,38 @@ jobs:
             echo "Skipping upgrade and restart."
           fi
 
+      - name: Wait for service to be ready
+        run: |
+          echo "Waiting 60 seconds for service to be fully ready..."
+          sleep 60
+
+      - name: Get Application URL
+        id: get_url
+        run: |
+          APP_EXISTS=$(snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_ROLE }}; SHOW APPLICATIONS LIKE '${{ secrets.SNOWFLAKE_APP_INSTANCE }}';" --connection mkt_blendx_demo 2>&1 | grep -i "${{ secrets.SNOWFLAKE_APP_INSTANCE }}" | wc -l | tr -d ' ' || echo "0")
+
+          if [ "$APP_EXISTS" -gt "0" ]; then
+            echo "=========================================="
+            echo "SERVICE STATUS"
+            echo "=========================================="
+            snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_ROLE }}; CALL ${{ secrets.SNOWFLAKE_APP_INSTANCE }}.app_public.get_service_status();" --connection mkt_blendx_demo
+
+            echo ""
+            echo "=========================================="
+            echo "APPLICATION URL"
+            echo "=========================================="
+            APP_URL=$(snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_ROLE }}; CALL ${{ secrets.SNOWFLAKE_APP_INSTANCE }}.app_public.app_url();" --connection mkt_blendx_demo 2>&1 | grep -oE 'https://[^[:space:]|]+' | head -1 || echo "URL not available yet")
+            echo "🚀 $APP_URL"
+            echo "app_url=$APP_URL" >> $GITHUB_OUTPUT
+          fi
+
       - name: Summary
         run: |
           echo "=========================================="
           echo "QA Deployment completed!"
           echo "=========================================="
           echo "Version $VERSION patch ${{ steps.get_patch.outputs.patch }} deployed to QA channel"
+          echo ""
+          echo "🚀 Application URL: ${{ steps.get_url.outputs.app_url }}"
           echo ""
           echo "The QA application will automatically receive updates through the QA release channel."

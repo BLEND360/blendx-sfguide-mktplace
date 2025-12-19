@@ -2,8 +2,8 @@
 
 # Configuration - can be overridden via environment variables
 ROLE="${SNOWFLAKE_ROLE:-BLENDX_APP_ROLE}"
-APP_INSTANCE="${SNOWFLAKE_APP_INSTANCE:-spcs_app_instance_test}"
-COMPUTE_POOL="${SNOWFLAKE_COMPUTE_POOL:-pool_nac}"
+APP_INSTANCE="${SNOWFLAKE_APP_INSTANCE:-BLENDX_APP_INSTANCE}"
+COMPUTE_POOL="${SNOWFLAKE_COMPUTE_POOL:-BLENDX_CP}"
 CONNECTION="${SNOWFLAKE_CONNECTION:-mkt_blendx_demo}"
 
 echo "============================================"
