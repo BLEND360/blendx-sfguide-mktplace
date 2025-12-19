@@ -410,15 +410,17 @@ jobs:
       - name: Get Application URL
         id: get_url
         run: |
+          set +e  # Don't exit on error
           APP_OUTPUT=$(snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_ROLE }}; SHOW APPLICATIONS LIKE '${{ secrets.SNOWFLAKE_APP_INSTANCE }}';" --connection mkt_blendx_demo 2>&1)
+          SQL_EXIT_CODE=$?
 
-          if echo "$APP_OUTPUT" | grep -q "0 Row"; then
-            echo "Application not found"
+          if [ $SQL_EXIT_CODE -ne 0 ] || echo "$APP_OUTPUT" | grep -q "0 Row"; then
+            echo "Application not found or error occurred"
           else
             echo "=========================================="
             echo "SERVICE STATUS"
             echo "=========================================="
-            snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_ROLE }}; CALL ${{ secrets.SNOWFLAKE_APP_INSTANCE }}.app_public.get_service_status();" --connection mkt_blendx_demo
+            snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_ROLE }}; CALL ${{ secrets.SNOWFLAKE_APP_INSTANCE }}.app_public.get_service_status();" --connection mkt_blendx_demo || echo "Could not get service status"
 
             echo ""
             echo "=========================================="
@@ -428,6 +430,7 @@ jobs:
             echo "🚀 $APP_URL"
             echo "app_url=$APP_URL" >> $GITHUB_OUTPUT
           fi
+          exit 0  # Always succeed
 
       - name: Summary
         run: |
