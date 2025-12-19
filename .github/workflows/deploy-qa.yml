@@ -233,7 +233,7 @@ jobs:
       - name: Test Snowflake connection
         run: snow connection test --connection mkt_blendx_demo
 
-      - name: Generate manifest.yml from template
+      - name: Generate manifest.yml and fullstack.yaml from templates
         run: |
           IMG_REPO=$(echo "${{ secrets.SNOWFLAKE_REPO }}" | awk -F'/' '{print $NF}')
 
@@ -242,7 +242,12 @@ jobs:
               -e "s/{{SNOWFLAKE_IMG_REPO}}/${IMG_REPO}/g" \
               templates/manifest_template.yml > app/src/manifest.yml
 
-          echo "Generated app/src/manifest.yml with:"
+          sed -e "s/{{SNOWFLAKE_DATABASE}}/${{ secrets.SNOWFLAKE_DATABASE }}/g" \
+              -e "s/{{SNOWFLAKE_SCHEMA}}/${{ secrets.SNOWFLAKE_SCHEMA }}/g" \
+              -e "s/{{SNOWFLAKE_IMG_REPO}}/${IMG_REPO}/g" \
+              templates/fullstack_template.yaml > app/src/fullstack.yaml
+
+          echo "Generated app/src/manifest.yml and app/src/fullstack.yaml with:"
           echo "  DATABASE: ${{ secrets.SNOWFLAKE_DATABASE }}"
           echo "  SCHEMA: ${{ secrets.SNOWFLAKE_SCHEMA }}"
           echo "  IMG_REPO: ${IMG_REPO}"
@@ -388,9 +393,6 @@ jobs:
             snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_ROLE }}; ALTER APPLICATION ${{ secrets.SNOWFLAKE_APP_INSTANCE }} UPGRADE USING VERSION ${VERSION} PATCH ${PATCH};" --connection mkt_blendx_demo || echo "Upgrade not needed or failed (OK)"
 
             echo "Restarting service with force pull..."
-            echo "Using ROLE=${{ secrets.SNOWFLAKE_ROLE }}"
-            echo "Using APP_INSTANCE=${{ secrets.SNOWFLAKE_APP_INSTANCE }}"
-            echo "Using COMPUTE_POOL=${{ secrets.SNOWFLAKE_COMPUTE_POOL }}"
             export SNOWFLAKE_ROLE="${{ secrets.SNOWFLAKE_ROLE }}"
             export SNOWFLAKE_APP_INSTANCE="${{ secrets.SNOWFLAKE_APP_INSTANCE }}"
             export SNOWFLAKE_COMPUTE_POOL="${{ secrets.SNOWFLAKE_COMPUTE_POOL }}"
@@ -410,15 +412,17 @@ jobs:
       - name: Get Application URL
         id: get_url
         run: |
+          set +e  # Don't exit on error
           APP_OUTPUT=$(snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_ROLE }}; SHOW APPLICATIONS LIKE '${{ secrets.SNOWFLAKE_APP_INSTANCE }}';" --connection mkt_blendx_demo 2>&1)
+          SQL_EXIT_CODE=$?
 
-          if echo "$APP_OUTPUT" | grep -q "0 Row"; then
-            echo "Application not found"
+          if [ $SQL_EXIT_CODE -ne 0 ] || echo "$APP_OUTPUT" | grep -q "0 Row"; then
+            echo "Application not found or error occurred"
           else
             echo "=========================================="
             echo "SERVICE STATUS"
             echo "=========================================="
-            snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_ROLE }}; CALL ${{ secrets.SNOWFLAKE_APP_INSTANCE }}.app_public.get_service_status();" --connection mkt_blendx_demo
+            snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_ROLE }}; CALL ${{ secrets.SNOWFLAKE_APP_INSTANCE }}.app_public.get_service_status();" --connection mkt_blendx_demo || echo "Could not get service status"
 
             echo ""
             echo "=========================================="
@@ -428,6 +432,7 @@ jobs:
             echo "🚀 $APP_URL"
             echo "app_url=$APP_URL" >> $GITHUB_OUTPUT
           fi
+          exit 0  # Always succeed
 
       - name: Summary
         run: |
