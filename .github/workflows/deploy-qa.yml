@@ -312,20 +312,28 @@ jobs:
           set +e
           echo "Checking for application ${{ secrets.SNOWFLAKE_APP_INSTANCE }}..."
 
-          APP_JSON=$(snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_ROLE }}; SHOW APPLICATIONS LIKE '${{ secrets.SNOWFLAKE_APP_INSTANCE }}';" \
-            --connection ${{ env.SNOWFLAKE_CONNECTION }} -o json 2>/dev/null) || APP_JSON="[]"
+          # First set the role, then query applications separately
+          snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_ROLE }};" --connection ${{ env.SNOWFLAKE_CONNECTION }}
 
-          APP_EXISTS=$(echo "$APP_JSON" | jq 'length')
-          set -e
+          APP_OUTPUT=$(snow sql -q "SHOW APPLICATIONS LIKE '${{ secrets.SNOWFLAKE_APP_INSTANCE }}';" \
+            --connection ${{ env.SNOWFLAKE_CONNECTION }} 2>&1)
 
-          if [ "$APP_EXISTS" -gt "0" ]; then
-            echo "Application exists. Calling update_service procedure..."
-            snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_ROLE }}; CALL ${{ secrets.SNOWFLAKE_APP_INSTANCE }}.app_public.update_service();" \
-              --connection ${{ env.SNOWFLAKE_CONNECTION }} || echo "Update completed or not needed"
-          else
+          echo "Application query output:"
+          echo "$APP_OUTPUT"
+
+          # Check if output contains "0 Row" (no applications found)
+          if echo "$APP_OUTPUT" | grep -q "0 Row"; then
             echo "::warning::Application does not exist. Run setup/create-application.sh first."
             exit 0
+          elif echo "$APP_OUTPUT" | grep -qi "error\|does not exist"; then
+            echo "::warning::Error checking application or application does not exist."
+            exit 0
           fi
+
+          set -e
+          echo "Application exists. Calling update_service procedure..."
+          snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_ROLE }}; CALL ${{ secrets.SNOWFLAKE_APP_INSTANCE }}.app_public.update_service();" \
+            --connection ${{ env.SNOWFLAKE_CONNECTION }} || echo "Update completed or not needed"
 
       - name: Restart service
         run: |
