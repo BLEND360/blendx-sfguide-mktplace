@@ -56,36 +56,10 @@ jobs:
           done
 
   # ============================================
-  # DETECT CHANGES
-  # ============================================
-  detect-changes:
-    runs-on: ubuntu-latest
-    outputs:
-      backend: ${{ steps.filter.outputs.backend }}
-      frontend: ${{ steps.filter.outputs.frontend }}
-      router: ${{ steps.filter.outputs.router }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Detect changed paths
-        uses: dorny/paths-filter@v3
-        id: filter
-        with:
-          filters: |
-            backend:
-              - 'backend/**'
-            frontend:
-              - 'frontend/**'
-            router:
-              - 'router/**'
-
-  # ============================================
   # PARALLEL BUILD JOBS
   # ============================================
   build-backend:
-    needs: [detect-changes, validate]
-    if: ${{ needs.detect-changes.outputs.backend == 'true' || github.event_name == 'workflow_dispatch' }}
+    needs: [validate]
     runs-on: ubuntu-latest
     environment: qa
     outputs:
@@ -127,8 +101,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=backend
 
   build-frontend:
-    needs: [detect-changes, validate]
-    if: ${{ needs.detect-changes.outputs.frontend == 'true' || github.event_name == 'workflow_dispatch' }}
+    needs: [validate]
     runs-on: ubuntu-latest
     environment: qa
     outputs:
@@ -170,8 +143,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=frontend
 
   build-router:
-    needs: [detect-changes, validate]
-    if: ${{ needs.detect-changes.outputs.router == 'true' || github.event_name == 'workflow_dispatch' }}
+    needs: [validate]
     runs-on: ubuntu-latest
     environment: qa
     outputs:
@@ -218,12 +190,7 @@ jobs:
   deploy-package:
     runs-on: ubuntu-latest
     environment: qa
-    needs: [validate, detect-changes, build-backend, build-frontend, build-router]
-    if: |
-      always() &&
-      needs.validate.result == 'success' &&
-      needs.detect-changes.result == 'success' &&
-      !contains(needs.*.result, 'failure')
+    needs: [validate, build-backend, build-frontend, build-router]
     outputs:
       version: ${{ steps.version.outputs.version }}
       short_sha: ${{ steps.version.outputs.short_sha }}
