@@ -36,8 +36,8 @@ else
         snow sql -q "USE ROLE $ROLE; CALL $APP_INSTANCE.app_public.resume_app();" --connection $CONNECTION
     else
         echo "Service exists and is running. Updating service specification..."
-        # Update service from specification file to pull new images
-        snow sql -q "USE ROLE $ROLE; ALTER SERVICE $APP_INSTANCE.app_public.blendx_st_spcs FROM SPECIFICATION_FILE='/fullstack.yaml';" --connection $CONNECTION
+        # Use update_service() procedure to reload from specification file with new image tags
+        snow sql -q "USE ROLE $ROLE; CALL $APP_INSTANCE.app_public.update_service();" --connection $CONNECTION
     fi
 fi
 

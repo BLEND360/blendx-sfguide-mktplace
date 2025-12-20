@@ -114,14 +114,14 @@ jobs:
         run: |
           SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
           echo "short_sha=$SHORT_SHA" >> $GITHUB_OUTPUT
-          echo "tags=${{ secrets.SNOWFLAKE_REPO }}/${{ env.BACKEND_IMAGE }}:$SHORT_SHA,${{ secrets.SNOWFLAKE_REPO }}/${{ env.BACKEND_IMAGE }}:latest" >> $GITHUB_OUTPUT
+          echo "tag=${{ secrets.SNOWFLAKE_REPO }}/${{ env.BACKEND_IMAGE }}:$SHORT_SHA" >> $GITHUB_OUTPUT
 
       - name: Build and push backend image
         uses: docker/build-push-action@v5
         with:
           context: ./backend
           platforms: linux/amd64
-          tags: ${{ steps.meta.outputs.tags }}
+          tags: ${{ steps.meta.outputs.tag }}
           push: true
           cache-from: type=gha,scope=backend
           cache-to: type=gha,mode=max,scope=backend
@@ -157,14 +157,14 @@ jobs:
         run: |
           SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
           echo "short_sha=$SHORT_SHA" >> $GITHUB_OUTPUT
-          echo "tags=${{ secrets.SNOWFLAKE_REPO }}/${{ env.FRONTEND_IMAGE }}:$SHORT_SHA,${{ secrets.SNOWFLAKE_REPO }}/${{ env.FRONTEND_IMAGE }}:latest" >> $GITHUB_OUTPUT
+          echo "tag=${{ secrets.SNOWFLAKE_REPO }}/${{ env.FRONTEND_IMAGE }}:$SHORT_SHA" >> $GITHUB_OUTPUT
 
       - name: Build and push frontend image
         uses: docker/build-push-action@v5
         with:
           context: ./frontend
           platforms: linux/amd64
-          tags: ${{ steps.meta.outputs.tags }}
+          tags: ${{ steps.meta.outputs.tag }}
           push: true
           cache-from: type=gha,scope=frontend
           cache-to: type=gha,mode=max,scope=frontend
@@ -200,31 +200,50 @@ jobs:
         run: |
           SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
           echo "short_sha=$SHORT_SHA" >> $GITHUB_OUTPUT
-          echo "tags=${{ secrets.SNOWFLAKE_REPO }}/${{ env.ROUTER_IMAGE }}:$SHORT_SHA,${{ secrets.SNOWFLAKE_REPO }}/${{ env.ROUTER_IMAGE }}:latest" >> $GITHUB_OUTPUT
+          echo "tag=${{ secrets.SNOWFLAKE_REPO }}/${{ env.ROUTER_IMAGE }}:$SHORT_SHA" >> $GITHUB_OUTPUT
 
       - name: Build and push router image
         uses: docker/build-push-action@v5
         with:
           context: ./router
           platforms: linux/amd64
-          tags: ${{ steps.meta.outputs.tags }}
+          tags: ${{ steps.meta.outputs.tag }}
           push: true
           cache-from: type=gha,scope=router
           cache-to: type=gha,mode=max,scope=router
 
   # ============================================
-  # DEPLOY JOB (runs after all builds complete)
+  # SHOULD DEPLOY (simplifies condition logic)
+  # ============================================
+  should-deploy:
+    runs-on: ubuntu-latest
+    needs: [build-backend, build-frontend, build-router]
+    if: always()
+    outputs:
+      proceed: ${{ steps.check.outputs.proceed }}
+    steps:
+      - name: Check if deploy should proceed
+        id: check
+        run: |
+          # Deploy if all builds succeeded or were skipped (no failures)
+          if [[ "${{ needs.build-backend.result }}" == "failure" ]] || \
+             [[ "${{ needs.build-frontend.result }}" == "failure" ]] || \
+             [[ "${{ needs.build-router.result }}" == "failure" ]]; then
+            echo "proceed=false" >> $GITHUB_OUTPUT
+            echo "Deploy blocked: one or more builds failed"
+          else
+            echo "proceed=true" >> $GITHUB_OUTPUT
+            echo "Deploy can proceed"
+          fi
+
+  # ============================================
+  # DEPLOY JOB
   # ============================================
   deploy:
     runs-on: ubuntu-latest
     environment: qa
-    needs: [detect-changes, build-backend, build-frontend, build-router]
-    if: |
-      always() &&
-      (needs.build-backend.result == 'success' || needs.build-backend.result == 'skipped') &&
-      (needs.build-frontend.result == 'success' || needs.build-frontend.result == 'skipped') &&
-      (needs.build-router.result == 'success' || needs.build-router.result == 'skipped') &&
-      !(needs.build-backend.result == 'failure' || needs.build-frontend.result == 'failure' || needs.build-router.result == 'failure')
+    needs: [should-deploy]
+    if: needs.should-deploy.outputs.proceed == 'true'
 
     steps:
       - name: Checkout code
@@ -266,57 +285,14 @@ jobs:
       - name: Test Snowflake connection
         run: snow connection test --connection ${{ env.SNOWFLAKE_CONNECTION }}
 
-      - name: Generate manifest.yml and fullstack.yaml from templates
+      - name: Generate application files from templates
         run: |
           IMG_REPO=$(echo "${{ secrets.SNOWFLAKE_REPO }}" | awk -F'/' '{print $NF}')
-          SHORT_SHA="${{ steps.version.outputs.short_sha }}"
-
-          sed -e "s/{{SNOWFLAKE_DATABASE}}/${{ secrets.SNOWFLAKE_DATABASE }}/g" \
-              -e "s/{{SNOWFLAKE_SCHEMA}}/${{ secrets.SNOWFLAKE_SCHEMA }}/g" \
-              -e "s/{{SNOWFLAKE_IMG_REPO}}/${IMG_REPO}/g" \
-              templates/manifest_template.yml > app/src/manifest.yml
-
-          sed -e "s/{{SNOWFLAKE_DATABASE}}/${{ secrets.SNOWFLAKE_DATABASE }}/g" \
-              -e "s/{{SNOWFLAKE_SCHEMA}}/${{ secrets.SNOWFLAKE_SCHEMA }}/g" \
-              -e "s/{{SNOWFLAKE_IMG_REPO}}/${IMG_REPO}/g" \
-              -e "s/{{IMAGE_TAG}}/${SHORT_SHA}/g" \
-              templates/fullstack_template.yaml > app/src/fullstack.yaml
-
-          echo "Generated app/src/manifest.yml and app/src/fullstack.yaml"
-          echo "Using image tag: ${SHORT_SHA}"
-
-      - name: Generate setup.sql from template
-        run: |
-          python3 << 'EOF'
-          import re
-
-          with open('scripts/sql/tables_definitions.sql', 'r') as f:
-              content = f.read()
-
-          lines = [l for l in content.split('\n') if not l.strip().startswith('--')]
-          table_defs = '\n'.join(lines)
-          table_defs = table_defs.replace('CREATE TABLE IF NOT EXISTS ', 'CREATE OR REPLACE TABLE app_data.')
-
-          tables = sorted(set(re.findall(r'app_data\.([a-z_]+)', table_defs)))
-          grants = []
-          for table in tables:
-              grants.append(f"""
-          -- Grant permissions for {table} table
-          GRANT SELECT ON TABLE app_data.{table} TO APPLICATION ROLE app_user;
-          GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE app_data.{table} TO APPLICATION ROLE app_admin;""")
-
-          full_content = table_defs + '\n'.join(grants)
-
-          with open('templates/setup_template.sql', 'r') as f:
-              setup_content = f.read()
-
-          setup_content = setup_content.replace('-- {{TABLE_DEFINITIONS}}', full_content)
-
-          with open('app/src/setup.sql', 'w') as f:
-              f.write(setup_content)
-
-          print(f"Generated app/src/setup.sql with {len(tables)} table definitions")
-          EOF
+          python3 scripts/generate-app-files.py \
+            --database "${{ secrets.SNOWFLAKE_DATABASE }}" \
+            --schema "${{ secrets.SNOWFLAKE_SCHEMA }}" \
+            --img-repo "${IMG_REPO}" \
+            --image-tag "${{ steps.version.outputs.short_sha }}"
 
       - name: Upload application files to Snowflake stage
         env:
@@ -505,10 +481,7 @@ jobs:
           echo "  Schema:     ${{ secrets.SNOWFLAKE_SCHEMA }}"
           echo "  Pool:       ${{ secrets.SNOWFLAKE_COMPUTE_POOL }}"
           echo ""
-          echo "Images Built:"
-          echo "  Backend:    ${{ needs.build-backend.result }}"
-          echo "  Frontend:   ${{ needs.build-frontend.result }}"
-          echo "  Router:     ${{ needs.build-router.result }}"
+          echo "Image Tag:    ${{ steps.version.outputs.short_sha }}"
           echo ""
           echo "=========================================="
           echo "  Application URL: ${{ steps.url.outputs.app_url }}"

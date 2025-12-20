@@ -92,6 +92,19 @@ END
 $$;
 GRANT USAGE ON PROCEDURE app_public.resume_app() TO APPLICATION ROLE app_admin;
 
+CREATE OR REPLACE PROCEDURE app_public.update_service()
+    RETURNS string
+    LANGUAGE sql
+    AS
+$$
+BEGIN
+    -- Reload service from specification file to pick up new image tags
+    ALTER SERVICE app_public.blendx_st_spcs FROM SPECIFICATION_FILE='/fullstack.yaml';
+    RETURN 'Service updated with new specification';
+END
+$$;
+GRANT USAGE ON PROCEDURE app_public.update_service() TO APPLICATION ROLE app_admin;
+
 CREATE OR REPLACE PROCEDURE app_public.destroy_app()
     RETURNS string
     LANGUAGE sql
