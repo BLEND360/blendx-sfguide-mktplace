@@ -17,27 +17,28 @@ echo ""
 # Check if service exists and its status
 echo "Checking if service exists..."
 SERVICE_OUTPUT=$(snow sql -q "USE ROLE $ROLE; SHOW SERVICES IN APPLICATION $APP_INSTANCE;" --connection $CONNECTION 2>&1)
-SERVICE_EXISTS=$(echo "$SERVICE_OUTPUT" | grep -i "blendx_st_spcs" | wc -l | tr -d ' ' || echo "0")
 
-if [ "$SERVICE_EXISTS" -gt "0" ]; then
-    # Check if service is suspended
-    SERVICE_STATUS=$(echo "$SERVICE_OUTPUT" | grep -i "blendx_st_spcs" | grep -i "SUSPENDED" | wc -l | tr -d ' ' || echo "0")
+echo "Service query output:"
+echo "$SERVICE_OUTPUT"
+echo ""
 
-    if [ "$SERVICE_STATUS" -gt "0" ]; then
+# Check if output contains "0 Row" (no services) or error
+if echo "$SERVICE_OUTPUT" | grep -q "0 Row"; then
+    echo "Service does not exist. Starting fresh with start_app()..."
+    snow sql -q "USE ROLE $ROLE; CALL $APP_INSTANCE.app_public.start_app('$COMPUTE_POOL');" --connection $CONNECTION
+elif echo "$SERVICE_OUTPUT" | grep -qi "error\|failed"; then
+    echo "Error querying services. Attempting start_app()..."
+    snow sql -q "USE ROLE $ROLE; CALL $APP_INSTANCE.app_public.start_app('$COMPUTE_POOL');" --connection $CONNECTION
+else
+    # Service exists - check if suspended
+    if echo "$SERVICE_OUTPUT" | grep -qi "SUSPENDED"; then
         echo "Service is suspended. Resuming with resume_app()..."
         snow sql -q "USE ROLE $ROLE; CALL $APP_INSTANCE.app_public.resume_app();" --connection $CONNECTION
     else
         echo "Service exists and is running. Using ALTER SERVICE with FORCE_PULL_IMAGE to pull new images..."
         snow sql -q "USE ROLE $ROLE; ALTER SERVICE $APP_INSTANCE.app_public.blendx_st_spcs FROM SPECIFICATION_FILE='/fullstack.yaml' FORCE_PULL_IMAGE = TRUE;" --connection $CONNECTION
     fi
-else
-    echo "Service does not exist. Starting fresh with start_app()..."
-    snow sql -q "USE ROLE $ROLE; CALL $APP_INSTANCE.app_public.start_app('$COMPUTE_POOL');" --connection $CONNECTION
 fi
-
-echo ""
-echo "Waiting 30 seconds for service to start..."
-sleep 30
 
 echo ""
 echo "Checking service status..."

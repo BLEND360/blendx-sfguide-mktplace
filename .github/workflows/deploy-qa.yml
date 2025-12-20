@@ -455,18 +455,27 @@ jobs:
         id: url
         run: |
           set +e
+          echo "Fetching application URL..."
           URL_OUTPUT=$(snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_ROLE }}; CALL ${{ secrets.SNOWFLAKE_APP_INSTANCE }}.app_public.app_url();" \
             --connection ${{ env.SNOWFLAKE_CONNECTION }} 2>&1)
+
+          echo "Raw output:"
+          echo "$URL_OUTPUT"
 
           APP_URL=$(echo "$URL_OUTPUT" | grep -oE 'https://[^[:space:]|"]+' | head -1 || echo "")
           if [ -z "$APP_URL" ]; then
             DOMAIN=$(echo "$URL_OUTPUT" | grep -oE '[a-zA-Z0-9-]+\.snowflakecomputing\.app' | head -1 || echo "")
             if [ -n "$DOMAIN" ]; then
               APP_URL="https://${DOMAIN}"
-            else
-              APP_URL="URL not available yet"
             fi
           fi
+
+          if [ -z "$APP_URL" ]; then
+            APP_URL="URL not available yet"
+          fi
+
+          echo ""
+          echo "Application URL: $APP_URL"
           echo "app_url=$APP_URL" >> $GITHUB_OUTPUT
 
       - name: Deploy Summary
