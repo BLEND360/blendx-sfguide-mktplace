@@ -10,8 +10,51 @@ env:
   BACKEND_IMAGE: eap_backend
   FRONTEND_IMAGE: eap_frontend
   ROUTER_IMAGE: eap_router
+  SNOWFLAKE_CONNECTION: mkt_blendx_demo
 
 jobs:
+  # ============================================
+  # VALIDATE
+  # ============================================
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Validate YAML templates
+        run: |
+          echo "Validating YAML files..."
+          python3 -c "
+          import yaml
+          import sys
+          files = ['templates/manifest_template.yml', 'templates/fullstack_template.yaml']
+          errors = []
+          for f in files:
+              try:
+                  with open(f) as fh:
+                      yaml.safe_load(fh)
+                  print(f'OK: {f}')
+              except Exception as e:
+                  errors.append(f'{f}: {e}')
+                  print(f'FAIL: {f}: {e}')
+          if errors:
+              sys.exit(1)
+          "
+
+      - name: Validate SQL syntax (basic)
+        run: |
+          echo "Checking SQL files for basic syntax..."
+          for f in scripts/sql/*.sql templates/*.sql; do
+            if [ -f "$f" ]; then
+              # Check for unclosed parentheses, missing semicolons at end
+              if grep -qE "^[^-]*\([^)]*$" "$f" 2>/dev/null; then
+                echo "WARNING: Possible unclosed parenthesis in $f"
+              fi
+              echo "OK: $f"
+            fi
+          done
+
   # ============================================
   # DETECT CHANGES
   # ============================================
@@ -41,10 +84,12 @@ jobs:
   # PARALLEL BUILD JOBS
   # ============================================
   build-backend:
-    needs: detect-changes
+    needs: [detect-changes, validate]
     if: ${{ needs.detect-changes.outputs.backend == 'true' || github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
     environment: qa
+    outputs:
+      image-tag: ${{ steps.meta.outputs.tags }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -52,53 +97,42 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Install Snowflake CLI
-        uses: snowflakedb/snowflake-cli-action@v2.0
+      - name: Setup Snowflake
+        uses: ./.github/actions/snowflake-setup
         with:
-          cli-version: "3.11"
+          private-key: ${{ secrets.SNOWFLAKE_PRIVATE_KEY_RAW }}
+          account: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+          user: ${{ secrets.SNOWFLAKE_DEPLOY_USER }}
+          role: ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}
+          warehouse: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
+          database: ${{ secrets.SNOWFLAKE_DATABASE }}
+          schema: ${{ secrets.SNOWFLAKE_SCHEMA }}
+          host: ${{ secrets.SNOWFLAKE_HOST }}
 
-      - name: Setup Snowflake CLI PATH
-        run: echo "$HOME/.snowflake-cli/bin" >> $GITHUB_PATH
-
-      - name: Prepare Snowflake JWT key
+      - name: Generate image metadata
+        id: meta
         run: |
-          echo "${{ secrets.SNOWFLAKE_PRIVATE_KEY_RAW }}" > snowflake_jwt_key.pem
-          chmod 600 snowflake_jwt_key.pem
-
-      - name: Configure Snowflake connection
-        run: |
-          snow connection add \
-            --connection-name mkt_blendx_demo \
-            --account ${{ secrets.SNOWFLAKE_ACCOUNT }} \
-            --user ${{ secrets.SNOWFLAKE_DEPLOY_USER }} \
-            --role ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }} \
-            --warehouse ${{ secrets.SNOWFLAKE_WAREHOUSE }} \
-            --database ${{ secrets.SNOWFLAKE_DATABASE }} \
-            --schema ${{ secrets.SNOWFLAKE_SCHEMA }} \
-            --host ${{ secrets.SNOWFLAKE_HOST }} \
-            --port 443 \
-            --authenticator SNOWFLAKE_JWT \
-            --private-key-file snowflake_jwt_key.pem \
-            --no-interactive
-
-      - name: Login to Snowflake Docker registry
-        run: snow spcs image-registry login --connection mkt_blendx_demo
+          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          echo "short_sha=$SHORT_SHA" >> $GITHUB_OUTPUT
+          echo "tags=${{ secrets.SNOWFLAKE_REPO }}/${{ env.BACKEND_IMAGE }}:$SHORT_SHA,${{ secrets.SNOWFLAKE_REPO }}/${{ env.BACKEND_IMAGE }}:latest" >> $GITHUB_OUTPUT
 
       - name: Build and push backend image
         uses: docker/build-push-action@v5
         with:
           context: ./backend
           platforms: linux/amd64
-          tags: ${{ secrets.SNOWFLAKE_REPO }}/${{ env.BACKEND_IMAGE }}:latest
+          tags: ${{ steps.meta.outputs.tags }}
           push: true
           cache-from: type=gha,scope=backend
           cache-to: type=gha,mode=max,scope=backend
 
   build-frontend:
-    needs: detect-changes
+    needs: [detect-changes, validate]
     if: ${{ needs.detect-changes.outputs.frontend == 'true' || github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
     environment: qa
+    outputs:
+      image-tag: ${{ steps.meta.outputs.tags }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -106,53 +140,42 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Install Snowflake CLI
-        uses: snowflakedb/snowflake-cli-action@v2.0
+      - name: Setup Snowflake
+        uses: ./.github/actions/snowflake-setup
         with:
-          cli-version: "3.11"
+          private-key: ${{ secrets.SNOWFLAKE_PRIVATE_KEY_RAW }}
+          account: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+          user: ${{ secrets.SNOWFLAKE_DEPLOY_USER }}
+          role: ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}
+          warehouse: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
+          database: ${{ secrets.SNOWFLAKE_DATABASE }}
+          schema: ${{ secrets.SNOWFLAKE_SCHEMA }}
+          host: ${{ secrets.SNOWFLAKE_HOST }}
 
-      - name: Setup Snowflake CLI PATH
-        run: echo "$HOME/.snowflake-cli/bin" >> $GITHUB_PATH
-
-      - name: Prepare Snowflake JWT key
+      - name: Generate image metadata
+        id: meta
         run: |
-          echo "${{ secrets.SNOWFLAKE_PRIVATE_KEY_RAW }}" > snowflake_jwt_key.pem
-          chmod 600 snowflake_jwt_key.pem
-
-      - name: Configure Snowflake connection
-        run: |
-          snow connection add \
-            --connection-name mkt_blendx_demo \
-            --account ${{ secrets.SNOWFLAKE_ACCOUNT }} \
-            --user ${{ secrets.SNOWFLAKE_DEPLOY_USER }} \
-            --role ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }} \
-            --warehouse ${{ secrets.SNOWFLAKE_WAREHOUSE }} \
-            --database ${{ secrets.SNOWFLAKE_DATABASE }} \
-            --schema ${{ secrets.SNOWFLAKE_SCHEMA }} \
-            --host ${{ secrets.SNOWFLAKE_HOST }} \
-            --port 443 \
-            --authenticator SNOWFLAKE_JWT \
-            --private-key-file snowflake_jwt_key.pem \
-            --no-interactive
-
-      - name: Login to Snowflake Docker registry
-        run: snow spcs image-registry login --connection mkt_blendx_demo
+          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          echo "short_sha=$SHORT_SHA" >> $GITHUB_OUTPUT
+          echo "tags=${{ secrets.SNOWFLAKE_REPO }}/${{ env.FRONTEND_IMAGE }}:$SHORT_SHA,${{ secrets.SNOWFLAKE_REPO }}/${{ env.FRONTEND_IMAGE }}:latest" >> $GITHUB_OUTPUT
 
       - name: Build and push frontend image
         uses: docker/build-push-action@v5
         with:
           context: ./frontend
           platforms: linux/amd64
-          tags: ${{ secrets.SNOWFLAKE_REPO }}/${{ env.FRONTEND_IMAGE }}:latest
+          tags: ${{ steps.meta.outputs.tags }}
           push: true
           cache-from: type=gha,scope=frontend
           cache-to: type=gha,mode=max,scope=frontend
 
   build-router:
-    needs: detect-changes
+    needs: [detect-changes, validate]
     if: ${{ needs.detect-changes.outputs.router == 'true' || github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
     environment: qa
+    outputs:
+      image-tag: ${{ steps.meta.outputs.tags }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -160,44 +183,31 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Install Snowflake CLI
-        uses: snowflakedb/snowflake-cli-action@v2.0
+      - name: Setup Snowflake
+        uses: ./.github/actions/snowflake-setup
         with:
-          cli-version: "3.11"
+          private-key: ${{ secrets.SNOWFLAKE_PRIVATE_KEY_RAW }}
+          account: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+          user: ${{ secrets.SNOWFLAKE_DEPLOY_USER }}
+          role: ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}
+          warehouse: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
+          database: ${{ secrets.SNOWFLAKE_DATABASE }}
+          schema: ${{ secrets.SNOWFLAKE_SCHEMA }}
+          host: ${{ secrets.SNOWFLAKE_HOST }}
 
-      - name: Setup Snowflake CLI PATH
-        run: echo "$HOME/.snowflake-cli/bin" >> $GITHUB_PATH
-
-      - name: Prepare Snowflake JWT key
+      - name: Generate image metadata
+        id: meta
         run: |
-          echo "${{ secrets.SNOWFLAKE_PRIVATE_KEY_RAW }}" > snowflake_jwt_key.pem
-          chmod 600 snowflake_jwt_key.pem
-
-      - name: Configure Snowflake connection
-        run: |
-          snow connection add \
-            --connection-name mkt_blendx_demo \
-            --account ${{ secrets.SNOWFLAKE_ACCOUNT }} \
-            --user ${{ secrets.SNOWFLAKE_DEPLOY_USER }} \
-            --role ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }} \
-            --warehouse ${{ secrets.SNOWFLAKE_WAREHOUSE }} \
-            --database ${{ secrets.SNOWFLAKE_DATABASE }} \
-            --schema ${{ secrets.SNOWFLAKE_SCHEMA }} \
-            --host ${{ secrets.SNOWFLAKE_HOST }} \
-            --port 443 \
-            --authenticator SNOWFLAKE_JWT \
-            --private-key-file snowflake_jwt_key.pem \
-            --no-interactive
-
-      - name: Login to Snowflake Docker registry
-        run: snow spcs image-registry login --connection mkt_blendx_demo
+          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          echo "short_sha=$SHORT_SHA" >> $GITHUB_OUTPUT
+          echo "tags=${{ secrets.SNOWFLAKE_REPO }}/${{ env.ROUTER_IMAGE }}:$SHORT_SHA,${{ secrets.SNOWFLAKE_REPO }}/${{ env.ROUTER_IMAGE }}:latest" >> $GITHUB_OUTPUT
 
       - name: Build and push router image
         uses: docker/build-push-action@v5
         with:
           context: ./router
           platforms: linux/amd64
-          tags: ${{ secrets.SNOWFLAKE_REPO }}/${{ env.ROUTER_IMAGE }}:latest
+          tags: ${{ steps.meta.outputs.tags }}
           push: true
           cache-from: type=gha,scope=router
           cache-to: type=gha,mode=max,scope=router
@@ -223,9 +233,10 @@ jobs:
           fetch-depth: 0
 
       - name: Determine version from git tag
-        id: get_version
+        id: version
         run: |
           LATEST_TAG=$(git describe --tags --match "v*" --abbrev=0 2>/dev/null || echo "")
+          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
 
           if [ -n "$LATEST_TAG" ]; then
             VERSION=$(echo "$LATEST_TAG" | sed -E 's/^(v[0-9]+).*/\1/' | tr '[:lower:]' '[:upper:]')
@@ -236,39 +247,24 @@ jobs:
           fi
 
           echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "short_sha=$SHORT_SHA" >> $GITHUB_OUTPUT
           echo "VERSION=$VERSION" >> $GITHUB_ENV
 
-      - name: Install Snowflake CLI
-        uses: snowflakedb/snowflake-cli-action@v2.0
+      - name: Setup Snowflake
+        uses: ./.github/actions/snowflake-setup
         with:
-          cli-version: "3.11"
-
-      - name: Setup Snowflake CLI PATH
-        run: echo "$HOME/.snowflake-cli/bin" >> $GITHUB_PATH
-
-      - name: Prepare Snowflake JWT key
-        run: |
-          echo "${{ secrets.SNOWFLAKE_PRIVATE_KEY_RAW }}" > snowflake_jwt_key.pem
-          chmod 600 snowflake_jwt_key.pem
-
-      - name: Configure Snowflake connection
-        run: |
-          snow connection add \
-            --connection-name mkt_blendx_demo \
-            --account ${{ secrets.SNOWFLAKE_ACCOUNT }} \
-            --user ${{ secrets.SNOWFLAKE_DEPLOY_USER }} \
-            --role ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }} \
-            --warehouse ${{ secrets.SNOWFLAKE_WAREHOUSE }} \
-            --database ${{ secrets.SNOWFLAKE_DATABASE }} \
-            --schema ${{ secrets.SNOWFLAKE_SCHEMA }} \
-            --host ${{ secrets.SNOWFLAKE_HOST }} \
-            --port 443 \
-            --authenticator SNOWFLAKE_JWT \
-            --private-key-file snowflake_jwt_key.pem \
-            --no-interactive
+          private-key: ${{ secrets.SNOWFLAKE_PRIVATE_KEY_RAW }}
+          account: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+          user: ${{ secrets.SNOWFLAKE_DEPLOY_USER }}
+          role: ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}
+          warehouse: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
+          database: ${{ secrets.SNOWFLAKE_DATABASE }}
+          schema: ${{ secrets.SNOWFLAKE_SCHEMA }}
+          host: ${{ secrets.SNOWFLAKE_HOST }}
+          login-registry: 'false'
 
       - name: Test Snowflake connection
-        run: snow connection test --connection mkt_blendx_demo
+        run: snow connection test --connection ${{ env.SNOWFLAKE_CONNECTION }}
 
       - name: Generate manifest.yml and fullstack.yaml from templates
         run: |
@@ -284,10 +280,7 @@ jobs:
               -e "s/{{SNOWFLAKE_IMG_REPO}}/${IMG_REPO}/g" \
               templates/fullstack_template.yaml > app/src/fullstack.yaml
 
-          echo "Generated app/src/manifest.yml and app/src/fullstack.yaml with:"
-          echo "  DATABASE: ${{ secrets.SNOWFLAKE_DATABASE }}"
-          echo "  SCHEMA: ${{ secrets.SNOWFLAKE_SCHEMA }}"
-          echo "  IMG_REPO: ${IMG_REPO}"
+          echo "Generated app/src/manifest.yml and app/src/fullstack.yaml"
 
       - name: Generate setup.sql from template
         run: |
@@ -319,7 +312,7 @@ jobs:
           with open('app/src/setup.sql', 'w') as f:
               f.write(setup_content)
 
-          print(f"Generated app/src/setup.sql with {len(tables)} table definitions: {', '.join(tables)}")
+          print(f"Generated app/src/setup.sql with {len(tables)} table definitions")
           EOF
 
       - name: Upload application files to Snowflake stage
@@ -328,169 +321,186 @@ jobs:
           REQUESTS_CA_BUNDLE: ""
           CURL_CA_BUNDLE: ""
         run: |
-          snow sql --query "PUT file://${{ github.workspace }}/app/src/* @${{ secrets.SNOWFLAKE_DATABASE }}.${{ secrets.SNOWFLAKE_SCHEMA }}.app_stage AUTO_COMPRESS=FALSE OVERWRITE=TRUE;" --connection mkt_blendx_demo
+          snow sql --query "PUT file://${{ github.workspace }}/app/src/* @${{ secrets.SNOWFLAKE_DATABASE }}.${{ secrets.SNOWFLAKE_SCHEMA }}.app_stage AUTO_COMPRESS=FALSE OVERWRITE=TRUE;" --connection ${{ env.SNOWFLAKE_CONNECTION }}
 
       - name: Create Application Package if not exists
         run: |
           echo "Creating Application Package ${{ secrets.SNOWFLAKE_APP_PACKAGE }} if it doesn't exist..."
-          snow sql -q "CREATE APPLICATION PACKAGE IF NOT EXISTS ${{ secrets.SNOWFLAKE_APP_PACKAGE }} DISTRIBUTION = INTERNAL;" --connection mkt_blendx_demo
+          snow sql -q "CREATE APPLICATION PACKAGE IF NOT EXISTS ${{ secrets.SNOWFLAKE_APP_PACKAGE }} DISTRIBUTION = INTERNAL;" --connection ${{ env.SNOWFLAKE_CONNECTION }}
 
           echo "Creating QA release channel if it doesn't exist..."
-          snow sql -q "ALTER APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }} ADD RELEASE CHANNEL QA;" --connection mkt_blendx_demo || echo "QA channel may already exist (OK)"
+          snow sql -q "ALTER APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }} ADD RELEASE CHANNEL QA;" --connection ${{ env.SNOWFLAKE_CONNECTION }} || echo "QA channel may already exist"
 
       - name: Clean up old versions not in release channel
         run: |
-          echo "Using version: $VERSION"
-          echo "Checking for old versions not in any release channel..."
+          echo "Checking for orphan versions..."
 
-          TEMP_VERSIONS=$(mktemp)
-          snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; SHOW VERSIONS IN APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }};" --connection mkt_blendx_demo > "$TEMP_VERSIONS" 2>&1 || true
+          # Get versions as JSON for more reliable parsing
+          VERSIONS_JSON=$(snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; SHOW VERSIONS IN APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }};" \
+            --connection ${{ env.SNOWFLAKE_CONNECTION }} -o json 2>/dev/null) || VERSIONS_JSON="[]"
 
-          ORPHAN_VERSIONS=$(cat "$TEMP_VERSIONS" | \
-              grep -E "^\|[[:space:]]*V[0-9]+" | \
-              grep -i "None" | \
-              awk -F'|' '{print $2}' | \
-              tr -d ' ' | \
-              grep -v "^${VERSION}$" || echo "")
+          # Parse with Python for reliability
+          python3 << EOF
+          import json
+          import subprocess
+          import os
 
-          rm -f "$TEMP_VERSIONS"
+          current_version = os.environ.get('VERSION', 'V1')
+          connection = '${{ env.SNOWFLAKE_CONNECTION }}'
+          app_package = '${{ secrets.SNOWFLAKE_APP_PACKAGE }}'
+          role = '${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}'
 
-          if [ -n "$ORPHAN_VERSIONS" ]; then
-              echo "Found versions not in any release channel: $ORPHAN_VERSIONS"
-              for ORPHAN_VERSION in $ORPHAN_VERSIONS; do
-                  if [ -n "$ORPHAN_VERSION" ] && [ "$ORPHAN_VERSION" != "${VERSION}" ]; then
-                      echo "Deregistering version $ORPHAN_VERSION..."
-                      snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; ALTER APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }} DEREGISTER VERSION ${ORPHAN_VERSION};" --connection mkt_blendx_demo || echo "Could not deregister $ORPHAN_VERSION (OK)"
-                  fi
-              done
-          else
-              echo "No orphan versions found to deregister."
-          fi
+          try:
+              versions = json.loads('''$VERSIONS_JSON''')
+              orphans = [v.get('version', '') for v in versions
+                        if v.get('release_channel') in [None, 'None', '']
+                        and v.get('version', '') != current_version]
+
+              for orphan in orphans:
+                  if orphan:
+                      print(f"Deregistering orphan version: {orphan}")
+                      subprocess.run([
+                          'snow', 'sql', '-q',
+                          f"USE ROLE {role}; ALTER APPLICATION PACKAGE {app_package} DEREGISTER VERSION {orphan};",
+                          '--connection', connection
+                      ], capture_output=True)
+          except Exception as e:
+              print(f"Could not parse versions (OK): {e}")
+          EOF
 
       - name: Register version or add patch
+        id: register
         run: |
-          VERSION_EXISTS=$(snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; SHOW VERSIONS IN APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }};" --connection mkt_blendx_demo 2>&1 | grep -i "| ${VERSION} " | wc -l | tr -d ' ' || echo "0")
+          # Check if version exists using JSON output
+          VERSION_CHECK=$(snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; SHOW VERSIONS IN APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }};" \
+            --connection ${{ env.SNOWFLAKE_CONNECTION }} -o json 2>/dev/null) || VERSION_CHECK="[]"
 
-          if [ "$VERSION_EXISTS" -gt "0" ]; then
+          VERSION_EXISTS=$(echo "$VERSION_CHECK" | python3 -c "
+          import json, sys
+          versions = json.load(sys.stdin)
+          exists = any(v.get('version') == '$VERSION' for v in versions)
+          print('1' if exists else '0')
+          " 2>/dev/null || echo "0")
+
+          if [ "$VERSION_EXISTS" = "1" ]; then
             echo "Version ${VERSION} exists. Adding patch..."
-            snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; ALTER APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }} ADD PATCH FOR VERSION ${VERSION} USING '@${{ secrets.SNOWFLAKE_DATABASE }}.${{ secrets.SNOWFLAKE_SCHEMA }}.app_stage';" --connection mkt_blendx_demo
+            snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; ALTER APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }} ADD PATCH FOR VERSION ${VERSION} USING '@${{ secrets.SNOWFLAKE_DATABASE }}.${{ secrets.SNOWFLAKE_SCHEMA }}.app_stage';" --connection ${{ env.SNOWFLAKE_CONNECTION }}
           else
             echo "Version ${VERSION} does not exist. Registering new version..."
-            snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; ALTER APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }} REGISTER VERSION ${VERSION} USING @${{ secrets.SNOWFLAKE_DATABASE }}.${{ secrets.SNOWFLAKE_SCHEMA }}.app_stage;" --connection mkt_blendx_demo
+            snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; ALTER APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }} REGISTER VERSION ${VERSION} USING @${{ secrets.SNOWFLAKE_DATABASE }}.${{ secrets.SNOWFLAKE_SCHEMA }}.app_stage;" --connection ${{ env.SNOWFLAKE_CONNECTION }}
           fi
 
       - name: Get latest patch number
-        id: get_patch
+        id: patch
         run: |
-          LATEST_PATCH=$(snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; SHOW VERSIONS IN APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }};" --connection mkt_blendx_demo 2>&1 | grep -i "| ${VERSION} " | awk -F'|' '{print $3}' | tr -d ' ' | sort -n | tail -1 || echo "0")
+          VERSIONS_JSON=$(snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; SHOW VERSIONS IN APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }};" \
+            --connection ${{ env.SNOWFLAKE_CONNECTION }} -o json 2>/dev/null) || VERSIONS_JSON="[]"
 
-          if [ -z "$LATEST_PATCH" ] || ! [[ "$LATEST_PATCH" =~ ^[0-9]+$ ]]; then
-            LATEST_PATCH=0
-          fi
+          LATEST_PATCH=$(echo "$VERSIONS_JSON" | python3 -c "
+          import json, sys
+          versions = json.load(sys.stdin)
+          patches = [int(v.get('patch', 0)) for v in versions if v.get('version') == '$VERSION']
+          print(max(patches) if patches else 0)
+          " 2>/dev/null || echo "0")
 
           echo "Latest patch: $LATEST_PATCH"
           echo "patch=$LATEST_PATCH" >> $GITHUB_OUTPUT
 
       - name: Update QA release channel
         run: |
-          PATCH="${{ steps.get_patch.outputs.patch }}"
+          PATCH="${{ steps.patch.outputs.patch }}"
 
-          snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; ALTER APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }} MODIFY RELEASE CHANNEL QA ADD VERSION ${VERSION};" --connection mkt_blendx_demo 2>&1 || echo "Version may already be in QA channel (OK)"
+          snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; ALTER APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }} MODIFY RELEASE CHANNEL QA ADD VERSION ${VERSION};" \
+            --connection ${{ env.SNOWFLAKE_CONNECTION }} 2>&1 || echo "Version may already be in QA channel"
 
-          snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; ALTER APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }} MODIFY RELEASE CHANNEL QA SET DEFAULT RELEASE DIRECTIVE VERSION=${VERSION} PATCH=${PATCH};" --connection mkt_blendx_demo
+          snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; ALTER APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }} MODIFY RELEASE CHANNEL QA SET DEFAULT RELEASE DIRECTIVE VERSION=${VERSION} PATCH=${PATCH};" \
+            --connection ${{ env.SNOWFLAKE_CONNECTION }}
 
       - name: Upgrade and restart QA application
         run: |
-          set +e  # Don't exit on error
-          PATCH="${{ steps.get_patch.outputs.patch }}"
+          set +e
+          PATCH="${{ steps.patch.outputs.patch }}"
 
           echo "Checking for application ${{ secrets.SNOWFLAKE_APP_INSTANCE }}..."
-          APP_OUTPUT=$(snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_ROLE }}; SHOW APPLICATIONS LIKE '${{ secrets.SNOWFLAKE_APP_INSTANCE }}';" --connection mkt_blendx_demo 2>&1)
-          SQL_EXIT_CODE=$?
-          echo "SHOW APPLICATIONS output (exit code: $SQL_EXIT_CODE):"
-          echo "$APP_OUTPUT"
+          APP_CHECK=$(snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_ROLE }}; SHOW APPLICATIONS LIKE '${{ secrets.SNOWFLAKE_APP_INSTANCE }}';" \
+            --connection ${{ env.SNOWFLAKE_CONNECTION }} -o json 2>/dev/null) || APP_CHECK="[]"
 
-          # Check if command failed or returned 0 rows
-          if [ $SQL_EXIT_CODE -ne 0 ]; then
-            echo "SQL command failed with exit code $SQL_EXIT_CODE"
-            APP_EXISTS=0
-          elif echo "$APP_OUTPUT" | grep -q "0 Row"; then
-            echo "No application found (0 Row in output)"
-            APP_EXISTS=0
-          else
-            echo "Application found"
-            APP_EXISTS=1
-          fi
+          APP_EXISTS=$(echo "$APP_CHECK" | python3 -c "import json,sys; print(len(json.load(sys.stdin)))" 2>/dev/null || echo "0")
 
-          echo "APP_EXISTS=$APP_EXISTS"
-          set -e  # Re-enable exit on error
+          set -e
 
           if [ "$APP_EXISTS" -gt "0" ]; then
-            echo "Application exists. Upgrading application package..."
-            snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_ROLE }}; ALTER APPLICATION ${{ secrets.SNOWFLAKE_APP_INSTANCE }} UPGRADE USING VERSION ${VERSION} PATCH ${PATCH};" --connection mkt_blendx_demo || echo "Upgrade not needed or failed (OK)"
+            echo "Application exists. Upgrading..."
+            snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_ROLE }}; ALTER APPLICATION ${{ secrets.SNOWFLAKE_APP_INSTANCE }} UPGRADE USING VERSION ${VERSION} PATCH ${PATCH};" \
+              --connection ${{ env.SNOWFLAKE_CONNECTION }} || echo "Upgrade not needed"
 
             echo "Restarting service with force pull..."
             export SNOWFLAKE_ROLE="${{ secrets.SNOWFLAKE_ROLE }}"
             export SNOWFLAKE_APP_INSTANCE="${{ secrets.SNOWFLAKE_APP_INSTANCE }}"
             export SNOWFLAKE_COMPUTE_POOL="${{ secrets.SNOWFLAKE_COMPUTE_POOL }}"
-            export SNOWFLAKE_CONNECTION="mkt_blendx_demo"
+            export SNOWFLAKE_CONNECTION="${{ env.SNOWFLAKE_CONNECTION }}"
             chmod +x scripts/manage-service.sh
             ./scripts/manage-service.sh
           else
-            echo "::warning::Application does not exist. Please run setup/create-application.sh to install the application first."
-            echo "Skipping upgrade and restart."
+            echo "::warning::Application does not exist. Run setup/create-application.sh first."
           fi
 
       - name: Wait for service to be ready
         run: |
-          echo "Waiting 60 seconds for service to be fully ready..."
-          sleep 60
+          export SNOWFLAKE_ROLE="${{ secrets.SNOWFLAKE_ROLE }}"
+          export SNOWFLAKE_APP_INSTANCE="${{ secrets.SNOWFLAKE_APP_INSTANCE }}"
+          export SNOWFLAKE_CONNECTION="${{ env.SNOWFLAKE_CONNECTION }}"
+          export MAX_ATTEMPTS=20
+          chmod +x scripts/wait-for-service.sh
+          ./scripts/wait-for-service.sh
 
       - name: Get Application URL
-        id: get_url
+        id: url
         run: |
-          set +e  # Don't exit on error
-          APP_OUTPUT=$(snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_ROLE }}; SHOW APPLICATIONS LIKE '${{ secrets.SNOWFLAKE_APP_INSTANCE }}';" --connection mkt_blendx_demo 2>&1)
-          SQL_EXIT_CODE=$?
+          set +e
+          URL_OUTPUT=$(snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_ROLE }}; CALL ${{ secrets.SNOWFLAKE_APP_INSTANCE }}.app_public.app_url();" \
+            --connection ${{ env.SNOWFLAKE_CONNECTION }} 2>&1)
 
-          if [ $SQL_EXIT_CODE -ne 0 ] || echo "$APP_OUTPUT" | grep -q "0 Row"; then
-            echo "Application not found or error occurred"
-          else
-            echo "=========================================="
-            echo "SERVICE STATUS"
-            echo "=========================================="
-            snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_ROLE }}; CALL ${{ secrets.SNOWFLAKE_APP_INSTANCE }}.app_public.get_service_status();" --connection mkt_blendx_demo || echo "Could not get service status"
-
-            echo ""
-            echo "=========================================="
-            echo "APPLICATION URL"
-            echo "=========================================="
-            URL_OUTPUT=$(snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_ROLE }}; CALL ${{ secrets.SNOWFLAKE_APP_INSTANCE }}.app_public.app_url();" --connection mkt_blendx_demo 2>&1)
-            echo "Raw URL output:"
-            echo "$URL_OUTPUT"
-            # Extract URL - try with https:// first, then without
-            APP_URL=$(echo "$URL_OUTPUT" | grep -oE 'https://[^[:space:]|"]+' | head -1 || echo "")
-            if [ -z "$APP_URL" ]; then
-              # Try to extract domain without https://
-              DOMAIN=$(echo "$URL_OUTPUT" | grep -oE '[a-zA-Z0-9-]+\.snowflakecomputing\.app' | head -1 || echo "")
-              if [ -n "$DOMAIN" ]; then
-                APP_URL="https://${DOMAIN}"
-              else
-                APP_URL="URL not available yet"
-              fi
+          APP_URL=$(echo "$URL_OUTPUT" | grep -oE 'https://[^[:space:]|"]+' | head -1 || echo "")
+          if [ -z "$APP_URL" ]; then
+            DOMAIN=$(echo "$URL_OUTPUT" | grep -oE '[a-zA-Z0-9-]+\.snowflakecomputing\.app' | head -1 || echo "")
+            if [ -n "$DOMAIN" ]; then
+              APP_URL="https://${DOMAIN}"
+            else
+              APP_URL="URL not available yet"
             fi
-            echo "🚀 $APP_URL"
-            echo "app_url=$APP_URL" >> $GITHUB_OUTPUT
           fi
-          exit 0  # Always succeed
+          echo "app_url=$APP_URL" >> $GITHUB_OUTPUT
 
-      - name: Summary
+      - name: Deploy Summary
         run: |
-          echo "=========================================="
-          echo "QA Deployment completed!"
-          echo "=========================================="
-          echo "Version $VERSION patch ${{ steps.get_patch.outputs.patch }} deployed to QA channel"
           echo ""
-          echo "🚀 Application URL: ${{ steps.get_url.outputs.app_url }}"
+          echo "=========================================="
+          echo "         QA DEPLOYMENT SUMMARY"
+          echo "=========================================="
           echo ""
-          echo "The QA application will automatically receive updates through the QA release channel."
+          echo "Git Info:"
+          echo "  Commit:     ${{ github.sha }}"
+          echo "  Short SHA:  ${{ steps.version.outputs.short_sha }}"
+          echo "  Branch:     ${{ github.ref_name }}"
+          echo ""
+          echo "Snowflake App:"
+          echo "  Package:    ${{ secrets.SNOWFLAKE_APP_PACKAGE }}"
+          echo "  Instance:   ${{ secrets.SNOWFLAKE_APP_INSTANCE }}"
+          echo "  Version:    ${{ steps.version.outputs.version }}"
+          echo "  Patch:      ${{ steps.patch.outputs.patch }}"
+          echo "  Channel:    QA"
+          echo ""
+          echo "Infrastructure:"
+          echo "  Database:   ${{ secrets.SNOWFLAKE_DATABASE }}"
+          echo "  Schema:     ${{ secrets.SNOWFLAKE_SCHEMA }}"
+          echo "  Pool:       ${{ secrets.SNOWFLAKE_COMPUTE_POOL }}"
+          echo ""
+          echo "Images Built:"
+          echo "  Backend:    ${{ needs.build-backend.result }}"
+          echo "  Frontend:   ${{ needs.build-frontend.result }}"
+          echo "  Router:     ${{ needs.build-router.result }}"
+          echo ""
+          echo "=========================================="
+          echo "  Application URL: ${{ steps.url.outputs.app_url }}"
+          echo "=========================================="
