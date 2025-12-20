@@ -505,7 +505,7 @@
         </v-card-title>
 
         <v-card-text class="pa-4">
-          <h3 class="mb-3">Workflow Generator Chatbot</h3>
+          <h3 class="mb-3">Workflow Generator Chat</h3>
           <p class="mb-3">
             The main feature of this application is the <strong>Workflow Generator Chat</strong>.
             It allows you to describe a workflow in natural language, and the AI will generate:

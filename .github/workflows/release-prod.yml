@@ -104,6 +104,13 @@ jobs:
             DIRECTIVES_JSON=$(snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; SHOW RELEASE DIRECTIVES IN APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }};" \
               --connection mkt_blendx_demo -o json 2>/dev/null) || DIRECTIVES_JSON="[]"
 
+            QA_COUNT=$(echo "$DIRECTIVES_JSON" | jq '[.[] | select(.channel | ascii_upcase == "QA")] | length')
+            if [ "$QA_COUNT" -ne 1 ]; then
+              echo "::error::Expected exactly 1 QA release directive, found $QA_COUNT"
+              echo "$DIRECTIVES_JSON" | jq '.'
+              exit 1
+            fi
+
             # Extract QA channel version
             VERSION=$(echo "$DIRECTIVES_JSON" | jq -r '.[] | select(.channel | ascii_upcase == "QA") | .version' | head -1)
 
@@ -130,16 +137,9 @@ jobs:
             # Extract patch from QA directive
             PATCH=$(echo "$DIRECTIVES_JSON" | jq -r '.[] | select(.channel | ascii_upcase == "QA") | .patch' | head -1)
 
-            # Fallback: get latest patch from versions list
             if [ -z "$PATCH" ] || [ "$PATCH" == "null" ] || ! [[ "$PATCH" =~ ^[0-9]+$ ]]; then
-              echo "Getting latest patch from versions list..."
-              VERSIONS_JSON=$(snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; SHOW VERSIONS IN APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }};" \
-                --connection mkt_blendx_demo -o json 2>/dev/null) || VERSIONS_JSON="[]"
-              PATCH=$(echo "$VERSIONS_JSON" | jq -r --arg v "$VERSION" '[.[] | select(.version | ascii_upcase == ($v | ascii_upcase)) | .patch] | max // 0')
-            fi
-
-            if [ -z "$PATCH" ] || [ "$PATCH" == "null" ] || ! [[ "$PATCH" =~ ^[0-9]+$ ]]; then
-              PATCH=0
+              echo "::error::QA release directive does not define a valid patch. Refusing to promote."
+              exit 1
             fi
 
             echo "Detected patch from QA: $PATCH"
@@ -183,8 +183,17 @@ jobs:
         run: |
           VERSION="${{ steps.detect_version.outputs.version }}"
 
-          echo "Adding version $VERSION to DEFAULT release channel..."
-          snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; ALTER APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }} MODIFY RELEASE CHANNEL DEFAULT ADD VERSION ${VERSION};" --connection mkt_blendx_demo 2>&1 || echo "Version may already be in DEFAULT channel (OK)"
+          CHANNEL_JSON=$(snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; SHOW RELEASE DIRECTIVES IN APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }};" \
+            --connection mkt_blendx_demo -o json 2>/dev/null) || CHANNEL_JSON="[]"
+
+          IN_DEFAULT=$(echo "$CHANNEL_JSON" | jq -r --arg v "$VERSION" '[.[] | select(.channel | ascii_upcase=="DEFAULT" and .version | ascii_upcase==($v|ascii_upcase))] | length')
+
+          if [ "$IN_DEFAULT" -eq "0" ]; then
+            echo "Adding version $VERSION to DEFAULT release channel..."
+            snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; ALTER APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }} MODIFY RELEASE CHANNEL DEFAULT ADD VERSION ${VERSION};" --connection mkt_blendx_demo
+          else
+            echo "Version $VERSION already present in DEFAULT channel"
+          fi
 
       - name: Set DEFAULT release directive
         run: |
