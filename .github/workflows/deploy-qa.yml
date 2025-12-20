@@ -335,54 +335,43 @@ jobs:
         run: |
           echo "Checking for orphan versions..."
 
-          # Get versions as JSON for more reliable parsing
-          VERSIONS_JSON=$(snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; SHOW VERSIONS IN APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }};" \
-            --connection ${{ env.SNOWFLAKE_CONNECTION }} -o json 2>/dev/null) || VERSIONS_JSON="[]"
+          VERSIONS_OUTPUT=$(snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; SHOW VERSIONS IN APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }};" \
+            --connection ${{ env.SNOWFLAKE_CONNECTION }} 2>&1) || true
 
-          # Parse with Python for reliability
-          python3 << EOF
-          import json
-          import subprocess
-          import os
+          # Find versions with "None" in release channel column (orphans)
+          # Format: | version | patch | ... | release_channel |
+          ORPHAN_VERSIONS=$(echo "$VERSIONS_OUTPUT" | \
+            grep -E "^\|[[:space:]]*V[0-9]+" | \
+            grep -i "None" | \
+            awk -F'|' '{print $2}' | \
+            tr -d ' ' | \
+            grep -v "^${VERSION}$" || echo "")
 
-          current_version = os.environ.get('VERSION', 'V1')
-          connection = '${{ env.SNOWFLAKE_CONNECTION }}'
-          app_package = '${{ secrets.SNOWFLAKE_APP_PACKAGE }}'
-          role = '${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}'
-
-          try:
-              versions = json.loads('''$VERSIONS_JSON''')
-              orphans = [v.get('version', '') for v in versions
-                        if v.get('release_channel') in [None, 'None', '']
-                        and v.get('version', '') != current_version]
-
-              for orphan in orphans:
-                  if orphan:
-                      print(f"Deregistering orphan version: {orphan}")
-                      subprocess.run([
-                          'snow', 'sql', '-q',
-                          f"USE ROLE {role}; ALTER APPLICATION PACKAGE {app_package} DEREGISTER VERSION {orphan};",
-                          '--connection', connection
-                      ], capture_output=True)
-          except Exception as e:
-              print(f"Could not parse versions (OK): {e}")
-          EOF
+          if [ -n "$ORPHAN_VERSIONS" ]; then
+            echo "Found orphan versions: $ORPHAN_VERSIONS"
+            for ORPHAN_VERSION in $ORPHAN_VERSIONS; do
+              if [ -n "$ORPHAN_VERSION" ] && [ "$ORPHAN_VERSION" != "${VERSION}" ]; then
+                echo "Deregistering version $ORPHAN_VERSION..."
+                snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; ALTER APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }} DEREGISTER VERSION ${ORPHAN_VERSION};" \
+                  --connection ${{ env.SNOWFLAKE_CONNECTION }} || echo "Could not deregister $ORPHAN_VERSION (OK)"
+              fi
+            done
+          else
+            echo "No orphan versions found."
+          fi
 
       - name: Register version or add patch
         id: register
         run: |
-          # Check if version exists using JSON output
-          VERSION_CHECK=$(snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; SHOW VERSIONS IN APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }};" \
-            --connection ${{ env.SNOWFLAKE_CONNECTION }} -o json 2>/dev/null) || VERSION_CHECK="[]"
+          # Check if version exists
+          VERSION_OUTPUT=$(snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; SHOW VERSIONS IN APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }};" \
+            --connection ${{ env.SNOWFLAKE_CONNECTION }} 2>&1) || true
 
-          VERSION_EXISTS=$(echo "$VERSION_CHECK" | python3 -c "
-          import json, sys
-          versions = json.load(sys.stdin)
-          exists = any(v.get('version') == '$VERSION' for v in versions)
-          print('1' if exists else '0')
-          " 2>/dev/null || echo "0")
+          echo "Version check output:"
+          echo "$VERSION_OUTPUT"
 
-          if [ "$VERSION_EXISTS" = "1" ]; then
+          # Check if VERSION exists in the output (case insensitive, exact match with spaces/pipes)
+          if echo "$VERSION_OUTPUT" | grep -qiE "\|\s*${VERSION}\s*\|"; then
             echo "Version ${VERSION} exists. Adding patch..."
             snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; ALTER APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }} ADD PATCH FOR VERSION ${VERSION} USING '@${{ secrets.SNOWFLAKE_DATABASE }}.${{ secrets.SNOWFLAKE_SCHEMA }}.app_stage';" --connection ${{ env.SNOWFLAKE_CONNECTION }}
           else
@@ -393,15 +382,15 @@ jobs:
       - name: Get latest patch number
         id: patch
         run: |
-          VERSIONS_JSON=$(snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; SHOW VERSIONS IN APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }};" \
-            --connection ${{ env.SNOWFLAKE_CONNECTION }} -o json 2>/dev/null) || VERSIONS_JSON="[]"
+          VERSIONS_OUTPUT=$(snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; SHOW VERSIONS IN APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }};" \
+            --connection ${{ env.SNOWFLAKE_CONNECTION }} 2>&1) || true
 
-          LATEST_PATCH=$(echo "$VERSIONS_JSON" | python3 -c "
-          import json, sys
-          versions = json.load(sys.stdin)
-          patches = [int(v.get('patch', 0)) for v in versions if v.get('version') == '$VERSION']
-          print(max(patches) if patches else 0)
-          " 2>/dev/null || echo "0")
+          # Extract patch number for current VERSION - format: | VERSION | PATCH | ...
+          LATEST_PATCH=$(echo "$VERSIONS_OUTPUT" | grep -iE "\|\s*${VERSION}\s*\|" | awk -F'|' '{print $3}' | tr -d ' ' | sort -n | tail -1)
+
+          if [ -z "$LATEST_PATCH" ] || ! [[ "$LATEST_PATCH" =~ ^[0-9]+$ ]]; then
+            LATEST_PATCH=0
+          fi
 
           echo "Latest patch: $LATEST_PATCH"
           echo "patch=$LATEST_PATCH" >> $GITHUB_OUTPUT
@@ -422,10 +411,18 @@ jobs:
           PATCH="${{ steps.patch.outputs.patch }}"
 
           echo "Checking for application ${{ secrets.SNOWFLAKE_APP_INSTANCE }}..."
-          APP_CHECK=$(snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_ROLE }}; SHOW APPLICATIONS LIKE '${{ secrets.SNOWFLAKE_APP_INSTANCE }}';" \
-            --connection ${{ env.SNOWFLAKE_CONNECTION }} -o json 2>/dev/null) || APP_CHECK="[]"
+          APP_OUTPUT=$(snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_ROLE }}; SHOW APPLICATIONS LIKE '${{ secrets.SNOWFLAKE_APP_INSTANCE }}';" \
+            --connection ${{ env.SNOWFLAKE_CONNECTION }} 2>&1)
+          SQL_EXIT_CODE=$?
 
-          APP_EXISTS=$(echo "$APP_CHECK" | python3 -c "import json,sys; print(len(json.load(sys.stdin)))" 2>/dev/null || echo "0")
+          # Check if application exists (not "0 Row" in output and command succeeded)
+          if [ $SQL_EXIT_CODE -ne 0 ]; then
+            APP_EXISTS=0
+          elif echo "$APP_OUTPUT" | grep -q "0 Row"; then
+            APP_EXISTS=0
+          else
+            APP_EXISTS=1
+          fi
 
           set -e
 
