@@ -22,7 +22,7 @@ GRANT USAGE ON SCHEMA app_data TO APPLICATION ROLE app_user;
 -- Auto-generated from scripts/sql/tables_definitions.sql during deploy
 -- DO NOT EDIT MANUALLY - Edit tables_definitions.sql instead
 -- =============================================================================
--- {{TABLE_DEFINITIONS}}
+{{TABLE_DEFINITIONS}}
 -- =============================================================================
 
 CREATE OR REPLACE PROCEDURE app_public.start_app(poolname VARCHAR)

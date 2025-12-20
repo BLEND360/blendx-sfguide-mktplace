@@ -10,6 +10,11 @@ import sys
 from pathlib import Path
 
 
+class GenerationError(Exception):
+    """Raised when file generation fails."""
+    pass
+
+
 def replace_placeholders(content: str, replacements: dict) -> str:
     """Replace {{PLACEHOLDER}} with values."""
     for key, value in replacements.items():
@@ -17,33 +22,44 @@ def replace_placeholders(content: str, replacements: dict) -> str:
     return content
 
 
-def generate_manifest(template_path: str, output_path: str, replacements: dict):
-    """Generate manifest.yml from template."""
+def validate_no_unresolved_placeholders(content: str, file_name: str) -> None:
+    """Fail fast if any {{PLACEHOLDER}} remains unresolved."""
+    unresolved = re.findall(r'\{\{([A-Z_][A-Z0-9_]*)\}\}', content)
+    if unresolved:
+        raise GenerationError(
+            f"Unresolved placeholders in {file_name}: {', '.join(set(unresolved))}"
+        )
+
+
+def generate_from_template(
+    template_path: str,
+    output_path: str,
+    replacements: dict,
+    dry_run: bool = False
+) -> str:
+    """Generate a file from template with placeholder replacement."""
     with open(template_path, 'r') as f:
         content = f.read()
 
     result = replace_placeholders(content, replacements)
+    validate_no_unresolved_placeholders(result, output_path)
 
-    with open(output_path, 'w') as f:
-        f.write(result)
+    if dry_run:
+        print(f"[DRY-RUN] Would generate {output_path}")
+    else:
+        with open(output_path, 'w') as f:
+            f.write(result)
+        print(f"Generated {output_path}")
 
-    print(f"Generated {output_path}")
-
-
-def generate_fullstack(template_path: str, output_path: str, replacements: dict):
-    """Generate fullstack.yaml from template."""
-    with open(template_path, 'r') as f:
-        content = f.read()
-
-    result = replace_placeholders(content, replacements)
-
-    with open(output_path, 'w') as f:
-        f.write(result)
-
-    print(f"Generated {output_path}")
+    return result
 
 
-def generate_setup_sql(template_path: str, tables_path: str, output_path: str):
+def generate_setup_sql(
+    template_path: str,
+    tables_path: str,
+    output_path: str,
+    dry_run: bool = False
+) -> None:
     """Generate setup.sql from template with table definitions."""
     with open(tables_path, 'r') as f:
         content = f.read()
@@ -53,13 +69,27 @@ def generate_setup_sql(template_path: str, tables_path: str, output_path: str):
     table_defs = '\n'.join(lines)
 
     # Replace CREATE TABLE IF NOT EXISTS with CREATE OR REPLACE TABLE app_data.
+    original_table_defs = table_defs
     table_defs = table_defs.replace(
         'CREATE TABLE IF NOT EXISTS ',
         'CREATE OR REPLACE TABLE app_data.'
     )
 
-    # Extract table names and generate grants
-    tables = sorted(set(re.findall(r'app_data\.([a-z_]+)', table_defs)))
+    # Validate at least one replacement occurred
+    if table_defs == original_table_defs:
+        raise GenerationError(
+            f"No 'CREATE TABLE IF NOT EXISTS' found in {tables_path}. "
+            "Expected at least one table definition."
+        )
+
+    # Extract table names (support uppercase, lowercase, numbers)
+    tables = sorted(set(re.findall(r'app_data\.([a-zA-Z_][a-zA-Z0-9_]*)', table_defs, re.IGNORECASE)))
+
+    if not tables:
+        raise GenerationError(
+            f"No table names extracted from {tables_path}. Check the SQL syntax."
+        )
+
     grants = []
     for table in tables:
         grants.append(f"""
@@ -73,12 +103,19 @@ def generate_setup_sql(template_path: str, tables_path: str, output_path: str):
     with open(template_path, 'r') as f:
         setup_content = f.read()
 
-    setup_content = setup_content.replace('-- {{TABLE_DEFINITIONS}}', full_content)
+    if '{{TABLE_DEFINITIONS}}' not in setup_content:
+        raise GenerationError(
+            f"Placeholder '{{{{TABLE_DEFINITIONS}}}}' not found in {template_path}"
+        )
 
-    with open(output_path, 'w') as f:
-        f.write(setup_content)
+    setup_content = setup_content.replace('{{TABLE_DEFINITIONS}}', full_content)
 
-    print(f"Generated {output_path} with {len(tables)} table definitions: {', '.join(tables)}")
+    if dry_run:
+        print(f"[DRY-RUN] Would generate {output_path} with {len(tables)} tables: {', '.join(tables)}")
+    else:
+        with open(output_path, 'w') as f:
+            f.write(setup_content)
+        print(f"Generated {output_path} with {len(tables)} table definitions: {', '.join(tables)}")
 
 
 def main():
@@ -88,12 +125,14 @@ def main():
     parser.add_argument('--img-repo', required=True, help='Image repository name')
     parser.add_argument('--image-tag', required=True, help='Docker image tag (SHA)')
     parser.add_argument('--output-dir', default='app/src', help='Output directory')
+    parser.add_argument('--dry-run', action='store_true', help='Show what would be generated without writing files')
 
     args = parser.parse_args()
 
-    # Ensure output directory exists
+    # Ensure output directory exists (unless dry-run)
     output_dir = Path(args.output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
+    if not args.dry_run:
+        output_dir.mkdir(parents=True, exist_ok=True)
 
     # Common replacements
     replacements = {
@@ -103,36 +142,48 @@ def main():
         'IMAGE_TAG': args.image_tag,
     }
 
-    print(f"Generating files with:")
+    mode = "[DRY-RUN] " if args.dry_run else ""
+    print(f"{mode}Generating files with:")
     print(f"  Database:  {args.database}")
     print(f"  Schema:    {args.schema}")
     print(f"  Img Repo:  {args.img_repo}")
     print(f"  Image Tag: {args.image_tag}")
     print()
 
-    # Generate manifest.yml
-    generate_manifest(
-        'templates/manifest_template.yml',
-        str(output_dir / 'manifest.yml'),
-        replacements
-    )
+    try:
+        # Generate manifest.yml
+        generate_from_template(
+            'templates/manifest_template.yml',
+            str(output_dir / 'manifest.yml'),
+            replacements,
+            dry_run=args.dry_run
+        )
 
-    # Generate fullstack.yaml
-    generate_fullstack(
-        'templates/fullstack_template.yaml',
-        str(output_dir / 'fullstack.yaml'),
-        replacements
-    )
+        # Generate fullstack.yaml
+        generate_from_template(
+            'templates/fullstack_template.yaml',
+            str(output_dir / 'fullstack.yaml'),
+            replacements,
+            dry_run=args.dry_run
+        )
 
-    # Generate setup.sql
-    generate_setup_sql(
-        'templates/setup_template.sql',
-        'scripts/sql/tables_definitions.sql',
-        str(output_dir / 'setup.sql')
-    )
+        # Generate setup.sql
+        generate_setup_sql(
+            'templates/setup_template.sql',
+            'scripts/sql/tables_definitions.sql',
+            str(output_dir / 'setup.sql'),
+            dry_run=args.dry_run
+        )
 
-    print()
-    print("All files generated successfully!")
+        print()
+        print(f"{mode}All files generated successfully!")
+
+    except GenerationError as e:
+        print(f"ERROR: {e}", file=sys.stderr)
+        sys.exit(1)
+    except FileNotFoundError as e:
+        print(f"ERROR: File not found: {e}", file=sys.stderr)
+        sys.exit(1)
 
 
 if __name__ == '__main__':

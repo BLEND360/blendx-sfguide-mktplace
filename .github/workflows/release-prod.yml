@@ -56,6 +56,40 @@ jobs:
       - name: Test Snowflake connection
         run: snow connection test --connection mkt_blendx_demo
 
+      - name: Validate release prerequisites
+        run: |
+          echo "=========================================="
+          echo "Pre-release validation"
+          echo "=========================================="
+
+          # Check that QA channel has a release directive
+          QA_DIRECTIVE_JSON=$(snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; SHOW RELEASE DIRECTIVES IN APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }};" \
+            --connection mkt_blendx_demo -o json 2>/dev/null) || QA_DIRECTIVE_JSON="[]"
+
+          QA_EXISTS=$(echo "$QA_DIRECTIVE_JSON" | jq '[.[] | select(.channel | ascii_upcase == "QA")] | length')
+
+          if [ "$QA_EXISTS" -eq "0" ]; then
+            echo "::error::No QA release directive found. Deploy to QA first before promoting to production."
+            exit 1
+          fi
+
+          echo "✓ QA release directive exists"
+
+          # Verify application package exists and has versions
+          VERSIONS_JSON=$(snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; SHOW VERSIONS IN APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }};" \
+            --connection mkt_blendx_demo -o json 2>/dev/null) || VERSIONS_JSON="[]"
+
+          VERSION_COUNT=$(echo "$VERSIONS_JSON" | jq 'length')
+
+          if [ "$VERSION_COUNT" -eq "0" ]; then
+            echo "::error::No versions found in application package. Deploy to QA first."
+            exit 1
+          fi
+
+          echo "✓ Application package has $VERSION_COUNT version(s)"
+          echo ""
+          echo "Pre-release validation passed"
+
       - name: Auto-detect version and patch from QA channel
         id: detect_version
         run: |
@@ -66,25 +100,18 @@ jobs:
           if [ -z "$VERSION" ]; then
             echo "Auto-detecting version from QA channel..."
 
-            # Get release directives
-            DIRECTIVES=$(snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; SHOW RELEASE DIRECTIVES IN APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }};" --connection mkt_blendx_demo 2>&1 || true)
+            # Get release directives using JSON output
+            DIRECTIVES_JSON=$(snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; SHOW RELEASE DIRECTIVES IN APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }};" \
+              --connection mkt_blendx_demo -o json 2>/dev/null) || DIRECTIVES_JSON="[]"
 
-            # Extract QA channel line
-            QA_LINE=$(echo "$DIRECTIVES" | grep -i "| QA " | head -1)
+            # Extract QA channel version
+            VERSION=$(echo "$DIRECTIVES_JSON" | jq -r '.[] | select(.channel | ascii_upcase == "QA") | .version' | head -1)
 
-            if [ -z "$QA_LINE" ]; then
+            if [ -z "$VERSION" ] || [ "$VERSION" == "null" ]; then
               echo "Error: No release directive found for QA channel"
               echo "Available release directives:"
-              echo "$DIRECTIVES"
+              echo "$DIRECTIVES_JSON" | jq '.'
               exit 1
-            fi
-
-            # Parse version (looks for v followed by digits)
-            VERSION=$(echo "$QA_LINE" | awk -F'|' '{for(i=1;i<=NF;i++) if($i ~ /v[0-9]/) print $i}' | tr -d ' ' | head -1)
-
-            if [ -z "$VERSION" ]; then
-              echo "Could not detect version, using default v1"
-              VERSION="v1"
             fi
 
             echo "Detected version from QA: $VERSION"
@@ -94,22 +121,24 @@ jobs:
           if [ -z "$PATCH" ]; then
             echo "Auto-detecting patch from QA channel..."
 
-            # Get release directives again if needed
-            if [ -z "$DIRECTIVES" ]; then
-              DIRECTIVES=$(snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; SHOW RELEASE DIRECTIVES IN APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }};" --connection mkt_blendx_demo 2>&1 || true)
-              QA_LINE=$(echo "$DIRECTIVES" | grep -i "| QA " | head -1)
+            # Get release directives if not already fetched
+            if [ -z "$DIRECTIVES_JSON" ]; then
+              DIRECTIVES_JSON=$(snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; SHOW RELEASE DIRECTIVES IN APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }};" \
+                --connection mkt_blendx_demo -o json 2>/dev/null) || DIRECTIVES_JSON="[]"
             fi
 
-            # Try to extract patch from QA directive
-            PATCH=$(echo "$QA_LINE" | awk -F'|' '{for(i=1;i<=NF;i++) if($i ~ /^[[:space:]]*[0-9]+[[:space:]]*$/ && $(i-1) ~ /v[0-9]/) print $i}' | tr -d ' ' | head -1)
+            # Extract patch from QA directive
+            PATCH=$(echo "$DIRECTIVES_JSON" | jq -r '.[] | select(.channel | ascii_upcase == "QA") | .patch' | head -1)
 
             # Fallback: get latest patch from versions list
-            if [ -z "$PATCH" ] || ! [[ "$PATCH" =~ ^[0-9]+$ ]]; then
+            if [ -z "$PATCH" ] || [ "$PATCH" == "null" ] || ! [[ "$PATCH" =~ ^[0-9]+$ ]]; then
               echo "Getting latest patch from versions list..."
-              PATCH=$(snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; SHOW VERSIONS IN APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }};" --connection mkt_blendx_demo 2>&1 | grep -i "| ${VERSION} " | awk -F'|' '{print $3}' | tr -d ' ' | sort -n | tail -1 || echo "0")
+              VERSIONS_JSON=$(snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; SHOW VERSIONS IN APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }};" \
+                --connection mkt_blendx_demo -o json 2>/dev/null) || VERSIONS_JSON="[]"
+              PATCH=$(echo "$VERSIONS_JSON" | jq -r --arg v "$VERSION" '[.[] | select(.version | ascii_upcase == ($v | ascii_upcase)) | .patch] | max // 0')
             fi
 
-            if [ -z "$PATCH" ] || ! [[ "$PATCH" =~ ^[0-9]+$ ]]; then
+            if [ -z "$PATCH" ] || [ "$PATCH" == "null" ] || ! [[ "$PATCH" =~ ^[0-9]+$ ]]; then
               PATCH=0
             fi
 
@@ -134,13 +163,17 @@ jobs:
 
           echo "Verifying version $VERSION patch $PATCH exists..."
 
-          VERSION_EXISTS=$(snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; SHOW VERSIONS IN APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }};" --connection mkt_blendx_demo 2>&1 | grep -i "| ${VERSION} " | wc -l | tr -d ' ' || echo "0")
+          # Use JSON output for reliable parsing
+          VERSIONS_JSON=$(snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; SHOW VERSIONS IN APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }};" \
+            --connection mkt_blendx_demo -o json 2>/dev/null) || VERSIONS_JSON="[]"
+
+          VERSION_EXISTS=$(echo "$VERSIONS_JSON" | jq -r --arg v "$VERSION" '[.[] | select(.version | ascii_upcase == ($v | ascii_upcase))] | length')
 
           if [ "$VERSION_EXISTS" -eq "0" ]; then
             echo "Error: Version ${VERSION} does not exist in package ${{ secrets.SNOWFLAKE_APP_PACKAGE }}"
             echo ""
             echo "Available versions:"
-            snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; SHOW VERSIONS IN APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }};" --connection mkt_blendx_demo
+            echo "$VERSIONS_JSON" | jq '.'
             exit 1
           fi
 
