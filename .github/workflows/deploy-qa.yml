@@ -281,6 +281,66 @@ jobs:
         run: |
           snow sql --query "PUT file://${{ github.workspace }}/app/src/* @${{ secrets.SNOWFLAKE_DATABASE }}.${{ secrets.SNOWFLAKE_SCHEMA }}.app_stage AUTO_COMPRESS=FALSE OVERWRITE=TRUE;" --connection ${{ env.SNOWFLAKE_CONNECTION }}
 
+      - name: Create application package if not exists
+        run: |
+          echo "Creating application package if not exists..."
+          snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; CREATE APPLICATION PACKAGE IF NOT EXISTS ${{ secrets.SNOWFLAKE_APP_PACKAGE }} DISTRIBUTION = INTERNAL;" --connection ${{ env.SNOWFLAKE_CONNECTION }} || true
+
+      - name: Clean up orphan versions
+        run: |
+          echo "Checking for orphan versions to clean up..."
+          # Get versions not in any release channel (max 2 allowed)
+          ORPHAN_VERSIONS=$(snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; SHOW VERSIONS IN APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }};" --connection ${{ env.SNOWFLAKE_CONNECTION }} -o json 2>/dev/null | jq -r '.[] | select(.release_channel == null) | .version' 2>/dev/null || echo "")
+
+          ORPHAN_COUNT=$(echo "$ORPHAN_VERSIONS" | grep -c . || echo "0")
+          echo "Found $ORPHAN_COUNT orphan versions"
+
+          # If more than 1 orphan, drop the oldest ones (keep 1 for new patch)
+          if [ "$ORPHAN_COUNT" -gt 1 ]; then
+            echo "$ORPHAN_VERSIONS" | head -n $((ORPHAN_COUNT - 1)) | while read -r ver; do
+              if [ -n "$ver" ]; then
+                echo "Dropping orphan version: $ver"
+                snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; ALTER APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }} DROP VERSION $ver;" --connection ${{ env.SNOWFLAKE_CONNECTION }} 2>/dev/null || true
+              fi
+            done
+          fi
+
+      - name: Register version or add patch
+        id: register
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          echo "Registering version $VERSION..."
+
+          # Check if version exists
+          VERSION_EXISTS=$(snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; SHOW VERSIONS IN APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }};" --connection ${{ env.SNOWFLAKE_CONNECTION }} -o json 2>/dev/null | jq -r ".[] | select(.version == \"$VERSION\") | .version" 2>/dev/null || echo "")
+
+          if [ -n "$VERSION_EXISTS" ]; then
+            echo "Version $VERSION exists, adding new patch..."
+            snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; ALTER APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }} ADD PATCH FOR VERSION $VERSION USING '@${{ secrets.SNOWFLAKE_DATABASE }}.${{ secrets.SNOWFLAKE_SCHEMA }}.app_stage';" --connection ${{ env.SNOWFLAKE_CONNECTION }}
+          else
+            echo "Creating new version $VERSION..."
+            snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; ALTER APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }} ADD VERSION $VERSION USING '@${{ secrets.SNOWFLAKE_DATABASE }}.${{ secrets.SNOWFLAKE_SCHEMA }}.app_stage';" --connection ${{ env.SNOWFLAKE_CONNECTION }}
+          fi
+
+          # Get the latest patch number for this version
+          PATCH=$(snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; SHOW VERSIONS IN APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }};" --connection ${{ env.SNOWFLAKE_CONNECTION }} -o json 2>/dev/null | jq -r ".[] | select(.version == \"$VERSION\") | .patch" 2>/dev/null || echo "0")
+          echo "patch=$PATCH" >> $GITHUB_OUTPUT
+          echo "Registered version $VERSION patch $PATCH"
+
+      - name: Update QA release channel
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          PATCH="${{ steps.register.outputs.patch }}"
+          echo "Updating QA release channel to version $VERSION patch $PATCH..."
+
+          # First ensure version is in QA channel
+          snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; ALTER APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }} MODIFY RELEASE CHANNEL QA ADD VERSION $VERSION;" --connection ${{ env.SNOWFLAKE_CONNECTION }} 2>&1 || echo "Version may already be in QA channel (OK)"
+
+          # Set the release directive
+          snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; ALTER APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }} MODIFY RELEASE CHANNEL QA SET DEFAULT RELEASE DIRECTIVE VERSION=$VERSION PATCH=$PATCH;" --connection ${{ env.SNOWFLAKE_CONNECTION }}
+
+          echo "QA channel updated successfully"
+
   # ============================================
   # UPGRADE: Upgrade application and restart service
   # ============================================
@@ -331,6 +391,12 @@ jobs:
           fi
 
           echo "Application exists."
+
+      - name: Upgrade application to latest patch
+        run: |
+          echo "Upgrading application ${{ secrets.SNOWFLAKE_APP_INSTANCE }} to latest patch..."
+          snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_ROLE }}; ALTER APPLICATION ${{ secrets.SNOWFLAKE_APP_INSTANCE }} UPGRADE;" --connection ${{ env.SNOWFLAKE_CONNECTION }}
+          echo "Application upgraded successfully"
 
       - name: Restart service
         run: |
