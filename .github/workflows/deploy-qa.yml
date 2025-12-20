@@ -475,12 +475,17 @@ jobs:
           set +e
           echo "Fetching application URL..."
 
-          URL_JSON=$(snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_ROLE }}; CALL ${{ secrets.SNOWFLAKE_APP_INSTANCE }}.app_public.app_url();" \
-            --connection ${{ env.SNOWFLAKE_CONNECTION }} -o json 2>/dev/null) || URL_JSON="[]"
+          # Get raw output and debug
+          URL_OUTPUT=$(snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_ROLE }}; CALL ${{ secrets.SNOWFLAKE_APP_INSTANCE }}.app_public.app_url();" \
+            --connection ${{ env.SNOWFLAKE_CONNECTION }} 2>&1)
 
-          APP_URL=$(echo "$URL_JSON" | jq -r '.[0] | to_entries | .[0].value // empty' 2>/dev/null || echo "")
+          echo "Raw output:"
+          echo "$URL_OUTPUT"
 
-          if [ -z "$APP_URL" ] || [ "$APP_URL" == "null" ]; then
+          # Try to extract URL - it should contain https://
+          APP_URL=$(echo "$URL_OUTPUT" | grep -oE 'https://[^[:space:]|]+' | head -1)
+
+          if [ -z "$APP_URL" ]; then
             APP_URL="URL not available yet"
           fi
 
