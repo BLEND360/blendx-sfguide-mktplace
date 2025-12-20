@@ -217,7 +217,7 @@ jobs:
   # ============================================
   should-deploy:
     runs-on: ubuntu-latest
-    needs: [build-backend, build-frontend, build-router]
+    needs: [validate, detect-changes, build-backend, build-frontend, build-router]
     if: always()
     outputs:
       proceed: ${{ steps.check.outputs.proceed }}
@@ -225,7 +225,22 @@ jobs:
       - name: Check if deploy should proceed
         id: check
         run: |
-          # Deploy if all builds succeeded or were skipped (no failures)
+          echo "Job results:"
+          echo "  validate: ${{ needs.validate.result }}"
+          echo "  detect-changes: ${{ needs.detect-changes.result }}"
+          echo "  build-backend: ${{ needs.build-backend.result }}"
+          echo "  build-frontend: ${{ needs.build-frontend.result }}"
+          echo "  build-router: ${{ needs.build-router.result }}"
+
+          # Block if validate or detect-changes failed
+          if [[ "${{ needs.validate.result }}" == "failure" ]] || \
+             [[ "${{ needs.detect-changes.result }}" == "failure" ]]; then
+            echo "proceed=false" >> $GITHUB_OUTPUT
+            echo "Deploy blocked: validation or change detection failed"
+            exit 0
+          fi
+
+          # Block if any build failed (skipped is OK)
           if [[ "${{ needs.build-backend.result }}" == "failure" ]] || \
              [[ "${{ needs.build-frontend.result }}" == "failure" ]] || \
              [[ "${{ needs.build-router.result }}" == "failure" ]]; then
@@ -243,7 +258,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: qa
     needs: [should-deploy]
-    if: needs.should-deploy.outputs.proceed == 'true'
+    if: ${{ needs.should-deploy.outputs.proceed == 'true' }}
     outputs:
       version: ${{ steps.version.outputs.version }}
       short_sha: ${{ steps.version.outputs.short_sha }}
