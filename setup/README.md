@@ -68,18 +68,16 @@ After the application is created, go to Snowsight:
 2. Click on the application
 3. Go to the **Security** tab
 4. Configure any required references (e.g., Serper API key secret)
-5. Grant any additional permissions if prompted
 
 ### Step 5: Start Application
 
-If you didn't start the app during Step 3, start it manually:
+Run the pipeline again or start the application manually:
 
 ```sql
 USE ROLE BLENDX_APP_ROLE;
 CALL BLENDX_APP_INSTANCE.app_public.start_app('BLENDX_CP');
 ```
-
-Or run the create-application.sh script again and select "y" when prompted to start.
+ 
 
 ### Step 6: Get Application URL
 
@@ -120,7 +118,7 @@ After the initial setup, the pipeline will automatically:
 4. Upgrade the application instance (if it exists)
 5. Restart the service
 
-No manual intervention required for updates.
+**No manual intervention required for updates.**
 
 ## Configuration Variables
 

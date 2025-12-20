@@ -428,7 +428,13 @@ jobs:
             echo "=========================================="
             echo "APPLICATION URL"
             echo "=========================================="
-            APP_URL=$(snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_ROLE }}; CALL ${{ secrets.SNOWFLAKE_APP_INSTANCE }}.app_public.app_url();" --connection mkt_blendx_demo 2>&1 | grep -oE 'https://[^[:space:]|]+' | head -1 || echo "URL not available yet")
+            URL_OUTPUT=$(snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_ROLE }}; CALL ${{ secrets.SNOWFLAKE_APP_INSTANCE }}.app_public.app_url();" --connection mkt_blendx_demo 2>&1)
+            echo "Raw URL output:"
+            echo "$URL_OUTPUT"
+            APP_URL=$(echo "$URL_OUTPUT" | grep -oE 'https://[^[:space:]|"]+' | head -1 || echo "")
+            if [ -z "$APP_URL" ]; then
+              APP_URL="URL not available yet"
+            fi
             echo "🚀 $APP_URL"
             echo "app_url=$APP_URL" >> $GITHUB_OUTPUT
           fi
