@@ -281,6 +281,16 @@ jobs:
         run: |
           snow sql --query "PUT file://${{ github.workspace }}/app/src/* @${{ secrets.SNOWFLAKE_DATABASE }}.${{ secrets.SNOWFLAKE_SCHEMA }}.app_stage AUTO_COMPRESS=FALSE OVERWRITE=TRUE;" --connection ${{ env.SNOWFLAKE_CONNECTION }}
 
+      - name: Add patch to application package
+        run: |
+          echo "Adding new patch to application package ${{ secrets.SNOWFLAKE_APP_PACKAGE }}..."
+          snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }};
+            ALTER APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }}
+            ADD PATCH FOR VERSION ${{ steps.version.outputs.version }}
+            USING '@${{ secrets.SNOWFLAKE_DATABASE }}.${{ secrets.SNOWFLAKE_SCHEMA }}.app_stage';" \
+            --connection ${{ env.SNOWFLAKE_CONNECTION }}
+          echo "Patch added successfully"
+
   # ============================================
   # UPGRADE: Upgrade application and restart service
   # ============================================
@@ -331,9 +341,14 @@ jobs:
           fi
 
           set -e
-          echo "Application exists. Calling update_service procedure..."
-          snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_ROLE }}; CALL ${{ secrets.SNOWFLAKE_APP_INSTANCE }}.app_public.update_service();" \
-            --connection ${{ env.SNOWFLAKE_CONNECTION }} || echo "Update completed or not needed"
+          echo "Application exists. Upgrading to latest patch..."
+
+          # Upgrade the application instance to pick up new procedures from the latest patch
+          snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_ROLE }};
+            ALTER APPLICATION ${{ secrets.SNOWFLAKE_APP_INSTANCE }} UPGRADE;" \
+            --connection ${{ env.SNOWFLAKE_CONNECTION }}
+
+          echo "Application upgraded successfully"
 
       - name: Restart service
         run: |
