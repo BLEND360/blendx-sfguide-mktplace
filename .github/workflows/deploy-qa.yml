@@ -89,7 +89,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: qa
     outputs:
-      image-tag: ${{ steps.meta.outputs.tags }}
+      image-tag: ${{ steps.meta.outputs.tag }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -132,7 +132,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: qa
     outputs:
-      image-tag: ${{ steps.meta.outputs.tags }}
+      image-tag: ${{ steps.meta.outputs.tag }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -175,7 +175,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: qa
     outputs:
-      image-tag: ${{ steps.meta.outputs.tags }}
+      image-tag: ${{ steps.meta.outputs.tag }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -394,7 +394,7 @@ jobs:
   upgrade:
     runs-on: ubuntu-latest
     environment: qa
-    needs: [package, release]
+    needs: [deploy-package, release]
 
     steps:
       - name: Checkout code
@@ -451,7 +451,7 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     environment: qa
-    needs: [package, release, upgrade]
+    needs: [deploy-package, release, upgrade]
 
     steps:
       - name: Checkout code
