@@ -213,52 +213,17 @@ jobs:
           cache-to: type=gha,mode=max,scope=router
 
   # ============================================
-  # SHOULD DEPLOY (simplifies condition logic)
+  # DEPLOY-PACKAGE: Generate and upload app files
   # ============================================
-  should-deploy:
-    runs-on: ubuntu-latest
-    needs: [validate, detect-changes, build-backend, build-frontend, build-router]
-    if: always()
-    outputs:
-      proceed: ${{ steps.check.outputs.proceed }}
-    steps:
-      - name: Check if deploy should proceed
-        id: check
-        run: |
-          echo "Job results:"
-          echo "  validate: ${{ needs.validate.result }}"
-          echo "  detect-changes: ${{ needs.detect-changes.result }}"
-          echo "  build-backend: ${{ needs.build-backend.result }}"
-          echo "  build-frontend: ${{ needs.build-frontend.result }}"
-          echo "  build-router: ${{ needs.build-router.result }}"
-
-          # Block if validate or detect-changes failed
-          if [[ "${{ needs.validate.result }}" == "failure" ]] || \
-             [[ "${{ needs.detect-changes.result }}" == "failure" ]]; then
-            echo "proceed=false" >> $GITHUB_OUTPUT
-            echo "Deploy blocked: validation or change detection failed"
-            exit 0
-          fi
-
-          # Block if any build failed (skipped is OK)
-          if [[ "${{ needs.build-backend.result }}" == "failure" ]] || \
-             [[ "${{ needs.build-frontend.result }}" == "failure" ]] || \
-             [[ "${{ needs.build-router.result }}" == "failure" ]]; then
-            echo "proceed=false" >> $GITHUB_OUTPUT
-            echo "Deploy blocked: one or more builds failed"
-          else
-            echo "proceed=true" >> $GITHUB_OUTPUT
-            echo "Deploy can proceed"
-          fi
-
-  # ============================================
-  # PACKAGE: Generate and upload app files
-  # ============================================
-  package:
+  deploy-package:
     runs-on: ubuntu-latest
     environment: qa
-    needs: [should-deploy]
-    if: ${{ needs.should-deploy.outputs.proceed == 'true' }}
+    needs: [validate, detect-changes, build-backend, build-frontend, build-router]
+    if: |
+      always() &&
+      needs.validate.result == 'success' &&
+      needs.detect-changes.result == 'success' &&
+      !contains(needs.*.result, 'failure')
     outputs:
       version: ${{ steps.version.outputs.version }}
       short_sha: ${{ steps.version.outputs.short_sha }}
@@ -322,7 +287,7 @@ jobs:
   release:
     runs-on: ubuntu-latest
     environment: qa
-    needs: [package]
+    needs: [deploy-package]
     outputs:
       patch: ${{ steps.patch.outputs.patch }}
 
@@ -345,7 +310,7 @@ jobs:
 
       - name: Create Application Package if not exists
         env:
-          VERSION: ${{ needs.package.outputs.version }}
+          VERSION: ${{ needs.deploy-package.outputs.version }}
         run: |
           echo "Creating Application Package ${{ secrets.SNOWFLAKE_APP_PACKAGE }} if it doesn't exist..."
           snow sql -q "CREATE APPLICATION PACKAGE IF NOT EXISTS ${{ secrets.SNOWFLAKE_APP_PACKAGE }} DISTRIBUTION = INTERNAL;" --connection ${{ env.SNOWFLAKE_CONNECTION }}
@@ -355,7 +320,7 @@ jobs:
 
       - name: Clean up orphan versions
         env:
-          VERSION: ${{ needs.package.outputs.version }}
+          VERSION: ${{ needs.deploy-package.outputs.version }}
         run: |
           echo "Checking for orphan versions..."
 
@@ -379,7 +344,7 @@ jobs:
 
       - name: Register version or add patch
         env:
-          VERSION: ${{ needs.package.outputs.version }}
+          VERSION: ${{ needs.deploy-package.outputs.version }}
         run: |
           VERSIONS_JSON=$(snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; SHOW VERSIONS IN APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }};" \
             --connection ${{ env.SNOWFLAKE_CONNECTION }} -o json 2>/dev/null) || VERSIONS_JSON="[]"
@@ -397,7 +362,7 @@ jobs:
       - name: Get latest patch number
         id: patch
         env:
-          VERSION: ${{ needs.package.outputs.version }}
+          VERSION: ${{ needs.deploy-package.outputs.version }}
         run: |
           VERSIONS_JSON=$(snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; SHOW VERSIONS IN APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }};" \
             --connection ${{ env.SNOWFLAKE_CONNECTION }} -o json 2>/dev/null) || VERSIONS_JSON="[]"
@@ -413,7 +378,7 @@ jobs:
 
       - name: Update QA release channel
         env:
-          VERSION: ${{ needs.package.outputs.version }}
+          VERSION: ${{ needs.deploy-package.outputs.version }}
         run: |
           PATCH="${{ steps.patch.outputs.patch }}"
 
@@ -450,7 +415,7 @@ jobs:
 
       - name: Upgrade application
         env:
-          VERSION: ${{ needs.package.outputs.version }}
+          VERSION: ${{ needs.deploy-package.outputs.version }}
           PATCH: ${{ needs.release.outputs.patch }}
         run: |
           set +e
@@ -535,8 +500,8 @@ jobs:
 
       - name: Deploy Summary
         env:
-          VERSION: ${{ needs.package.outputs.version }}
-          SHORT_SHA: ${{ needs.package.outputs.short_sha }}
+          VERSION: ${{ needs.deploy-package.outputs.version }}
+          SHORT_SHA: ${{ needs.deploy-package.outputs.short_sha }}
           PATCH: ${{ needs.release.outputs.patch }}
         run: |
           echo ""
