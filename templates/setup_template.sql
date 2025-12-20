@@ -74,11 +74,35 @@ CREATE OR REPLACE PROCEDURE app_public.stop_app()
     AS
 $$
 BEGIN
-    DROP SERVICE IF EXISTS app_public.blendx_st_spcs;
-    RETURN 'Service stopped';
+    ALTER SERVICE app_public.blendx_st_spcs SUSPEND;
+    RETURN 'Service suspended';
 END
 $$;
 GRANT USAGE ON PROCEDURE app_public.stop_app() TO APPLICATION ROLE app_admin;
+
+CREATE OR REPLACE PROCEDURE app_public.resume_app()
+    RETURNS string
+    LANGUAGE sql
+    AS
+$$
+BEGIN
+    ALTER SERVICE app_public.blendx_st_spcs RESUME;
+    RETURN 'Service resumed';
+END
+$$;
+GRANT USAGE ON PROCEDURE app_public.resume_app() TO APPLICATION ROLE app_admin;
+
+CREATE OR REPLACE PROCEDURE app_public.destroy_app()
+    RETURNS string
+    LANGUAGE sql
+    AS
+$$
+BEGIN
+    DROP SERVICE IF EXISTS app_public.blendx_st_spcs;
+    RETURN 'Service destroyed';
+END
+$$;
+GRANT USAGE ON PROCEDURE app_public.destroy_app() TO APPLICATION ROLE app_admin;
 
 CREATE OR REPLACE PROCEDURE app_public.app_url()
     RETURNS string

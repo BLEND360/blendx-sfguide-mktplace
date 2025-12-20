@@ -137,9 +137,9 @@ snow sql -q "USE ROLE nac_test; CALL spcs_app_instance_test.app_public.app_url()
 ./scripts/cleanup.sh
 ```
 
-- Restart the app (calls stop and start):
+- Manage the service (resume/restart/start):
 ```sh
-./scripts/restart.sh
+./scripts/manage-service.sh
 ```
 
 ## User Interface Guide

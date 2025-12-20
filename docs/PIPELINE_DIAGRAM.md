@@ -79,7 +79,7 @@ flowchart TB
         D11[Update QA release channel]
         D12{App exists?}
         D13[Upgrade application]
-        D14[Run restart.sh]
+        D14[Run manage-service.sh]
         D15[Skip restart]
         D16[Wait 60s for service]
         D17[Get application URL]
@@ -131,7 +131,7 @@ flowchart TB
     style release fill:#e8f5e9
 ```
 
-## Restart Script
+## Manage Service Script
 
 ```mermaid
 flowchart TB
@@ -139,20 +139,25 @@ flowchart TB
     R2[Load environment variables]
     R3[Check if service exists]
     R4{Service exists?}
-    R5[ALTER SERVICE with FORCE_PULL_IMAGE]
-    R6[Call start_app procedure]
-    R7[Wait 30 seconds]
-    R8[Get service status]
-    R9[Get application URL]
-    R10[End]
+    R5{Service suspended?}
+    R6[Call resume_app procedure]
+    R7[ALTER SERVICE with FORCE_PULL_IMAGE]
+    R8[Call start_app procedure]
+    R9[Wait 30 seconds]
+    R10[Get service status]
+    R11[Get application URL]
+    R12[End]
 
     R1 --> R2 --> R3 --> R4
-    R4 -->|Yes| R5 --> R7
-    R4 -->|No| R6 --> R7
-    R7 --> R8 --> R9 --> R10
+    R4 -->|Yes| R5
+    R5 -->|Yes| R6 --> R9
+    R5 -->|No| R7 --> R9
+    R4 -->|No| R8 --> R9
+    R9 --> R10 --> R11 --> R12
 
-    style R5 fill:#fff3e0
-    style R6 fill:#fff3e0
+    style R6 fill:#e8f5e9
+    style R7 fill:#fff3e0
+    style R8 fill:#fff3e0
 ```
 
 ## Complete Flow: Development to Production

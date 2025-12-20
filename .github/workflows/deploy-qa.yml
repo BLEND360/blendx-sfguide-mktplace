@@ -13,9 +13,36 @@ env:
 
 jobs:
   # ============================================
+  # DETECT CHANGES
+  # ============================================
+  detect-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+      router: ${{ steps.filter.outputs.router }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Detect changed paths
+        uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            backend:
+              - 'backend/**'
+            frontend:
+              - 'frontend/**'
+            router:
+              - 'router/**'
+
+  # ============================================
   # PARALLEL BUILD JOBS
   # ============================================
   build-backend:
+    needs: detect-changes
+    if: ${{ needs.detect-changes.outputs.backend == 'true' || github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
     environment: qa
     steps:
@@ -68,6 +95,8 @@ jobs:
           cache-to: type=gha,mode=max,scope=backend
 
   build-frontend:
+    needs: detect-changes
+    if: ${{ needs.detect-changes.outputs.frontend == 'true' || github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
     environment: qa
     steps:
@@ -120,6 +149,8 @@ jobs:
           cache-to: type=gha,mode=max,scope=frontend
 
   build-router:
+    needs: detect-changes
+    if: ${{ needs.detect-changes.outputs.router == 'true' || github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
     environment: qa
     steps:
@@ -177,7 +208,13 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     environment: qa
-    needs: [build-backend, build-frontend, build-router]
+    needs: [detect-changes, build-backend, build-frontend, build-router]
+    if: |
+      always() &&
+      (needs.build-backend.result == 'success' || needs.build-backend.result == 'skipped') &&
+      (needs.build-frontend.result == 'success' || needs.build-frontend.result == 'skipped') &&
+      (needs.build-router.result == 'success' || needs.build-router.result == 'skipped') &&
+      !(needs.build-backend.result == 'failure' || needs.build-frontend.result == 'failure' || needs.build-router.result == 'failure')
 
     steps:
       - name: Checkout code
@@ -397,8 +434,8 @@ jobs:
             export SNOWFLAKE_APP_INSTANCE="${{ secrets.SNOWFLAKE_APP_INSTANCE }}"
             export SNOWFLAKE_COMPUTE_POOL="${{ secrets.SNOWFLAKE_COMPUTE_POOL }}"
             export SNOWFLAKE_CONNECTION="mkt_blendx_demo"
-            chmod +x scripts/restart.sh
-            ./scripts/restart.sh
+            chmod +x scripts/manage-service.sh
+            ./scripts/manage-service.sh
           else
             echo "::warning::Application does not exist. Please run setup/create-application.sh to install the application first."
             echo "Skipping upgrade and restart."
@@ -431,9 +468,16 @@ jobs:
             URL_OUTPUT=$(snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_ROLE }}; CALL ${{ secrets.SNOWFLAKE_APP_INSTANCE }}.app_public.app_url();" --connection mkt_blendx_demo 2>&1)
             echo "Raw URL output:"
             echo "$URL_OUTPUT"
+            # Extract URL - try with https:// first, then without
             APP_URL=$(echo "$URL_OUTPUT" | grep -oE 'https://[^[:space:]|"]+' | head -1 || echo "")
             if [ -z "$APP_URL" ]; then
-              APP_URL="URL not available yet"
+              # Try to extract domain without https://
+              DOMAIN=$(echo "$URL_OUTPUT" | grep -oE '[a-zA-Z0-9-]+\.snowflakecomputing\.app' | head -1 || echo "")
+              if [ -n "$DOMAIN" ]; then
+                APP_URL="https://${DOMAIN}"
+              else
+                APP_URL="URL not available yet"
+              fi
             fi
             echo "🚀 $APP_URL"
             echo "app_url=$APP_URL" >> $GITHUB_OUTPUT

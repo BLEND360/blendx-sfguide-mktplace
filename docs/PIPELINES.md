@@ -58,7 +58,7 @@ Deploys the application package and restarts the service.
 6. **Clean up versions**: Removes orphan versions not in any release channel
 7. **Register version/patch**: Registers new version or adds patch to existing version
 8. **Update QA channel**: Sets the release directive for QA channel
-9. **Upgrade & restart**: If app instance exists, upgrades and runs `restart.sh`
+9. **Upgrade & restart**: If app instance exists, upgrades and runs `manage-service.sh`
 10. **Get URL**: Waits for service and retrieves application URL
 
 ### Version Strategy
@@ -90,9 +90,9 @@ When triggering manually, you can specify:
 
 If not specified, values are auto-detected from QA channel.
 
-## Restart Script (restart.sh)
+## Manage Service Script (manage-service.sh)
 
-Used by the QA pipeline to restart the SPCS service after deployment.
+Used by the QA pipeline to manage the SPCS service after deployment.
 
 ### Environment Variables
 
@@ -105,11 +105,12 @@ Used by the QA pipeline to restart the SPCS service after deployment.
 
 ### Behavior
 
-1. Checks if service exists
-2. If exists: Uses `ALTER SERVICE ... FORCE_PULL_IMAGE = TRUE` to pull new images
-3. If not exists: Calls `start_app()` procedure to create service
-4. Waits 30 seconds for startup
-5. Shows service status and application URL
+1. Checks if service exists and its status
+2. If exists and SUSPENDED: Calls `resume_app()` procedure to resume service
+3. If exists and running: Uses `ALTER SERVICE ... FORCE_PULL_IMAGE = TRUE` to pull new images
+4. If not exists: Calls `start_app()` procedure to create service
+5. Waits 30 seconds for startup
+6. Shows service status and application URL
 
 ## GitHub Secrets Required
 
