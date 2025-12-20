@@ -295,12 +295,13 @@ jobs:
           ORPHAN_COUNT=$(echo "$ORPHAN_VERSIONS" | grep -c . || echo "0")
           echo "Found $ORPHAN_COUNT orphan versions"
 
-          # If more than 1 orphan, drop the oldest ones (keep 1 for new patch)
+          # If more than 1 orphan, deregister the oldest ones (keep 1 for new patch)
           if [ "$ORPHAN_COUNT" -gt 1 ]; then
             echo "$ORPHAN_VERSIONS" | head -n $((ORPHAN_COUNT - 1)) | while read -r ver; do
               if [ -n "$ver" ]; then
-                echo "Dropping orphan version: $ver"
-                snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; ALTER APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }} DROP VERSION $ver;" --connection ${{ env.SNOWFLAKE_CONNECTION }} 2>/dev/null || true
+                echo "Deregistering orphan version: $ver"
+                # Use DEREGISTER for packages with release channels enabled
+                snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; ALTER APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }} DEREGISTER VERSION $ver;" --connection ${{ env.SNOWFLAKE_CONNECTION }} 2>/dev/null || true
               fi
             done
           fi
@@ -309,17 +310,20 @@ jobs:
         id: register
         run: |
           VERSION="${{ steps.version.outputs.version }}"
-          echo "Registering version $VERSION..."
+          STAGE_PATH="@${{ secrets.SNOWFLAKE_DATABASE }}.${{ secrets.SNOWFLAKE_SCHEMA }}.app_stage"
+          echo "Registering version $VERSION from $STAGE_PATH..."
 
           # Check if version exists
           VERSION_EXISTS=$(snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; SHOW VERSIONS IN APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }};" --connection ${{ env.SNOWFLAKE_CONNECTION }} -o json 2>/dev/null | jq -r ".[] | select(.version == \"$VERSION\") | .version" 2>/dev/null || echo "")
 
           if [ -n "$VERSION_EXISTS" ]; then
             echo "Version $VERSION exists, adding new patch..."
-            snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; ALTER APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }} ADD PATCH FOR VERSION $VERSION USING '@${{ secrets.SNOWFLAKE_DATABASE }}.${{ secrets.SNOWFLAKE_SCHEMA }}.app_stage';" --connection ${{ env.SNOWFLAKE_CONNECTION }}
+            # Use ADD PATCH syntax (works with release channels)
+            snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; ALTER APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }} ADD PATCH FOR VERSION $VERSION USING '$STAGE_PATH';" --connection ${{ env.SNOWFLAKE_CONNECTION }}
           else
             echo "Creating new version $VERSION..."
-            snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; ALTER APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }} ADD VERSION $VERSION USING '@${{ secrets.SNOWFLAKE_DATABASE }}.${{ secrets.SNOWFLAKE_SCHEMA }}.app_stage';" --connection ${{ env.SNOWFLAKE_CONNECTION }}
+            # Use REGISTER VERSION syntax for packages with release channels enabled
+            snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; ALTER APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }} REGISTER VERSION $VERSION USING '$STAGE_PATH';" --connection ${{ env.SNOWFLAKE_CONNECTION }}
           fi
 
           # Get the latest patch number for this version
