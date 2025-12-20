@@ -313,23 +313,28 @@ jobs:
           STAGE_PATH="@${{ secrets.SNOWFLAKE_DATABASE }}.${{ secrets.SNOWFLAKE_SCHEMA }}.app_stage"
           echo "Registering version $VERSION from $STAGE_PATH..."
 
-          # Check if version exists
-          VERSION_EXISTS=$(snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; SHOW VERSIONS IN APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }};" --connection ${{ env.SNOWFLAKE_CONNECTION }} -o json 2>/dev/null | jq -r ".[] | select(.version == \"$VERSION\") | .version" 2>/dev/null || echo "")
+          # Get current versions and find max patch for this version
+          VERSIONS_JSON=$(snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; SHOW VERSIONS IN APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }};" --connection ${{ env.SNOWFLAKE_CONNECTION }} -o json 2>/dev/null || echo "[]")
+          echo "Current versions: $VERSIONS_JSON"
 
-          if [ -n "$VERSION_EXISTS" ]; then
-            echo "Version $VERSION exists, adding new patch..."
+          # Check if version exists and get current max patch
+          CURRENT_PATCH=$(echo "$VERSIONS_JSON" | jq -r "[.[] | select(.version == \"$VERSION\") | .patch] | max // empty" 2>/dev/null || echo "")
+          echo "Current patch for $VERSION: $CURRENT_PATCH"
+
+          if [ -n "$CURRENT_PATCH" ] && [ "$CURRENT_PATCH" != "null" ]; then
+            echo "Version $VERSION exists with patch $CURRENT_PATCH, adding new patch..."
             # Use ADD PATCH syntax (works with release channels)
             snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; ALTER APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }} ADD PATCH FOR VERSION $VERSION USING '$STAGE_PATH';" --connection ${{ env.SNOWFLAKE_CONNECTION }}
+            NEW_PATCH=$((CURRENT_PATCH + 1))
           else
             echo "Creating new version $VERSION..."
             # Use REGISTER VERSION syntax for packages with release channels enabled
             snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; ALTER APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }} REGISTER VERSION $VERSION USING '$STAGE_PATH';" --connection ${{ env.SNOWFLAKE_CONNECTION }}
+            NEW_PATCH=0
           fi
 
-          # Get the latest patch number for this version
-          PATCH=$(snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; SHOW VERSIONS IN APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }};" --connection ${{ env.SNOWFLAKE_CONNECTION }} -o json 2>/dev/null | jq -r ".[] | select(.version == \"$VERSION\") | .patch" 2>/dev/null || echo "0")
-          echo "patch=$PATCH" >> $GITHUB_OUTPUT
-          echo "Registered version $VERSION patch $PATCH"
+          echo "patch=$NEW_PATCH" >> $GITHUB_OUTPUT
+          echo "Registered version $VERSION patch $NEW_PATCH"
 
       - name: Update QA release channel
         run: |
