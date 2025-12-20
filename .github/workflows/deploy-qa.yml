@@ -281,16 +281,6 @@ jobs:
         run: |
           snow sql --query "PUT file://${{ github.workspace }}/app/src/* @${{ secrets.SNOWFLAKE_DATABASE }}.${{ secrets.SNOWFLAKE_SCHEMA }}.app_stage AUTO_COMPRESS=FALSE OVERWRITE=TRUE;" --connection ${{ env.SNOWFLAKE_CONNECTION }}
 
-      - name: Add patch to application package
-        run: |
-          echo "Adding new patch to application package ${{ secrets.SNOWFLAKE_APP_PACKAGE }}..."
-          snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }};
-            ALTER APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }}
-            ADD PATCH FOR VERSION ${{ steps.version.outputs.version }}
-            USING '@${{ secrets.SNOWFLAKE_DATABASE }}.${{ secrets.SNOWFLAKE_SCHEMA }}.app_stage';" \
-            --connection ${{ env.SNOWFLAKE_CONNECTION }}
-          echo "Patch added successfully"
-
   # ============================================
   # UPGRADE: Upgrade application and restart service
   # ============================================
@@ -317,7 +307,7 @@ jobs:
           host: ${{ secrets.SNOWFLAKE_HOST }}
           login-registry: 'false'
 
-      - name: Upgrade application
+      - name: Check application exists
         run: |
           set +e
           echo "Checking for application ${{ secrets.SNOWFLAKE_APP_INSTANCE }}..."
@@ -334,21 +324,13 @@ jobs:
           # Check if output contains "0 Row" (no applications found)
           if echo "$APP_OUTPUT" | grep -q "0 Row"; then
             echo "::warning::Application does not exist. Run setup/create-application.sh first."
-            exit 0
+            exit 1
           elif echo "$APP_OUTPUT" | grep -qi "error\|does not exist"; then
             echo "::warning::Error checking application or application does not exist."
-            exit 0
+            exit 1
           fi
 
-          set -e
-          echo "Application exists. Upgrading to latest patch..."
-
-          # Upgrade the application instance to pick up new procedures from the latest patch
-          snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_ROLE }};
-            ALTER APPLICATION ${{ secrets.SNOWFLAKE_APP_INSTANCE }} UPGRADE;" \
-            --connection ${{ env.SNOWFLAKE_CONNECTION }}
-
-          echo "Application upgraded successfully"
+          echo "Application exists."
 
       - name: Restart service
         run: |
