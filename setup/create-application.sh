@@ -214,35 +214,6 @@ run_sql "Granting CREATE EXTERNAL ACCESS INTEGRATION to application" \
 log_info "Account-level permissions granted to application"
 
 # ============================================
-# Step 5: Start Application Service (Optional)
-# ============================================
-
-log_step "Step 5: Start Application Service"
-
-echo ""
-read -p "Do you want to start the application service now? (y/n) " -n 1 -r
-echo
-
-if [[ $REPLY =~ ^[Yy]$ ]]; then
-    run_sql "Starting application service" \
-        "USE ROLE ${APP_CONSUMER_ROLE};
-         CALL ${APP_INSTANCE_NAME}.app_public.start_app('${COMPUTE_POOL_NAME}');"
-    log_info "Application service started"
-
-    echo ""
-    echo "To check service status:"
-    echo "  CALL ${APP_INSTANCE_NAME}.app_public.get_service_status();"
-    echo ""
-    echo "To get the application URL (once service is ready):"
-    echo "  CALL ${APP_INSTANCE_NAME}.app_public.app_url();"
-else
-    log_info "Skipped - Start the service manually when ready:"
-    echo ""
-    echo "  USE ROLE ${APP_CONSUMER_ROLE};"
-    echo "  CALL ${APP_INSTANCE_NAME}.app_public.start_app('${COMPUTE_POOL_NAME}');"
-fi
-
-# ============================================
 # Completion Message
 # ============================================
 
@@ -252,17 +223,4 @@ echo -e "${GREEN}Application Instance Setup Complete!${NC}"
 echo "=========================================="
 echo ""
 echo "Application: ${APP_INSTANCE_NAME}"
-echo ""
-echo "Useful commands:"
-echo "  -- Check service status"
-echo "  CALL ${APP_INSTANCE_NAME}.app_public.get_service_status();"
-echo ""
-echo "  -- Get application URL"
-echo "  CALL ${APP_INSTANCE_NAME}.app_public.app_url();"
-echo ""
-echo "  -- View service logs"
-echo "  CALL ${APP_INSTANCE_NAME}.app_public.get_service_logs('frontend', 100);"
-echo ""
-echo "  -- Stop the service"
-echo "  CALL ${APP_INSTANCE_NAME}.app_public.stop_app();"
 echo ""
