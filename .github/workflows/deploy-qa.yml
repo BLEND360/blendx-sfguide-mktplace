@@ -412,8 +412,19 @@ jobs:
 
       - name: Upgrade application to latest patch
         run: |
-          echo "Upgrading application ${{ secrets.SNOWFLAKE_APP_INSTANCE }} to latest patch..."
-          snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_ROLE }}; ALTER APPLICATION ${{ secrets.SNOWFLAKE_APP_INSTANCE }} UPGRADE;" --connection ${{ env.SNOWFLAKE_CONNECTION }}
+          VERSION="${{ needs.deploy-package.outputs.version }}"
+
+          # Get the latest patch number for this version
+          echo "Getting latest patch for version $VERSION..."
+          VERSIONS_OUTPUT=$(snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; SHOW VERSIONS IN APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }};" --connection ${{ env.SNOWFLAKE_CONNECTION }} -o json 2>/dev/null || echo "[]")
+
+          PATCH=$(echo "$VERSIONS_OUTPUT" | jq -r "[.[] | select(.version == \"$VERSION\") | .patch | tonumber] | max // 0" 2>/dev/null || echo "0")
+          if [ -z "$PATCH" ] || [ "$PATCH" = "null" ]; then
+            PATCH=0
+          fi
+
+          echo "Upgrading application ${{ secrets.SNOWFLAKE_APP_INSTANCE }} to version $VERSION patch $PATCH..."
+          snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_ROLE }}; ALTER APPLICATION ${{ secrets.SNOWFLAKE_APP_INSTANCE }} UPGRADE USING VERSION $VERSION PATCH $PATCH;" --connection ${{ env.SNOWFLAKE_CONNECTION }}
           echo "Application upgraded successfully"
 
       - name: Restart service
