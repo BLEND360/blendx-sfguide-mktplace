@@ -156,7 +156,7 @@ log_step "Step 1: Stop and Drop Service"
 run_sql "Stopping service" \
     "USE ROLE ${APP_CONSUMER_ROLE};
      USE APPLICATION ${APP_INSTANCE_NAME};
-     DROP SERVICE IF EXISTS app_public.st_spcs;"
+     DROP SERVICE IF EXISTS app_public.blendx_st_spcs;"
 
 log_info "Service dropped (if it existed)"
 

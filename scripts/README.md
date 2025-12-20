@@ -152,13 +152,18 @@ You can also specify a specific version/patch manually:
 | **DEFAULT** | Production, marketplace listing | `release.sh` (promotes from QA) |
 | **ALPHA** | For external testing | `release.sh --channel ALPHA` |
 
-### Restarting the Service
+### Managing the Service
 
-If you need to restart the service without deploying:
+If you need to manage the service without deploying:
 
 ```bash
-./scripts/restart.sh
+./scripts/manage-service.sh
 ```
+
+This script will:
+- Resume a suspended service
+- Force pull new images if service is running
+- Start from scratch if service doesn't exist
 
 ### Recreating Test Application
 
@@ -177,7 +182,7 @@ If you need to recreate the test application:
 | `release.sh` | Updates DEFAULT channel (production/marketplace) |
 | `create-application.sh` | **Initial setup** - Creates application instance (Consumer) |
 | `recreate-app-qa.sh` | Recreates test app using QA release channel |
-| `restart.sh` | Restarts the SPCS service |
+| `manage-service.sh` | Manages the SPCS service (resume/restart/start) |
 | `sql/consumer.sql` | **Initial setup** - Consumer secrets and permissions setup |
 | `sql/local_setup.sql` | Local development database setup |
 | `sql/grant_cortex_permissions.sql` | Grant Cortex AI permissions |

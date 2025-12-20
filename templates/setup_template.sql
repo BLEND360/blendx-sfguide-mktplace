@@ -9,23 +9,8 @@ GRANT USAGE ON SCHEMA app_public TO APPLICATION ROLE app_user;
 CREATE OR ALTER VERSIONED SCHEMA v1;
 GRANT USAGE ON SCHEMA v1 TO APPLICATION ROLE app_admin;
 
--- Create network rule for Serper API access (required for EAI)
-CREATE OR REPLACE NETWORK RULE app_public.serper_network_rule
-    TYPE = HOST_PORT
-    VALUE_LIST = ('google.serper.dev')
-    MODE = EGRESS;
-
--- Create external access integration for Serper API
-CREATE OR REPLACE EXTERNAL ACCESS INTEGRATION serper_eai
-    ALLOWED_NETWORK_RULES = (app_public.serper_network_rule)
-    ENABLED = TRUE;
-
--- Define app specification for external access (required for Marketplace)
-ALTER APPLICATION SET SPECIFICATION serper_api_spec
-    TYPE = EXTERNAL_ACCESS
-    LABEL = 'Serper Web Search API'
-    DESCRIPTION = 'Allows the application to connect to google.serper.dev for web search functionality'
-    HOST_PORTS = ('google.serper.dev');
+-- Network rule and External Access Integration are created in start_app() procedure
+-- after the application has been granted CREATE EXTERNAL ACCESS INTEGRATION privilege
 
 -- Create schema for application data
 CREATE SCHEMA IF NOT EXISTS app_data;
@@ -37,7 +22,7 @@ GRANT USAGE ON SCHEMA app_data TO APPLICATION ROLE app_user;
 -- Auto-generated from scripts/sql/tables_definitions.sql during deploy
 -- DO NOT EDIT MANUALLY - Edit tables_definitions.sql instead
 -- =============================================================================
--- {{TABLE_DEFINITIONS}}
+{{TABLE_DEFINITIONS}}
 -- =============================================================================
 
 CREATE OR REPLACE PROCEDURE app_public.start_app(poolname VARCHAR)
@@ -45,9 +30,9 @@ CREATE OR REPLACE PROCEDURE app_public.start_app(poolname VARCHAR)
     LANGUAGE sql
     AS $$
 BEGIN
-        LET app_warehouse VARCHAR DEFAULT 'APP_WH';
+        LET app_warehouse VARCHAR DEFAULT 'BLENDX_APP_WH';
 
-        -- First, create the application warehouse
+        -- First, create the application warehouse (unique name to avoid conflicts)
         CREATE WAREHOUSE IF NOT EXISTS IDENTIFIER(:app_warehouse)
             WAREHOUSE_SIZE = 'X-SMALL'
             AUTO_SUSPEND = 60
@@ -58,13 +43,24 @@ BEGIN
         EXECUTE IMMEDIATE 'CREATE COMPUTE POOL IF NOT EXISTS ' || poolname ||
             ' MIN_NODES = 1 MAX_NODES = 3 INSTANCE_FAMILY = CPU_X64_M AUTO_RESUME = TRUE AUTO_SUSPEND_SECS = 300';
 
-        -- Create the service with the app's external access integration (EAI created at setup time)
-        EXECUTE IMMEDIATE 'CREATE SERVICE app_public.st_spcs IN COMPUTE POOL ' || poolname ||
-            ' FROM SPECIFICATION_FILE=''/fullstack.yaml'' QUERY_WAREHOUSE=' || app_warehouse ||
-            ' EXTERNAL_ACCESS_INTEGRATIONS = (serper_eai)';
+        -- Create network rule for Serper API access (prefixed to avoid conflicts)
+        CREATE NETWORK RULE IF NOT EXISTS app_public.blendx_serper_network_rule
+            TYPE = HOST_PORT
+            VALUE_LIST = ('google.serper.dev')
+            MODE = EGRESS;
 
-        GRANT USAGE ON SERVICE app_public.st_spcs TO APPLICATION ROLE app_user;
-        GRANT SERVICE ROLE app_public.st_spcs!ALL_ENDPOINTS_USAGE TO APPLICATION ROLE app_user;
+        -- Create external access integration for Serper API (prefixed to avoid conflicts)
+        CREATE EXTERNAL ACCESS INTEGRATION IF NOT EXISTS blendx_serper_eai
+            ALLOWED_NETWORK_RULES = (app_public.blendx_serper_network_rule)
+            ENABLED = TRUE;
+
+        -- Create the service (prefixed to avoid conflicts)
+        EXECUTE IMMEDIATE 'CREATE SERVICE app_public.blendx_st_spcs IN COMPUTE POOL ' || poolname ||
+            ' FROM SPECIFICATION_FILE=''/fullstack.yaml'' QUERY_WAREHOUSE=' || app_warehouse ||
+            ' EXTERNAL_ACCESS_INTEGRATIONS = (blendx_serper_eai)';
+
+        GRANT USAGE ON SERVICE app_public.blendx_st_spcs TO APPLICATION ROLE app_user;
+        GRANT SERVICE ROLE app_public.blendx_st_spcs!ALL_ENDPOINTS_USAGE TO APPLICATION ROLE app_user;
 
         RETURN 'Service started with warehouse ' || app_warehouse || '. Check status, and when ready, get URL';
 END;
@@ -78,10 +74,48 @@ CREATE OR REPLACE PROCEDURE app_public.stop_app()
     AS
 $$
 BEGIN
-    DROP SERVICE IF EXISTS app_public.st_spcs;
+    ALTER SERVICE app_public.blendx_st_spcs SUSPEND;
+    RETURN 'Service suspended';
 END
 $$;
 GRANT USAGE ON PROCEDURE app_public.stop_app() TO APPLICATION ROLE app_admin;
+
+CREATE OR REPLACE PROCEDURE app_public.resume_app()
+    RETURNS string
+    LANGUAGE sql
+    AS
+$$
+BEGIN
+    ALTER SERVICE app_public.blendx_st_spcs RESUME;
+    RETURN 'Service resumed';
+END
+$$;
+GRANT USAGE ON PROCEDURE app_public.resume_app() TO APPLICATION ROLE app_admin;
+
+CREATE OR REPLACE PROCEDURE app_public.update_service()
+    RETURNS string
+    LANGUAGE sql
+    AS
+$$
+BEGIN
+    -- Reload service from specification file to pick up new image tags
+    ALTER SERVICE app_public.blendx_st_spcs FROM SPECIFICATION_FILE='/fullstack.yaml';
+    RETURN 'Service updated with new specification';
+END
+$$;
+GRANT USAGE ON PROCEDURE app_public.update_service() TO APPLICATION ROLE app_admin;
+
+CREATE OR REPLACE PROCEDURE app_public.destroy_app()
+    RETURNS string
+    LANGUAGE sql
+    AS
+$$
+BEGIN
+    DROP SERVICE IF EXISTS app_public.blendx_st_spcs;
+    RETURN 'Service destroyed';
+END
+$$;
+GRANT USAGE ON PROCEDURE app_public.destroy_app() TO APPLICATION ROLE app_admin;
 
 CREATE OR REPLACE PROCEDURE app_public.app_url()
     RETURNS string
@@ -90,7 +124,7 @@ CREATE OR REPLACE PROCEDURE app_public.app_url()
 $$
 BEGIN
     LET ingress_url VARCHAR;
-    SHOW ENDPOINTS IN SERVICE app_public.st_spcs;
+    SHOW ENDPOINTS IN SERVICE app_public.blendx_st_spcs;
     SELECT "ingress_url" INTO :ingress_url FROM TABLE (RESULT_SCAN (LAST_QUERY_ID())) LIMIT 1;
     RETURN ingress_url;
 END
@@ -104,7 +138,7 @@ CREATE OR REPLACE PROCEDURE app_public.get_service_logs(container_name VARCHAR, 
     AS
 $$
 BEGIN
-    RETURN SYSTEM$GET_SERVICE_LOGS('app_public.st_spcs', 0, :container_name, :num_lines);
+    RETURN SYSTEM$GET_SERVICE_LOGS('app_public.blendx_st_spcs', 0, :container_name, :num_lines);
 END
 $$;
 GRANT USAGE ON PROCEDURE app_public.get_service_logs(VARCHAR, NUMBER) TO APPLICATION ROLE app_admin;
@@ -115,7 +149,7 @@ CREATE OR REPLACE PROCEDURE app_public.get_service_status()
     AS
 $$
 BEGIN
-    RETURN SYSTEM$GET_SERVICE_STATUS('app_public.st_spcs');
+    RETURN SYSTEM$GET_SERVICE_STATUS('app_public.blendx_st_spcs');
 END
 $$;
 GRANT USAGE ON PROCEDURE app_public.get_service_status() TO APPLICATION ROLE app_admin;

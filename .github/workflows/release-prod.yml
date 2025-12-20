@@ -1,0 +1,238 @@
+name: Release to Production (main)
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (leave empty to auto-detect from QA)'
+        required: false
+        default: ''
+      patch:
+        description: 'Patch number to release (leave empty to auto-detect from QA)'
+        required: false
+        default: ''
+
+jobs:
+  release-to-production:
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Snowflake CLI
+        uses: snowflakedb/snowflake-cli-action@v1.5
+        with:
+          cli-version: "3.6.0"
+
+      - name: Setup Snowflake CLI PATH
+        run: echo "$HOME/.snowflake-cli/bin" >> $GITHUB_PATH
+
+      - name: Prepare Snowflake JWT key
+        run: |
+          echo "${{ secrets.SNOWFLAKE_PRIVATE_KEY_RAW }}" > snowflake_jwt_key.pem
+          chmod 600 snowflake_jwt_key.pem
+
+      - name: Configure Snowflake connection
+        run: |
+          snow connection add \
+            --connection-name mkt_blendx_demo \
+            --account ${{ secrets.SNOWFLAKE_ACCOUNT }} \
+            --user ${{ secrets.SNOWFLAKE_DEPLOY_USER }} \
+            --role ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }} \
+            --warehouse ${{ secrets.SNOWFLAKE_WAREHOUSE }} \
+            --database ${{ secrets.SNOWFLAKE_DATABASE }} \
+            --schema ${{ secrets.SNOWFLAKE_SCHEMA }} \
+            --host ${{ secrets.SNOWFLAKE_HOST }} \
+            --port 443 \
+            --authenticator SNOWFLAKE_JWT \
+            --private-key-file snowflake_jwt_key.pem \
+            --no-interactive
+
+      - name: Test Snowflake connection
+        run: snow connection test --connection mkt_blendx_demo
+
+      - name: Validate release prerequisites
+        run: |
+          echo "=========================================="
+          echo "Pre-release validation"
+          echo "=========================================="
+
+          # Check that QA channel has a release directive
+          QA_DIRECTIVE_JSON=$(snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; SHOW RELEASE DIRECTIVES IN APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }};" \
+            --connection mkt_blendx_demo -o json 2>/dev/null) || QA_DIRECTIVE_JSON="[]"
+
+          QA_EXISTS=$(echo "$QA_DIRECTIVE_JSON" | jq '[.[] | select(.channel | ascii_upcase == "QA")] | length')
+
+          if [ "$QA_EXISTS" -eq "0" ]; then
+            echo "::error::No QA release directive found. Deploy to QA first before promoting to production."
+            exit 1
+          fi
+
+          echo "✓ QA release directive exists"
+
+          # Verify application package exists and has versions
+          VERSIONS_JSON=$(snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; SHOW VERSIONS IN APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }};" \
+            --connection mkt_blendx_demo -o json 2>/dev/null) || VERSIONS_JSON="[]"
+
+          VERSION_COUNT=$(echo "$VERSIONS_JSON" | jq 'length')
+
+          if [ "$VERSION_COUNT" -eq "0" ]; then
+            echo "::error::No versions found in application package. Deploy to QA first."
+            exit 1
+          fi
+
+          echo "✓ Application package has $VERSION_COUNT version(s)"
+          echo ""
+          echo "Pre-release validation passed"
+
+      - name: Auto-detect version and patch from QA channel
+        id: detect_version
+        run: |
+          VERSION="${{ github.event.inputs.version }}"
+          PATCH="${{ github.event.inputs.patch }}"
+
+          # If version not specified, auto-detect from QA channel
+          if [ -z "$VERSION" ]; then
+            echo "Auto-detecting version from QA channel..."
+
+            # Get release directives using JSON output
+            DIRECTIVES_JSON=$(snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; SHOW RELEASE DIRECTIVES IN APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }};" \
+              --connection mkt_blendx_demo -o json 2>/dev/null) || DIRECTIVES_JSON="[]"
+
+            QA_COUNT=$(echo "$DIRECTIVES_JSON" | jq '[.[] | select(.channel | ascii_upcase == "QA")] | length')
+            if [ "$QA_COUNT" -ne 1 ]; then
+              echo "::error::Expected exactly 1 QA release directive, found $QA_COUNT"
+              echo "$DIRECTIVES_JSON" | jq '.'
+              exit 1
+            fi
+
+            # Extract QA channel version
+            VERSION=$(echo "$DIRECTIVES_JSON" | jq -r '.[] | select(.channel | ascii_upcase == "QA") | .version' | head -1)
+
+            if [ -z "$VERSION" ] || [ "$VERSION" == "null" ]; then
+              echo "Error: No release directive found for QA channel"
+              echo "Available release directives:"
+              echo "$DIRECTIVES_JSON" | jq '.'
+              exit 1
+            fi
+
+            echo "Detected version from QA: $VERSION"
+          fi
+
+          # If patch not specified, auto-detect from QA channel
+          if [ -z "$PATCH" ]; then
+            echo "Auto-detecting patch from QA channel..."
+
+            # Get release directives if not already fetched
+            if [ -z "$DIRECTIVES_JSON" ]; then
+              DIRECTIVES_JSON=$(snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; SHOW RELEASE DIRECTIVES IN APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }};" \
+                --connection mkt_blendx_demo -o json 2>/dev/null) || DIRECTIVES_JSON="[]"
+            fi
+
+            # Extract patch from QA directive
+            PATCH=$(echo "$DIRECTIVES_JSON" | jq -r '.[] | select(.channel | ascii_upcase == "QA") | .patch' | head -1)
+
+            if [ -z "$PATCH" ] || [ "$PATCH" == "null" ] || ! [[ "$PATCH" =~ ^[0-9]+$ ]]; then
+              echo "::error::QA release directive does not define a valid patch. Refusing to promote."
+              exit 1
+            fi
+
+            echo "Detected patch from QA: $PATCH"
+          fi
+
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "patch=$PATCH" >> $GITHUB_OUTPUT
+
+          echo "=========================================="
+          echo "Release Configuration:"
+          echo "  Version: $VERSION"
+          echo "  Patch: $PATCH"
+          echo "  Source Channel: QA"
+          echo "  Target Channel: DEFAULT"
+          echo "=========================================="
+
+      - name: Verify version exists
+        run: |
+          VERSION="${{ steps.detect_version.outputs.version }}"
+          PATCH="${{ steps.detect_version.outputs.patch }}"
+
+          echo "Verifying version $VERSION patch $PATCH exists..."
+
+          # Use JSON output for reliable parsing
+          VERSIONS_JSON=$(snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; SHOW VERSIONS IN APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }};" \
+            --connection mkt_blendx_demo -o json 2>/dev/null) || VERSIONS_JSON="[]"
+
+          VERSION_EXISTS=$(echo "$VERSIONS_JSON" | jq -r --arg v "$VERSION" '[.[] | select(.version | ascii_upcase == ($v | ascii_upcase))] | length')
+
+          if [ "$VERSION_EXISTS" -eq "0" ]; then
+            echo "Error: Version ${VERSION} does not exist in package ${{ secrets.SNOWFLAKE_APP_PACKAGE }}"
+            echo ""
+            echo "Available versions:"
+            echo "$VERSIONS_JSON" | jq '.'
+            exit 1
+          fi
+
+          echo "Version ${VERSION} exists"
+
+      - name: Add version to DEFAULT release channel
+        run: |
+          VERSION="${{ steps.detect_version.outputs.version }}"
+
+          CHANNEL_JSON=$(snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; SHOW RELEASE DIRECTIVES IN APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }};" \
+            --connection mkt_blendx_demo -o json 2>/dev/null) || CHANNEL_JSON="[]"
+
+          IN_DEFAULT=$(echo "$CHANNEL_JSON" | jq -r --arg v "$VERSION" '[.[] | select(.channel | ascii_upcase=="DEFAULT" and .version | ascii_upcase==($v|ascii_upcase))] | length')
+
+          if [ "$IN_DEFAULT" -eq "0" ]; then
+            echo "Adding version $VERSION to DEFAULT release channel..."
+            snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; ALTER APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }} MODIFY RELEASE CHANNEL DEFAULT ADD VERSION ${VERSION};" --connection mkt_blendx_demo
+          else
+            echo "Version $VERSION already present in DEFAULT channel"
+          fi
+
+      - name: Set DEFAULT release directive
+        run: |
+          VERSION="${{ steps.detect_version.outputs.version }}"
+          PATCH="${{ steps.detect_version.outputs.patch }}"
+
+          echo "Setting DEFAULT release directive to version $VERSION patch $PATCH..."
+          snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; ALTER APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }} MODIFY RELEASE CHANNEL DEFAULT SET DEFAULT RELEASE DIRECTIVE VERSION=${VERSION} PATCH=${PATCH};" --connection mkt_blendx_demo
+
+      - name: Show current release status
+        run: |
+          echo ""
+          echo "=========================================="
+          echo "Current Release Status"
+          echo "=========================================="
+
+          echo ""
+          echo "Versions:"
+          snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; SHOW VERSIONS IN APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }};" --connection mkt_blendx_demo
+
+          echo ""
+          echo "Release Directives:"
+          snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; SHOW RELEASE DIRECTIVES IN APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }};" --connection mkt_blendx_demo
+
+      - name: Summary
+        run: |
+          VERSION="${{ steps.detect_version.outputs.version }}"
+          PATCH="${{ steps.detect_version.outputs.patch }}"
+
+          echo ""
+          echo "=========================================="
+          echo "Production Release completed!"
+          echo "=========================================="
+          echo ""
+          echo "Version $VERSION patch $PATCH has been promoted to the DEFAULT channel."
+          echo ""
+          echo "Next steps:"
+          echo "  1. If not yet done, submit for security review in Provider Studio"
+          echo "  2. Wait for Snowflake to approve the version (1-3 business days)"
+          echo "  3. Once approved, the version will be available to marketplace consumers"
+          echo ""
+          echo "Provider Studio: https://app.snowflake.com > Provider Studio > Listings"

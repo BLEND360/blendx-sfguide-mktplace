@@ -1,0 +1,85 @@
+name: 'Snowflake Setup'
+description: 'Install Snowflake CLI, configure connection and login to Docker registry'
+
+inputs:
+  cli-version:
+    description: 'Snowflake CLI version'
+    required: false
+    default: '3.11'
+  private-key:
+    description: 'Snowflake JWT private key (raw PEM content)'
+    required: true
+  account:
+    description: 'Snowflake account identifier'
+    required: true
+  user:
+    description: 'Snowflake user for deployment'
+    required: true
+  role:
+    description: 'Snowflake role for deployment'
+    required: true
+  warehouse:
+    description: 'Snowflake warehouse'
+    required: true
+  database:
+    description: 'Snowflake database'
+    required: true
+  schema:
+    description: 'Snowflake schema'
+    required: true
+  host:
+    description: 'Snowflake host'
+    required: true
+  connection-name:
+    description: 'Name for the Snowflake connection'
+    required: false
+    default: 'mkt_blendx_demo'
+  login-registry:
+    description: 'Whether to login to Snowflake Docker registry'
+    required: false
+    default: 'true'
+
+outputs:
+  connection-name:
+    description: 'The configured connection name'
+    value: ${{ inputs.connection-name }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Install Snowflake CLI
+      uses: snowflakedb/snowflake-cli-action@v2.0
+      with:
+        cli-version: ${{ inputs.cli-version }}
+
+    - name: Setup Snowflake CLI PATH
+      shell: bash
+      run: echo "$HOME/.snowflake-cli/bin" >> $GITHUB_PATH
+
+    - name: Prepare Snowflake JWT key
+      shell: bash
+      run: |
+        echo "${{ inputs.private-key }}" > ${{ runner.temp }}/snowflake_jwt_key.pem
+        chmod 600 ${{ runner.temp }}/snowflake_jwt_key.pem
+
+    - name: Configure Snowflake connection
+      shell: bash
+      run: |
+        snow connection add \
+          --connection-name ${{ inputs.connection-name }} \
+          --account ${{ inputs.account }} \
+          --user ${{ inputs.user }} \
+          --role ${{ inputs.role }} \
+          --warehouse ${{ inputs.warehouse }} \
+          --database ${{ inputs.database }} \
+          --schema ${{ inputs.schema }} \
+          --host ${{ inputs.host }} \
+          --port 443 \
+          --authenticator SNOWFLAKE_JWT \
+          --private-key-file ${{ runner.temp }}/snowflake_jwt_key.pem \
+          --no-interactive
+
+    - name: Login to Snowflake Docker registry
+      if: ${{ inputs.login-registry == 'true' }}
+      shell: bash
+      run: snow spcs image-registry login --connection ${{ inputs.connection-name }}

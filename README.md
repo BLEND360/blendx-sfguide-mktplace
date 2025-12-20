@@ -4,7 +4,7 @@ BlendX is a native Snowflake application that enables you to build and execute A
 
 ## Features
 
-### NL Generator Chat
+### Workflow Generator Chat
 Generate AI workflows from natural language descriptions:
 - **YAML Configuration**: Complete CrewAI workflow definition
 - **Rationale**: Explanation of the workflow design decisions
@@ -137,9 +137,9 @@ snow sql -q "USE ROLE nac_test; CALL spcs_app_instance_test.app_public.app_url()
 ./scripts/cleanup.sh
 ```
 
-- Restart the app (calls stop and start):
+- Manage the service (resume/restart/start):
 ```sh
-./scripts/restart.sh
+./scripts/manage-service.sh
 ```
 
 ## User Interface Guide

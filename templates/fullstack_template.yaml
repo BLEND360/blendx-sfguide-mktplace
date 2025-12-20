@@ -1,15 +1,15 @@
 spec:
   containers:
     - name: eap-frontend
-      image: /spcs_app/napp/img_repo/eap_frontend
+      image: /{{SNOWFLAKE_DATABASE}}/{{SNOWFLAKE_SCHEMA}}/{{SNOWFLAKE_IMG_REPO}}/eap_frontend:{{IMAGE_TAG}}
       env:
         VUE_APP_API_URL: /api
     - name: eap-backend
-      image: /spcs_app/napp/img_repo/eap_backend
+      image: /{{SNOWFLAKE_DATABASE}}/{{SNOWFLAKE_SCHEMA}}/{{SNOWFLAKE_IMG_REPO}}/eap_backend:{{IMAGE_TAG}}
       env:
         ENVIRONMENT: PRODUCTION
         SNOWFLAKE_AUTHMETHOD: oauth
-        SNOWFLAKE_WAREHOUSE: APP_WH
+        SNOWFLAKE_WAREHOUSE: BLENDX_APP_WH
         # SNOWFLAKE_DATABASE is intentionally not set - will use session context from OAuth
         # Tables are accessed as schema.table_name using the app's database context
         SNOWFLAKE_SCHEMA: app_data
@@ -23,7 +23,7 @@ spec:
           directoryPath: /secrets/serper
 
     - name: eap-router
-      image: /spcs_app/napp/img_repo/eap_router
+      image: /{{SNOWFLAKE_DATABASE}}/{{SNOWFLAKE_SCHEMA}}/{{SNOWFLAKE_IMG_REPO}}/eap_router:{{IMAGE_TAG}}
       env:
         FE_SERVER: 127.0.0.1:8080
         BE_SERVER: 127.0.0.1:8081
