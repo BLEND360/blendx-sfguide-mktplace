@@ -269,6 +269,7 @@ jobs:
       - name: Generate manifest.yml and fullstack.yaml from templates
         run: |
           IMG_REPO=$(echo "${{ secrets.SNOWFLAKE_REPO }}" | awk -F'/' '{print $NF}')
+          SHORT_SHA="${{ steps.version.outputs.short_sha }}"
 
           sed -e "s/{{SNOWFLAKE_DATABASE}}/${{ secrets.SNOWFLAKE_DATABASE }}/g" \
               -e "s/{{SNOWFLAKE_SCHEMA}}/${{ secrets.SNOWFLAKE_SCHEMA }}/g" \
@@ -278,9 +279,11 @@ jobs:
           sed -e "s/{{SNOWFLAKE_DATABASE}}/${{ secrets.SNOWFLAKE_DATABASE }}/g" \
               -e "s/{{SNOWFLAKE_SCHEMA}}/${{ secrets.SNOWFLAKE_SCHEMA }}/g" \
               -e "s/{{SNOWFLAKE_IMG_REPO}}/${IMG_REPO}/g" \
+              -e "s/{{IMAGE_TAG}}/${SHORT_SHA}/g" \
               templates/fullstack_template.yaml > app/src/fullstack.yaml
 
           echo "Generated app/src/manifest.yml and app/src/fullstack.yaml"
+          echo "Using image tag: ${SHORT_SHA}"
 
       - name: Generate setup.sql from template
         run: |

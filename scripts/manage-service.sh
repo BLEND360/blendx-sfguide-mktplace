@@ -35,8 +35,9 @@ else
         echo "Service is suspended. Resuming with resume_app()..."
         snow sql -q "USE ROLE $ROLE; CALL $APP_INSTANCE.app_public.resume_app();" --connection $CONNECTION
     else
-        echo "Service exists and is running. Using ALTER SERVICE with FORCE_PULL_IMAGE to pull new images..."
-        snow sql -q "USE ROLE $ROLE; ALTER SERVICE $APP_INSTANCE.app_public.blendx_st_spcs FROM SPECIFICATION_FILE='/fullstack.yaml' FORCE_PULL_IMAGE = TRUE;" --connection $CONNECTION
+        echo "Service exists and is running. Updating service specification..."
+        # Update service from specification file to pull new images
+        snow sql -q "USE ROLE $ROLE; ALTER SERVICE $APP_INSTANCE.app_public.blendx_st_spcs FROM SPECIFICATION_FILE='/fullstack.yaml';" --connection $CONNECTION
     fi
 fi
 
