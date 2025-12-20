@@ -171,7 +171,7 @@
         <v-card class="fill-height d-flex flex-column" tile>
           <v-card-title class="primary white--text py-3 d-flex align-center">
             <v-icon left dark>{{ showHistoryInMain ? 'mdi-history' : 'mdi-chat' }}</v-icon>
-            {{ showHistoryInMain ? 'Workflow History' : 'NL Generator Chat' }}
+            {{ showHistoryInMain ? 'Workflow History' : 'Workflow Generator Chat' }}
             <v-spacer></v-spacer>
             <v-btn
               small
@@ -505,9 +505,9 @@
         </v-card-title>
 
         <v-card-text class="pa-4">
-          <h3 class="mb-3">NL Generator Chat</h3>
+          <h3 class="mb-3">Workflow Generator Chat</h3>
           <p class="mb-3">
-            The main feature of this application is the <strong>NL Generator Chat</strong>.
+            The main feature of this application is the <strong>Workflow Generator Chat</strong>.
             It allows you to describe a workflow in natural language, and the AI will generate:
           </p>
           <ul class="mb-4">

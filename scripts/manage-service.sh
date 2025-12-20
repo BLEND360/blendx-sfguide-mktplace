@@ -43,6 +43,3 @@ echo ""
 echo "Checking service status..."
 snow sql -q "USE ROLE $ROLE; CALL $APP_INSTANCE.app_public.get_service_status();" --connection $CONNECTION
 
-echo ""
-echo "Getting application URL..."
-snow sql -q "USE ROLE $ROLE; CALL $APP_INSTANCE.app_public.app_url();" --connection $CONNECTION
