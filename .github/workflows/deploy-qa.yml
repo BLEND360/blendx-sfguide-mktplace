@@ -334,11 +334,25 @@ jobs:
 
           # Get the latest patch number for this version after the operation
           echo "Getting latest patch number..."
-          VERSIONS_OUTPUT=$(snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; SHOW VERSIONS IN APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }};" --connection ${{ env.SNOWFLAKE_CONNECTION }} -o json 2>/dev/null || echo "[]")
-          echo "Versions output: $VERSIONS_OUTPUT"
 
-          NEW_PATCH=$(echo "$VERSIONS_OUTPUT" | jq -r "[.[] | select(.version == \"$VERSION\") | .patch | tonumber] | max // 0" 2>/dev/null || echo "0")
-          if [ -z "$NEW_PATCH" ] || [ "$NEW_PATCH" = "null" ]; then
+          # Use table format and parse with grep/awk for reliability
+          VERSIONS_TABLE=$(snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; SHOW VERSIONS IN APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }};" --connection ${{ env.SNOWFLAKE_CONNECTION }} 2>/dev/null || echo "")
+          echo "Versions table output:"
+          echo "$VERSIONS_TABLE"
+
+          # Extract patch from pipe-separated table format: | VERSION | PATCH | ...
+          NEW_PATCH=$(echo "$VERSIONS_TABLE" | grep -i "| *${VERSION} *|" | awk -F'|' '{gsub(/^[ \t]+|[ \t]+$/, "", $3); print $3}' | sort -n | tail -1)
+
+          # Validate patch is a number
+          if [ -z "$NEW_PATCH" ] || ! [[ "$NEW_PATCH" =~ ^[0-9]+$ ]]; then
+            echo "Warning: Could not parse patch from table, trying JSON format..."
+            VERSIONS_JSON=$(snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; SHOW VERSIONS IN APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }};" --connection ${{ env.SNOWFLAKE_CONNECTION }} -o json 2>/dev/null || echo "[]")
+            echo "JSON output: $VERSIONS_JSON"
+            NEW_PATCH=$(echo "$VERSIONS_JSON" | jq -r "[.[] | select(.version == \"$VERSION\") | .patch] | max // 0" 2>/dev/null || echo "0")
+          fi
+
+          # Final fallback
+          if [ -z "$NEW_PATCH" ] || [ "$NEW_PATCH" = "null" ] || ! [[ "$NEW_PATCH" =~ ^[0-9]+$ ]]; then
             NEW_PATCH=0
           fi
 
@@ -414,13 +428,30 @@ jobs:
         run: |
           VERSION="${{ needs.deploy-package.outputs.version }}"
 
-          # Get the latest patch number for this version
+          # Get the latest patch number for this version using table format parsing
           echo "Getting latest patch for version $VERSION..."
-          VERSIONS_OUTPUT=$(snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; SHOW VERSIONS IN APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }};" --connection ${{ env.SNOWFLAKE_CONNECTION }} -o json 2>/dev/null || echo "[]")
 
-          PATCH=$(echo "$VERSIONS_OUTPUT" | jq -r "[.[] | select(.version == \"$VERSION\") | .patch | tonumber] | max // 0" 2>/dev/null || echo "0")
-          if [ -z "$PATCH" ] || [ "$PATCH" = "null" ]; then
-            PATCH=0
+          # Use table format and parse with grep/awk for reliability
+          VERSIONS_TABLE=$(snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; SHOW VERSIONS IN APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }};" --connection ${{ env.SNOWFLAKE_CONNECTION }} 2>/dev/null || echo "")
+          echo "Versions table output:"
+          echo "$VERSIONS_TABLE"
+
+          # Extract patch from pipe-separated table format: | VERSION | PATCH | ...
+          # Filter for our version and get the max patch
+          PATCH=$(echo "$VERSIONS_TABLE" | grep -i "| *${VERSION} *|" | awk -F'|' '{gsub(/^[ \t]+|[ \t]+$/, "", $3); print $3}' | sort -n | tail -1)
+
+          # Validate patch is a number
+          if [ -z "$PATCH" ] || ! [[ "$PATCH" =~ ^[0-9]+$ ]]; then
+            echo "Warning: Could not parse patch number, trying JSON format..."
+            VERSIONS_JSON=$(snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; SHOW VERSIONS IN APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }};" --connection ${{ env.SNOWFLAKE_CONNECTION }} -o json 2>/dev/null || echo "[]")
+            echo "JSON output: $VERSIONS_JSON"
+            PATCH=$(echo "$VERSIONS_JSON" | jq -r "[.[] | select(.version == \"$VERSION\") | .patch] | max // 0" 2>/dev/null || echo "0")
+          fi
+
+          # Final validation
+          if [ -z "$PATCH" ] || [ "$PATCH" = "null" ] || ! [[ "$PATCH" =~ ^[0-9]+$ ]]; then
+            echo "Error: Could not determine patch number"
+            exit 1
           fi
 
           echo "Upgrading application ${{ secrets.SNOWFLAKE_APP_INSTANCE }} to version $VERSION patch $PATCH..."
