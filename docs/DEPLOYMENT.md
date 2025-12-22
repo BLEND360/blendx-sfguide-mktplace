@@ -234,89 +234,13 @@ If not specified, values are auto-detected from QA channel.
 10. Submit for Snowflake security review (manual step in Provider Studio)
 11. After approval, version is available on Marketplace
 
-## Troubleshooting
+## Considerations
 
-### Connection Test Fails
-
-If the Snowflake connection test fails:
-
-1. Verify the public key is correctly set for the user:
-   ```sql
-   DESCRIBE USER MK_BLENDX_DEPLOY_USER;
-   ```
-
-2. Check if the role has necessary permissions:
-   ```sql
-   SHOW GRANTS TO ROLE MK_BLENDX_DEPLOY_ROLE;
-   ```
-
-3. Ensure the schema exists and is accessible
-
-### Permission Denied Errors
-
-If you get permission errors:
-
-1. Re-run the provider setup script:
-   ```bash
-   ./scripts/provider-setup.sh
-   ```
-
-2. Verify the role is being used:
-   ```sql
-   USE ROLE MK_BLENDX_DEPLOY_ROLE;
-   SHOW GRANTS TO ROLE MK_BLENDX_DEPLOY_ROLE;
-   ```
-
-### Application Package Creation Fails
-
-If the Application Package creation fails:
-
-1. Ensure the role has `CREATE APPLICATION PACKAGE ON ACCOUNT`:
-   ```sql
-   GRANT CREATE APPLICATION PACKAGE ON ACCOUNT TO ROLE MK_BLENDX_DEPLOY_ROLE;
-   ```
-
-### Docker Push Fails
-
-If Docker image push fails:
-
-1. Verify image repository permissions:
-   ```sql
-   GRANT READ, WRITE ON IMAGE REPOSITORY SPCS_APP_TEST.NAPP.img_repo TO ROLE MK_BLENDX_DEPLOY_ROLE;
-   ```
-
-2. Check the `SNOWFLAKE_REPO` secret format matches your image repository URL
-
-### Build Takes Too Long
-
-- Docker builds use GHA cache with separate scopes per image
-- First build will be slow, subsequent builds use cache
-- Backend image is typically the slowest due to Python dependencies
-
-### Service Not Restarting
-
-- Check if `SNOWFLAKE_APP_INSTANCE` secret is set correctly
-- Verify the application exists with `SHOW APPLICATIONS`
-- Check service logs with `get_service_logs()` procedure
-
-### Version Conflicts
-
-- Snowflake allows max 2 versions not in any release channel
-- Pipeline automatically cleans up orphan versions
-- If issues persist, manually deregister old versions
-
-### Application Not Found
-
-- Ensure the application was created with `setup/create-application.sh`
-- Verify the `SNOWFLAKE_ROLE` has access to the application
-- Check that `SNOWFLAKE_APP_INSTANCE` matches the actual app name
-
-## Security Considerations
-
-1. **Private Key**: Never commit `snowflake_key.p8` to the repository
-2. **GitHub Secrets**: Use environment-specific secrets for different environments
-3. **Least Privilege**: The CI/CD role only has permissions it needs
-4. **Service User**: The CI/CD user is a `SERVICE` type user without interactive login
+- **Private Key Security**: Never commit `snowflake_key.p8` to the repository
+- **Environment Secrets**: Use separate GitHub environments (`qa`, `production`) with different secrets
+- **Least Privilege**: CI/CD role only has permissions it needs
+- **Version Limits**: Snowflake allows max 2 versions not in any release channel (pipeline auto-cleans orphans)
+- **Security Review**: Versions in DEFAULT channel require Snowflake approval before marketplace availability
 
 ## Files Reference
 
