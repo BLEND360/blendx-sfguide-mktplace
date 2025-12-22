@@ -393,8 +393,10 @@ jobs:
             echo "Current QA: V$CUR_VERSION patch $CUR_PATCH"
             echo "New QA:     V$NEW_VERSION patch $NEW_PATCH"
 
+            # Only reject if going backwards (strictly less than)
+            # Equal is OK because we just registered this patch
             if [ "$NEW_VERSION" -lt "$CUR_VERSION" ] || \
-               { [ "$NEW_VERSION" -eq "$CUR_VERSION" ] && [ "$NEW_PATCH" -le "$CUR_PATCH" ]; }; then
+               { [ "$NEW_VERSION" -eq "$CUR_VERSION" ] && [ "$NEW_PATCH" -lt "$CUR_PATCH" ]; }; then
               echo "::error::QA release regression detected. Refusing to move QA backwards."
               exit 1
             fi
