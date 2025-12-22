@@ -4,13 +4,17 @@ This guide explains how to set up and use the automatic CI/CD deployment pipelin
 
 ## Overview
 
-The deployment pipeline automatically deploys the application to Snowflake when code is pushed to specific branches:
+The deployment pipeline follows a strict branch promotion flow:
 
-| Branch / Trigger | Environment | Purpose |
-|------------------|-------------|---------|
-| `develop` | Development | Local development only. No deployment. |
-| `qa` | QA | Builds images and deploys to the QA release channel. Must be updated via merge from `develop`. |
-| `release/*` (signed tag) | Production | Promotes the latest QA version to the DEFAULT (production) release channel. |
+```
+develop → qa → main (auto-tag) → production
+```
+
+| Branch | Environment | Purpose |
+|--------|-------------|---------|
+| `develop` | Local | Local development and testing (no CI) |
+| `qa` | QA | Builds images, deploys to QA release channel (merge from develop) |
+| `main` | Production | Auto-creates release tag, triggers production deploy (merge from qa) |
 
 ## Prerequisites
 
@@ -106,20 +110,18 @@ When you push to `qa`, the pipeline:
 8. Registers a new patch in the QA release channel
 9. Restarts the application (if installed)
 
-### Production Release (signed `release/*` tag)
+### Production Release (`main` branch)
 
-Production releases are **explicit and controlled**.
+When you merge `qa` into `main`:
 
-A production deployment only happens when a **signed Git tag** is created using the `release/*` naming convention.
-
-The production pipeline:
-
-1. Verifies the release tag is cryptographically signed
-2. Requires approval via the `production` GitHub environment
-3. Reads the latest version and patch from the QA release channel
-4. Validates the promotion is monotonic (no regressions)
-5. Promotes the QA version to the DEFAULT (production) release channel
-6. Sets the DEFAULT release directive
+1. The `release.yml` workflow automatically creates a release tag (e.g., `release/v1.0.1`)
+2. The tag triggers the `deploy-prod.yml` workflow
+3. The production pipeline:
+   - Verifies the tag is on the `main` branch
+   - Reads the latest version and patch from the QA release channel
+   - Validates the promotion is monotonic (no regressions)
+   - Promotes the QA version to the DEFAULT (production) release channel
+   - Sets the DEFAULT release directive
 
 ## Versioning Model
 
@@ -131,8 +133,8 @@ The deployment pipeline uses a strict separation between QA and Production:
   - QA is the single source of truth for production
 
 - **Production**
-  - Uses signed Git tags (`release/vX.Y.Z`)
-  - Tags represent explicit release intent
+  - Auto-incremented release tags (`release/vX.Y.Z`)
+  - Tags are created automatically on merge to `main`
   - Production always promotes the latest QA patch
 
 ## Manual Triggers
@@ -160,8 +162,8 @@ The pipeline uses Snowflake release channels:
 1. Develop features on `develop`
 2. Merge `develop` → `qa`
 3. QA pipeline deploys and validates changes
-4. Run the `Create Release Tag` workflow to create a signed `release/vX.Y.Z` tag
-5. Approve the production deployment
+4. Merge `qa` → `main`
+5. Release tag is auto-created (e.g., `release/v1.0.1`)
 6. Production pipeline promotes QA → DEFAULT
 
 This flow guarantees:
@@ -234,7 +236,7 @@ If Docker image push fails:
 | File | Purpose |
 |------|---------|
 | `.github/workflows/deploy-qa.yml` | QA deployment workflow |
+| `.github/workflows/release.yml` | Auto-creates release tags on merge to main |
 | `.github/workflows/deploy-prod.yml` | Production promotion workflow (QA → DEFAULT) |
-| `.github/workflows/release.yml` | Manual workflow to create signed production release tags |
 | `scripts/provider-setup.sh` | Initial setup script |
 | `scripts/sql/setup_cicd_permissions.sql` | SQL permissions reference |

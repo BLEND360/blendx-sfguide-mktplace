@@ -1,11 +1,15 @@
 name: Create Release Tag
 
 on:
+  push:
+    branches:
+      - main
   workflow_dispatch:
     inputs:
       version:
-        description: 'Release tag (e.g. release/v1.4.2)'
-        required: true
+        description: 'Release tag (e.g. release/v1.4.2) - leave empty for auto-increment'
+        required: false
+        default: ''
 
 jobs:
   tag:
@@ -20,40 +24,82 @@ jobs:
           ref: main
           fetch-depth: 0
 
-      - name: Ensure main branch
+      - name: Ensure main is up to date with qa
         run: |
-          BRANCH=$(git branch --show-current)
-          if [ "$BRANCH" != "main" ]; then
-            echo "::error::Release tags must be created from main branch"
+          git fetch origin qa main
+
+          QA_HEAD=$(git rev-parse origin/qa)
+          MAIN_HEAD=$(git rev-parse origin/main)
+
+          echo "QA HEAD:   $QA_HEAD"
+          echo "Main HEAD: $MAIN_HEAD"
+
+          # qa HEAD must be included in main
+          if ! git merge-base --is-ancestor "$QA_HEAD" "$MAIN_HEAD"; then
+            echo "::error::Main branch is missing commits from qa. Merge qa into main first."
             exit 1
           fi
 
-      - name: Import GPG key
-        uses: crazy-max/ghaction-import-gpg@v6
-        with:
-          gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
-          git_user_signingkey: true
-          git_commit_gpgsign: true
-          git_tag_gpgsign: true
+          echo "✓ Main is up to date with qa"
 
-      - name: Validate release tag
+      - name: Determine release tag
+        id: tag
         run: |
-          TAG="${{ github.event.inputs.version }}"
+          INPUT_VERSION="${{ github.event.inputs.version }}"
 
-          if ! [[ "$TAG" =~ ^release/v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "::error::Invalid tag format. Use release/vX.Y.Z"
-            exit 1
+          if [ -n "$INPUT_VERSION" ]; then
+            # Manual input provided
+            if ! [[ "$INPUT_VERSION" =~ ^release/v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "::error::Invalid tag format. Use release/vX.Y.Z"
+              exit 1
+            fi
+            TAG="$INPUT_VERSION"
+          else
+            # Auto-increment: find latest release tag and increment patch
+            git fetch --tags
+
+            LATEST_TAG=$(git tag -l "release/v*" | sort -V | tail -1)
+
+            if [ -z "$LATEST_TAG" ]; then
+              # No release tags exist, start with v1.0.0
+              TAG="release/v1.0.0"
+            else
+              # Extract version numbers and increment patch
+              VERSION_PART=$(echo "$LATEST_TAG" | sed 's/release\/v//')
+              MAJOR=$(echo "$VERSION_PART" | cut -d. -f1)
+              MINOR=$(echo "$VERSION_PART" | cut -d. -f2)
+              PATCH=$(echo "$VERSION_PART" | cut -d. -f3)
+
+              NEW_PATCH=$((PATCH + 1))
+              TAG="release/v${MAJOR}.${MINOR}.${NEW_PATCH}"
+            fi
           fi
+
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "Determined tag: $TAG"
+
+      - name: Check tag does not exist
+        run: |
+          TAG="${{ steps.tag.outputs.tag }}"
 
           git fetch --tags
           if git rev-parse "$TAG" >/dev/null 2>&1; then
-            echo "::error::Tag already exists"
+            echo "::error::Tag $TAG already exists"
             exit 1
           fi
 
-      - name: Create signed release tag
-        run: |
-          TAG="${{ github.event.inputs.version }}"
+          echo "✓ Tag does not exist"
 
-          git tag -s "$TAG" -m "Production release $TAG"
+      - name: Create release tag
+        run: |
+          TAG="${{ steps.tag.outputs.tag }}"
+
+          git tag "$TAG" -m "Production release $TAG"
           git push origin "$TAG"
+
+          echo ""
+          echo "=========================================="
+          echo "Release tag created: $TAG"
+          echo "=========================================="
+          echo ""
+          echo "This will trigger the Deploy to Production workflow."

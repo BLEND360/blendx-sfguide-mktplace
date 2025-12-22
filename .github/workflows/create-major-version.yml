@@ -1,0 +1,73 @@
+name: Create Major Version
+
+on:
+  workflow_dispatch:
+    inputs:
+      base_version:
+        description: 'Base major version to increment (e.g. V1). If omitted, latest version is used.'
+        required: false
+
+jobs:
+  create-major:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve next major version
+        id: version
+        run: |
+          echo "Resolving next major version..."
+
+          BASE="${{ github.event.inputs.base_version }}"
+
+          if [ -z "$BASE" ]; then
+            echo "No base version provided, resolving from Snowflake"
+
+            ROW=$(snow sql -q "
+              USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }};
+              SHOW VERSIONS IN APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }};
+            " --connection ${{ env.SNOWFLAKE_CONNECTION }} \
+              | grep -i '| V' \
+              | awk -F'|' '{gsub(/ /, "", $2); print $2}' \
+              | sort -V \
+              | tail -1)
+
+            BASE="$ROW"
+          fi
+
+          NUM=$(echo "$BASE" | sed 's/V//')
+          NEXT=$((NUM + 1))
+
+          echo "next=V$NEXT" >> $GITHUB_OUTPUT
+          echo "Next major version: V$NEXT"
+
+      - name: Create major version in Application Package
+        run: |
+          VERSION="${{ steps.version.outputs.next }}"
+
+          echo "Creating major version $VERSION"
+
+          snow sql -q "
+            USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }};
+            ALTER APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }}
+              ADD VERSION $VERSION;
+          " --connection ${{ env.SNOWFLAKE_CONNECTION }}
+
+      - name: Create QA release channel for major version
+        run: |
+          VERSION="${{ steps.version.outputs.next }}"
+
+          echo "Creating QA release channel for $VERSION"
+
+          snow sql -q "
+            USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }};
+            ALTER APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }}
+              ADD RELEASE CHANNEL QA
+              FOR VERSION $VERSION;
+          " --connection ${{ env.SNOWFLAKE_CONNECTION }}

@@ -2,19 +2,38 @@
 
 This document describes the CI/CD pipelines for deploying BlendX to Snowflake Native App.
 
+## Branch Flow
+
+```
+develop → qa → main (auto-tag) → production
+```
+
+| Branch/Action | Environment | Purpose |
+|---------------|-------------|---------|
+| `develop` | Local | Local development and testing (no CI) |
+| `qa` | QA | Builds images, deploys to QA release channel |
+| `main` | Production | Auto-creates release tag, triggers production deploy |
+
 ## Pipelines Overview
 
 | Pipeline | File | Trigger | Purpose |
 |----------|------|---------|---------|
-| QA Deployment | `deploy-qa.yml` | Push to `develop` or manual | Build, deploy, and restart QA environment |
-| Production Release | `release-prod.yml` | Push to `main` or manual | Promote QA version to production |
+| QA Deployment | `deploy-qa.yml` | Push to `qa` (merge from develop) | Build, deploy, and restart QA environment |
+| Create Release Tag | `release.yml` | Push to `main` or manual | Auto-create release tag (auto-increment) |
+| Production Release | `deploy-prod.yml` | Push tag `release/*` or manual | Promote QA version to production |
 
 ## QA Pipeline (deploy-qa.yml)
 
 ### Trigger
 
-- **Automatic**: Push to `develop` branch
+- **Automatic**: Push to `qa` branch (must be merged from `develop`)
 - **Manual**: GitHub Actions workflow dispatch
+
+### Preflight Validation
+
+Before building, the pipeline validates:
+- `qa` branch must contain all commits from `develop`
+- `qa` must be updated via merge commit from `develop` (no direct commits)
 
 ### Jobs
 
@@ -64,23 +83,56 @@ Deploys the application package and restarts the service.
 ### Version Strategy
 
 - Version is derived from git tags: `v1.x.x` → `V1`, `v2.x.x` → `V2`
-- Each push to develop adds a new patch to the current version
+- Each push to `qa` adds a new patch to the current version
 - Default version is `V1` if no tags exist
 
-## Production Pipeline (release-prod.yml)
+## Create Release Tag (release.yml)
 
 ### Trigger
 
-- **Automatic**: Push to `main` branch
+- **Automatic**: Push to `main` branch (merge from qa)
+- **Manual**: GitHub Actions workflow dispatch with optional version input
+
+### Auto-increment
+
+When triggered automatically (push to main), the tag version is auto-incremented:
+- If no `release/*` tags exist: `release/v1.0.0`
+- Otherwise: increments patch number (e.g., `release/v1.0.0` → `release/v1.0.1`)
+
+### Manual Override
+
+When triggered manually, you can specify:
+- `version`: Release tag in format `release/vX.Y.Z` (leave empty for auto-increment)
+
+### Validation
+
+Before creating the tag:
+- `main` must contain all commits from `qa`
+- Tag must not already exist
+
+### Output
+
+Creates an annotated tag on `main` that triggers the production deployment.
+
+## Production Pipeline (deploy-prod.yml)
+
+### Trigger
+
+- **Automatic**: Push tag matching `release/*`
 - **Manual**: GitHub Actions workflow dispatch with optional version/patch inputs
+
+### Validation
+
+- If triggered by tag: verifies tag commit is on `main` branch
 
 ### Steps
 
 1. **Auto-detect version**: Reads current version from QA release channel
 2. **Verify version**: Confirms the version exists in the package
-3. **Add to DEFAULT channel**: Adds version to the DEFAULT (production) release channel
-4. **Set release directive**: Points DEFAULT channel to the specified version/patch
-5. **Show status**: Displays current versions and release directives
+3. **Validate monotonicity**: Ensures we're not going backwards
+4. **Add to DEFAULT channel**: Adds version to the DEFAULT (production) release channel
+5. **Set release directive**: Points DEFAULT channel to the specified version/patch
+6. **Show status**: Displays current versions and release directives
 
 ### Manual Override
 
@@ -141,13 +193,13 @@ Same secrets as QA, typically pointing to production resources.
 ### QA Channel
 
 - **Purpose**: Internal testing
-- **Updated by**: QA pipeline on every push to `develop`
+- **Updated by**: QA pipeline on every push to `qa`
 - **Consumers**: QA app instance
 
 ### DEFAULT Channel
 
 - **Purpose**: Production / Marketplace
-- **Updated by**: Production pipeline on push to `main`
+- **Updated by**: Production pipeline on `release/*` tag
 - **Consumers**: Marketplace consumers
 - **Note**: Versions in DEFAULT channel require Snowflake security review
 
@@ -168,14 +220,15 @@ All images are:
 
 1. Developer creates feature branch from `develop`
 2. Developer creates PR to `develop`
-3. PR is merged → QA pipeline triggers
-4. QA pipeline builds images in parallel, deploys, restarts service
-5. QA testing is performed
-6. When ready, create PR from `develop` to `main`
-7. PR is merged → Production pipeline triggers
-8. Production pipeline promotes QA version to DEFAULT channel
-9. Submit for Snowflake security review (manual step)
-10. After approval, version is available on Marketplace
+3. PR is merged to `develop`
+4. When ready for QA: merge `develop` → `qa`
+5. QA pipeline triggers → builds images, deploys, restarts service
+6. QA testing is performed
+7. When ready for release: merge `qa` → `main`
+8. Release tag is auto-created (e.g., `release/v1.0.1`)
+9. Tag triggers Production pipeline → promotes QA version to DEFAULT channel
+10. Submit for Snowflake security review (manual step in Provider Studio)
+11. After approval, version is available on Marketplace
 
 ## Troubleshooting
 

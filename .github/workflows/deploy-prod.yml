@@ -1,4 +1,4 @@
-name: Release to Production (directive:default)
+name: Deploy to Production
 
 on:
   push:
@@ -26,21 +26,23 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Import GPG key
-        uses: crazy-max/ghaction-import-gpg@v6
-        with:
-          gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
-
-      - name: Verify signed release tag
+      - name: Verify release tag is on main branch
+        if: startsWith(github.ref, 'refs/tags/')
         run: |
-          git fetch --tags --force
+          git fetch origin main
           TAG="${GITHUB_REF#refs/tags/}"
+          TAG_COMMIT=$(git rev-list -n 1 "$TAG")
 
-          echo "Verifying signature for tag: $TAG"
-          git tag -v "$TAG" || {
-            echo "::error::Release tag is not signed or signature is invalid"
+          echo "Tag: $TAG"
+          echo "Tag commit: $TAG_COMMIT"
+
+          # Check if tag commit is on main branch
+          if ! git merge-base --is-ancestor "$TAG_COMMIT" origin/main; then
+            echo "::error::Release tag must be created from the main branch."
             exit 1
-          }
+          fi
+
+          echo "✓ Tag is on main branch"
 
       - name: Install Snowflake CLI
         uses: snowflakedb/snowflake-cli-action@v1.5
