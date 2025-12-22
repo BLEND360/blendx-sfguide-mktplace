@@ -6,10 +6,11 @@ This guide explains how to set up and use the automatic CI/CD deployment pipelin
 
 The deployment pipeline automatically deploys the application to Snowflake when code is pushed to specific branches:
 
-| Branch | Environment | Action |
-|--------|-------------|--------|
-| `develop` | QA | Builds images, creates/updates Application Package, deploys to QA release channel |
-| `main` | Production | Promotes the QA version to the DEFAULT (production) release channel |
+| Branch / Trigger | Environment | Purpose |
+|------------------|-------------|---------|
+| `develop` | Development | Local development only. No deployment. |
+| `qa` | QA | Builds images and deploys to the QA release channel. Must be updated via merge from `develop`. |
+| `release/*` (signed tag) | Production | Promotes the latest QA version to the DEFAULT (production) release channel. |
 
 ## Prerequisites
 
@@ -87,45 +88,52 @@ Copy the **entire content** including the `-----BEGIN PRIVATE KEY-----` and `---
 
 ## How the Pipeline Works
 
-### QA Deployment (`develop` branch)
+### Local Development (`develop` branch)
 
-When you push to `develop`, the pipeline:
+The `develop` branch is used for local development and testing. No automatic deployment is triggered when pushing to this branch. Use this branch to develop and test changes locally before pushing to QA.
 
-1. **Determines version** from git tags (e.g., `v1.0.0` → `v1`)
-2. **Builds Docker images** for backend, frontend, and router
-3. **Pushes images** to Snowflake Image Repository
-4. **Generates `setup.sql`** from templates
-5. **Uploads application files** to Snowflake stage
-6. **Creates Application Package** if it doesn't exist
-7. **Registers version or adds patch** to the package
-8. **Updates QA release channel** with the new version
-9. **Restarts the application** (if installed)
+### QA Deployment (`qa` branch)
 
-### Production Release (`main` branch)
+When you push to `qa`, the pipeline:
 
-When you push to `main`, the pipeline:
+1. Validates that `qa` was updated via a merge from `develop`
+2. Determines the QA version (fixed major version, patch-based)
+3. Builds Docker images for backend, frontend, and router
+4. Pushes images to Snowflake Image Repository
+5. Generates `setup.sql` from templates
+6. Uploads application files to Snowflake stage
+7. Creates the Application Package if it doesn't exist
+8. Registers a new patch in the QA release channel
+9. Restarts the application (if installed)
 
-1. **Auto-detects version** from QA release channel
-2. **Verifies version exists** in the Application Package
-3. **Adds version to DEFAULT channel** (production)
-4. **Sets release directive** for production
+### Production Release (signed `release/*` tag)
 
-## Versioning
+Production releases are **explicit and controlled**.
 
-The pipeline uses git tags to determine versions:
+A production deployment only happens when a **signed Git tag** is created using the `release/*` naming convention.
 
-- Tag `v1.0.0` → Version `v1`
-- Tag `v2.3.1` → Version `v2`
-- No tag → Default `v1`
+The production pipeline:
 
-Each push to `develop` creates a new **patch** for the current version.
+1. Verifies the release tag is cryptographically signed
+2. Requires approval via the `production` GitHub environment
+3. Reads the latest version and patch from the QA release channel
+4. Validates the promotion is monotonic (no regressions)
+5. Promotes the QA version to the DEFAULT (production) release channel
+6. Sets the DEFAULT release directive
 
-To create a new major version:
+## Versioning Model
 
-```bash
-git tag v2.0.0
-git push origin v2.0.0
-```
+The deployment pipeline uses a strict separation between QA and Production:
+
+- **QA**
+  - Uses a fixed major version (e.g. `V1`)
+  - Each deployment creates a new patch
+  - QA is the single source of truth for production
+
+- **Production**
+  - Uses signed Git tags (`release/vX.Y.Z`)
+  - Tags represent explicit release intent
+  - Production always promotes the latest QA patch
 
 ## Manual Triggers
 
@@ -145,6 +153,21 @@ The pipeline uses Snowflake release channels:
 |---------|---------|
 | `QA` | Testing and development |
 | `DEFAULT` | Production (marketplace consumers) |
+
+
+## Release Flow Summary
+
+1. Develop features on `develop`
+2. Merge `develop` → `qa`
+3. QA pipeline deploys and validates changes
+4. Run the `Create Release Tag` workflow to create a signed `release/vX.Y.Z` tag
+5. Approve the production deployment
+6. Production pipeline promotes QA → DEFAULT
+
+This flow guarantees:
+- No direct deployments from development branches
+- Full auditability of production releases
+- Strong separation between build, validation, and release
 
 ## Troubleshooting
 
@@ -211,8 +234,7 @@ If Docker image push fails:
 | File | Purpose |
 |------|---------|
 | `.github/workflows/deploy-qa.yml` | QA deployment workflow |
-| `.github/workflows/release-prod.yml` | Production release workflow |
+| `.github/workflows/deploy-prod.yml` | Production promotion workflow (QA → DEFAULT) |
+| `.github/workflows/release.yml` | Manual workflow to create signed production release tags |
 | `scripts/provider-setup.sh` | Initial setup script |
 | `scripts/sql/setup_cicd_permissions.sql` | SQL permissions reference |
-| `keys/pipeline/snowflake_key.p8` | Private key (not committed) |
-| `keys/pipeline/snowflake_key.pub` | Public key |
