@@ -5,6 +5,7 @@ Replaces multiple sed commands with a single Python script.
 """
 
 import argparse
+import json
 import re
 import sys
 from pathlib import Path
@@ -57,6 +58,7 @@ def generate_from_template(
 def generate_setup_sql(
     template_path: str,
     migrations_sql_path: str,
+    migrations_manifest_path: str,
     output_path: str,
     dry_run: bool = False
 ) -> None:
@@ -68,8 +70,21 @@ def generate_setup_sql(
             "Run 'python scripts/generate_migrations_sql.py' first to generate it."
         )
 
+    # Read migrations manifest for metadata
+    if not Path(migrations_manifest_path).exists():
+        raise GenerationError(
+            f"Migrations manifest not found: {migrations_manifest_path}\n"
+            "Run 'python scripts/generate_migrations_sql.py' first to generate it."
+        )
+
     with open(migrations_sql_path, 'r') as f:
         migrations_sql = f.read()
+
+    with open(migrations_manifest_path, 'r') as f:
+        manifest = json.load(f)
+
+    migrations_count = len(manifest.get('migrations', []))
+    latest_version = manifest.get('latest_version', 'unknown')
 
     # Extract table names from migrations SQL for grants
     tables = sorted(set(re.findall(r'app_data\.([a-zA-Z_][a-zA-Z0-9_]*)', migrations_sql, re.IGNORECASE)))
@@ -100,14 +115,19 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE app_data.{table} TO APPLICATION RO
             f"Placeholder '{{{{MIGRATIONS_SQL}}}}' not found in {template_path}"
         )
 
+    # Replace all placeholders
     setup_content = setup_content.replace('{{MIGRATIONS_SQL}}', full_content)
+    setup_content = setup_content.replace('{{MIGRATIONS_COUNT}}', str(migrations_count))
+    setup_content = setup_content.replace('{{LATEST_MIGRATION_VERSION}}', latest_version)
 
     if dry_run:
         print(f"[DRY-RUN] Would generate {output_path} with {len(tables)} tables: {', '.join(tables)}")
+        print(f"          Migrations: {migrations_count}, Latest version: {latest_version}")
     else:
         with open(output_path, 'w') as f:
             f.write(setup_content)
         print(f"Generated {output_path} with {len(tables)} table definitions: {', '.join(tables)}")
+        print(f"  Migrations count: {migrations_count}, Latest version: {latest_version}")
 
 
 def main():
@@ -175,6 +195,7 @@ def main():
         generate_setup_sql(
             'templates/setup_template.sql',
             'scripts/sql/migrations.sql',
+            'scripts/sql/migrations_manifest.json',
             str(output_dir / 'setup.sql'),
             dry_run=args.dry_run
         )

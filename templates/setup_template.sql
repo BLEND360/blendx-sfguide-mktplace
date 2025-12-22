@@ -30,10 +30,11 @@ GRANT USAGE ON SCHEMA app_data TO APPLICATION ROLE app_user;
 -- MIGRATION PROCEDURES
 -- =============================================================================
 
--- Procedure to get migration status
 -- All migrations above use idempotent SQL (IF NOT EXISTS / IF EXISTS) so they
 -- can be safely re-run on upgrades. The alembic_version table tracks which
 -- migrations have been applied.
+
+-- Procedure to get migration status
 CREATE OR REPLACE PROCEDURE app_data.get_migration_status()
     RETURNS STRING
     LANGUAGE SQL
@@ -61,16 +62,63 @@ $$;
 
 GRANT USAGE ON PROCEDURE app_data.get_migration_status() TO APPLICATION ROLE app_admin;
 
+-- Procedure to get pending migrations count (migrations in code but not applied)
+-- This uses the expected migrations from the manifest embedded at build time
+CREATE OR REPLACE PROCEDURE app_data.get_pending_migrations_count()
+    RETURNS NUMBER
+    LANGUAGE SQL
+AS
+$$
+DECLARE
+    applied_count NUMBER;
+    expected_count NUMBER DEFAULT {{MIGRATIONS_COUNT}};
+BEGIN
+    SELECT COUNT(*) INTO :applied_count FROM app_data.alembic_version;
+    RETURN :expected_count - :applied_count;
+END;
+$$;
+
+GRANT USAGE ON PROCEDURE app_data.get_pending_migrations_count() TO APPLICATION ROLE app_admin;
+
+-- Procedure to verify all migrations are applied
+-- Returns 'OK' if all migrations applied, otherwise lists missing ones
+CREATE OR REPLACE PROCEDURE app_data.verify_migrations()
+    RETURNS STRING
+    LANGUAGE SQL
+AS
+$$
+DECLARE
+    applied_count NUMBER;
+    expected_count NUMBER DEFAULT {{MIGRATIONS_COUNT}};
+    latest_version VARCHAR DEFAULT '{{LATEST_MIGRATION_VERSION}}';
+    has_latest NUMBER;
+BEGIN
+    SELECT COUNT(*) INTO :applied_count FROM app_data.alembic_version;
+    SELECT COUNT(*) INTO :has_latest FROM app_data.alembic_version WHERE version_num = :latest_version;
+
+    IF (:applied_count >= :expected_count AND :has_latest > 0) THEN
+        RETURN 'OK - All ' || :expected_count || ' migrations applied. Latest: ' || :latest_version;
+    ELSE
+        RETURN 'PENDING - Applied ' || :applied_count || ' of ' || :expected_count ||
+               ' migrations. Latest expected: ' || :latest_version;
+    END IF;
+END;
+$$;
+
+GRANT USAGE ON PROCEDURE app_data.verify_migrations() TO APPLICATION ROLE app_admin;
+
 CREATE OR REPLACE PROCEDURE app_public.start_app(poolname VARCHAR)
     RETURNS string
     LANGUAGE sql
     AS $$
 DECLARE
     migration_status VARCHAR;
+    migration_verification VARCHAR;
 BEGIN
         LET app_warehouse VARCHAR DEFAULT 'BLENDX_APP_WH';
 
-        -- Get migration status (migrations are applied via setup.sql DDL statements)
+        -- Verify all migrations are applied (migrations are idempotent via setup.sql DDL)
+        CALL app_data.verify_migrations() INTO :migration_verification;
         CALL app_data.get_migration_status() INTO :migration_status;
 
         -- First, create the application warehouse (unique name to avoid conflicts)
@@ -103,7 +151,7 @@ BEGIN
         GRANT USAGE ON SERVICE app_public.blendx_st_spcs TO APPLICATION ROLE app_user;
         GRANT SERVICE ROLE app_public.blendx_st_spcs!ALL_ENDPOINTS_USAGE TO APPLICATION ROLE app_user;
 
-        RETURN migration_status || '. Service started with warehouse ' || app_warehouse || '. Check status, and when ready, get URL';
+        RETURN migration_verification || ' | ' || migration_status || '. Service started with warehouse ' || app_warehouse || '. Check status, and when ready, get URL';
 END;
 $$;
 
