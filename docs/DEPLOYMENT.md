@@ -234,6 +234,135 @@ If not specified, values are auto-detected from QA channel.
 10. Submit for Snowflake security review (manual step in Provider Studio)
 11. After approval, version is available on Marketplace
 
+## Database Migrations
+
+The application uses Alembic for database schema management. SQLAlchemy models are the source of truth for the database schema.
+
+### How Migrations Work in the Native App
+
+Since Snowflake Native Apps cannot run Python migrations directly, the system converts Alembic migrations to idempotent SQL:
+
+1. **Development**: Developers create/modify SQLAlchemy models and generate Alembic migrations
+2. **Build**: `generate_migrations_sql.py` converts migrations to idempotent SQL files
+3. **Deployment**: SQL is injected into `setup.sql` via the `{{MIGRATIONS_SQL}}` placeholder
+4. **Upgrade**: All SQL uses `IF NOT EXISTS` / `IF EXISTS` clauses, making upgrades safe
+
+```mermaid
+flowchart LR
+    A[SQLAlchemy Models] -->|alembic revision| B[Alembic Migration .py]
+    B -->|generate_migrations_sql.py| C[Individual .sql files]
+    C --> D[migrations.sql combined]
+    D -->|generate-app-files.py| E[setup.sql]
+    E -->|app install/upgrade| F[Database Updated]
+```
+
+### Idempotent Migrations for Upgrades
+
+All generated SQL is idempotent to support incremental upgrades:
+
+```sql
+-- Tables: CREATE TABLE IF NOT EXISTS
+CREATE TABLE IF NOT EXISTS app_data.my_table (...);
+
+-- Columns: ADD COLUMN IF NOT EXISTS
+ALTER TABLE app_data.my_table ADD COLUMN IF NOT EXISTS new_column VARCHAR(255);
+
+-- Version tracking: INSERT only if not exists
+INSERT INTO app_data.alembic_version (version_num)
+SELECT '002_add_column' WHERE NOT EXISTS (
+    SELECT 1 FROM app_data.alembic_version WHERE version_num = '002_add_column'
+);
+```
+
+This means:
+- **New installation**: All tables and columns are created
+- **Upgrade**: Only new tables/columns are added, existing data is preserved
+
+### Creating New Migrations
+
+When you need to modify the database schema:
+
+1. **Modify SQLAlchemy models** in `backend/app/database/models/`
+2. **Generate migration** from the backend directory:
+   ```bash
+   cd backend
+   alembic revision --autogenerate -m "description_of_change"
+   ```
+3. **Review the generated file** in `backend/alembic/versions/` and adjust if needed
+4. **Regenerate SQL**:
+   ```bash
+   python scripts/generate_migrations_sql.py
+   ```
+5. **Commit** the model changes, migration file, AND generated SQL files
+
+### Generated Files Structure
+
+```
+scripts/sql/
+├── migrations/                          # Individual migration files
+│   ├── 001_initial_schema.sql          # First migration
+│   ├── 002_add_new_column.sql          # Second migration
+│   └── ...
+├── migrations.sql                       # Combined file (all migrations)
+└── migrations_manifest.json             # Metadata about migrations
+```
+
+### Local Development Commands
+
+Run these commands from the `backend/` directory:
+
+| Command | Description |
+|---------|-------------|
+| `alembic revision --autogenerate -m "desc"` | Create new migration from model changes |
+| `alembic upgrade head` | Apply all pending migrations (local dev) |
+| `alembic history` | View migration history |
+| `alembic downgrade -1` | Rollback last migration (local dev) |
+| `alembic current` | Show current migration version |
+
+From the project root:
+
+| Command | Description |
+|---------|-------------|
+| `python scripts/generate_migrations_sql.py` | Regenerate SQL from Alembic migrations |
+
+### Migration Files Reference
+
+| File/Directory | Purpose |
+|----------------|---------|
+| `backend/alembic/` | Alembic configuration directory |
+| `backend/alembic/versions/` | Migration scripts (Python) |
+| `backend/app/database/models/` | SQLAlchemy models (source of truth) |
+| `scripts/generate_migrations_sql.py` | Converts Alembic migrations to SQL |
+| `scripts/sql/migrations/` | Individual SQL migration files |
+| `scripts/sql/migrations.sql` | Combined SQL (auto-generated) |
+| `scripts/sql/migrations_manifest.json` | Migration metadata |
+| `templates/setup_template.sql` | Template with `{{MIGRATIONS_SQL}}` placeholder |
+
+### CI/CD Integration
+
+The migration SQL is automatically generated during the QA deployment pipeline:
+
+1. `generate-app-files.py` calls `generate_migrations_sql.py`
+2. Individual `.sql` files are generated in `scripts/sql/migrations/`
+3. Combined `migrations.sql` is injected into `setup.sql`
+4. When installed/upgraded, idempotent SQL ensures correct schema state
+
+### Pre-commit Hook
+
+A pre-commit hook warns if you modify models or migrations without regenerating SQL:
+
+```bash
+# Install pre-commit hooks
+pip install pre-commit
+pre-commit install
+```
+
+The hook checks if `migrations.sql` was updated when you change:
+- `backend/app/database/models/*.py`
+- `backend/alembic/versions/*.py`
+
+> **Note**: The `alembic_version` table tracks which migrations have been applied. Use `CALL app_data.get_migration_status()` to check the current state.
+
 ## Considerations
 
 - **Private Key Security**: Never commit `snowflake_key.p8` to the repository

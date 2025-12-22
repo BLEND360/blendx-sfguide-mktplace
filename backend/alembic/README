@@ -1,0 +1,46 @@
+BlendX Core - Database Migrations with Alembic
+==============================================
+
+This directory contains Alembic migration scripts for the BlendX Core database.
+
+## Quick Start
+
+1. Ensure you have the correct environment variables set for Snowflake connection:
+   - SNOWFLAKE_ACCOUNT
+   - SNOWFLAKE_USER
+   - SNOWFLAKE_WAREHOUSE
+   - SNOWFLAKE_DATABASE
+   - SNOWFLAKE_SCHEMA
+   - SNOWFLAKE_ROLE
+   - SNOWFLAKE_AUTHMETHOD (oauth or private_key)
+   - SNOWFLAKE_PRIVATE_KEY_PATH (if using private key auth)
+
+2. Run migrations:
+   cd backend
+   alembic upgrade head
+
+## Common Commands
+
+- Apply all migrations:
+  alembic upgrade head
+
+- Rollback one migration:
+  alembic downgrade -1
+
+- View migration history:
+  alembic history
+
+- View current revision:
+  alembic current
+
+- Generate a new migration (after model changes):
+  alembic revision --autogenerate -m "description of changes"
+
+- Generate an empty migration (for manual SQL):
+  alembic revision -m "description"
+
+## Directory Structure
+
+- env.py: Alembic environment configuration
+- script.py.mako: Template for migration scripts
+- versions/: Directory containing migration files

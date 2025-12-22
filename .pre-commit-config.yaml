@@ -1,0 +1,9 @@
+repos:
+  - repo: local
+    hooks:
+      - id: check-migrations-sql
+        name: Check migrations.sql is updated
+        entry: scripts/hooks/check-migrations.sh
+        language: script
+        files: ^(backend/app/database/models/.*\.py|backend/alembic/versions/.*\.py)$
+        pass_filenames: false

@@ -8,6 +8,7 @@ requests
 litellm
 sqlalchemy
 snowflake-sqlalchemy
+alembic
 pydantic
 pydantic-settings
 crewai-tools>=0.0.1

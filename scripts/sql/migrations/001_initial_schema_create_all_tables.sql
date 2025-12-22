@@ -1,0 +1,99 @@
+-- =============================================================================
+-- Migration: 001_initial
+-- Initial schema - Create all tables
+-- =============================================================================
+-- This migration is idempotent and can be safely re-run.
+-- It uses IF NOT EXISTS / IF EXISTS clauses for all operations.
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS app_data.execution_groups (
+    id VARCHAR(36),
+    name VARCHAR(255),
+    status VARCHAR(50) NOT NULL DEFAULT 'PENDING',
+    description TEXT,
+    created_at TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP(),
+    updated_at TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP(),
+    finished_at TIMESTAMP_NTZ,
+    PRIMARY KEY (id)
+);
+
+CREATE TABLE IF NOT EXISTS app_data.flow_executions (
+    id VARCHAR(36),
+    name VARCHAR(255),
+    status VARCHAR(50) NOT NULL DEFAULT 'PENDING',
+    description TEXT,
+    created_at TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP(),
+    updated_at TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP(),
+    finished_at TIMESTAMP_NTZ,
+    PRIMARY KEY (id)
+);
+
+CREATE TABLE IF NOT EXISTS app_data.crew_executions (
+    id VARCHAR(36),
+    status VARCHAR(50) NOT NULL DEFAULT 'PENDING',
+    name VARCHAR(255),
+    input TEXT,
+    output TEXT,
+    context VARIANT,
+    created_at TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP(),
+    updated_at TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP(),
+    finished_at TIMESTAMP_NTZ,
+    execution_group_id VARCHAR(36),
+    flow_execution_id VARCHAR(36),
+    PRIMARY KEY (id),
+    FOREIGN KEY (execution_group_id) REFERENCES app_data.execution_groups(id),
+    FOREIGN KEY (flow_execution_id) REFERENCES app_data.flow_executions(id)
+);
+
+CREATE TABLE IF NOT EXISTS app_data.agent_executions (
+    id VARCHAR(36),
+    name VARCHAR(255),
+    status VARCHAR(50) NOT NULL DEFAULT 'PENDING',
+    input TEXT,
+    output TEXT,
+    created_at TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP(),
+    updated_at TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP(),
+    finished_at TIMESTAMP_NTZ,
+    crew_execution_id VARCHAR(36),
+    PRIMARY KEY (id),
+    FOREIGN KEY (crew_execution_id) REFERENCES app_data.crew_executions(id)
+);
+
+CREATE TABLE IF NOT EXISTS app_data.workflows (
+    workflow_id VARCHAR(255) NOT NULL,
+    version INTEGER NOT NULL DEFAULT 1,
+    type VARCHAR(50) NOT NULL,
+    mermaid TEXT,
+    title VARCHAR(255),
+    status VARCHAR(50) NOT NULL DEFAULT 'PENDING',
+    rationale TEXT,
+    yaml_text TEXT NOT NULL,
+    chat_id VARCHAR(255),
+    message_id VARCHAR(255),
+    user_id VARCHAR(255),
+    model VARCHAR(100),
+    stable BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP(),
+    updated_at TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP(),
+    PRIMARY KEY (workflow_id, version)
+);
+
+CREATE TABLE IF NOT EXISTS app_data.chat_messages (
+    id VARCHAR(36),
+    chat_id VARCHAR(255) NOT NULL,
+    role VARCHAR(50),
+    content TEXT,
+    summary TEXT,
+    user_id VARCHAR(255),
+    created_at TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP(),
+    updated_at TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP(),
+    PRIMARY KEY (id)
+);
+
+CREATE INDEX IF NOT EXISTS ix_chat_messages_chat_id ON app_data.chat_messages (chat_id);
+
+-- Mark migration as applied (idempotent)
+INSERT INTO app_data.alembic_version (version_num)
+SELECT '001_initial' WHERE NOT EXISTS (
+    SELECT 1 FROM app_data.alembic_version WHERE version_num = '001_initial'
+);
