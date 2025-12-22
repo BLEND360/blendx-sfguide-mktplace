@@ -1,9 +1,9 @@
-name: Deploy to QA (develop)
+name: Deploy to QA
 
 on:
   push:
     branches:
-      - develop
+      - qa
   workflow_dispatch:
 
 env:
@@ -56,10 +56,51 @@ jobs:
           done
 
   # ============================================
+  # PREFLIGHT: Ensure commits passed through develop before any build
+  # ============================================
+  preflight:
+    runs-on: ubuntu-latest
+    needs: [validate]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Ensure qa is updated via merge from develop
+        run: |
+          echo "Validating that qa was updated via merge from develop..."
+
+          git fetch origin develop qa
+
+          DEVELOP_HEAD=$(git rev-parse origin/develop)
+          QA_HEAD=$(git rev-parse HEAD)
+
+          echo "Develop HEAD: $DEVELOP_HEAD"
+          echo "QA HEAD:      $QA_HEAD"
+
+          # 1) develop HEAD must be included in qa
+          if ! git merge-base --is-ancestor "$DEVELOP_HEAD" "$QA_HEAD"; then
+            echo "::error::QA is missing commits from develop. Merge develop into qa first."
+            exit 1
+          fi
+
+          # 2) last integration must be a merge commit from develop
+          LAST_MERGE=$(git log --merges --oneline origin/develop..HEAD | head -n 1)
+
+          if [ -z "$LAST_MERGE" ]; then
+            echo "::error::QA deployment blocked."
+            echo "qa must be updated via a merge commit from develop (no direct commits allowed)."
+            exit 1
+          fi
+
+          echo "✓ QA updated via merge from develop"
+
+  # ============================================
   # PARALLEL BUILD JOBS
   # ============================================
   build-backend:
-    needs: [validate]
+    needs: [validate, preflight]
     runs-on: ubuntu-latest
     environment: qa
     outputs:
@@ -101,7 +142,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=backend
 
   build-frontend:
-    needs: [validate]
+    needs: [validate, preflight]
     runs-on: ubuntu-latest
     environment: qa
     outputs:
@@ -143,7 +184,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=frontend
 
   build-router:
-    needs: [validate]
+    needs: [validate, preflight]
     runs-on: ubuntu-latest
     environment: qa
     outputs:
@@ -201,6 +242,7 @@ jobs:
         with:
           fetch-depth: 0
 
+
       - name: Determine version from git tag
         id: version
         run: |
@@ -257,7 +299,7 @@ jobs:
         run: |
           echo "Checking for orphan versions to clean up..."
           # Get versions not in any release channel (max 2 allowed)
-          ORPHAN_VERSIONS=$(snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; SHOW VERSIONS IN APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }};" --connection ${{ env.SNOWFLAKE_CONNECTION }} -o json 2>/dev/null | jq -r '.[] | select(.release_channel == null) | .version' 2>/dev/null || echo "")
+          ORPHAN_VERSIONS=$(snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; SHOW VERSIONS IN APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }};" --connection ${{ env.SNOWFLAKE_CONNECTION }} -o json 2>/dev/null | jq -r '.[] | select(.release_channel_name == null) | .version' 2>/dev/null || echo "")
 
           ORPHAN_COUNT=$(echo "$ORPHAN_VERSIONS" | grep -c . || echo "0")
           echo "Found $ORPHAN_COUNT orphan versions"
@@ -325,6 +367,43 @@ jobs:
 
           echo "patch=$NEW_PATCH" >> $GITHUB_OUTPUT
           echo "Registered version $VERSION patch $NEW_PATCH"
+
+      - name: Validate QA release monotonicity
+        run: |
+          echo "Validating QA release monotonicity..."
+
+          VERSION="${{ steps.version.outputs.version }}"
+          PATCH="${{ steps.register.outputs.patch }}"
+
+          VERSIONS_JSON=$(snow sql -q "
+          USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }};
+          SHOW VERSIONS IN APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }};
+          " --connection ${{ env.SNOWFLAKE_CONNECTION }} -o json)
+
+          CURRENT=$(echo "$VERSIONS_JSON" | jq -r '
+            [.[] | select(.release_channel_name=="QA")]
+            | sort_by(.created_on)
+            | last // empty
+          ')
+
+          if [ -n "$CURRENT" ]; then
+            CUR_VERSION=$(echo "$CURRENT" | jq -r '.version' | sed 's/V//')
+            CUR_PATCH=$(echo "$CURRENT" | jq -r '.patch')
+
+            NEW_VERSION=$(echo "$VERSION" | sed 's/V//')
+            NEW_PATCH="$PATCH"
+
+            echo "Current QA: V$CUR_VERSION patch $CUR_PATCH"
+            echo "New QA:     V$NEW_VERSION patch $NEW_PATCH"
+
+            if [ "$NEW_VERSION" -lt "$CUR_VERSION" ] || \
+               { [ "$NEW_VERSION" -eq "$CUR_VERSION" ] && [ "$NEW_PATCH" -le "$CUR_PATCH" ]; }; then
+              echo "::error::QA release regression detected. Refusing to move QA backwards."
+              exit 1
+            fi
+          else
+            echo "No existing QA release found (first deploy)."
+          fi
 
       - name: Update QA release channel
         run: |

@@ -1,9 +1,9 @@
-name: Release to Production (main)
+name: Release to Production (directive:default)
 
 on:
   push:
-    branches:
-      - main
+    tags:
+      - 'release/*'
   workflow_dispatch:
     inputs:
       version:
@@ -23,6 +23,19 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify signed release tag
+        run: |
+          git fetch --tags --force
+          TAG="${GITHUB_REF#refs/tags/}"
+
+          echo "Verifying signature for tag: $TAG"
+          git tag -v "$TAG" || {
+            echo "::error::Release tag is not signed or signature is invalid"
+            exit 1
+          }
 
       - name: Install Snowflake CLI
         uses: snowflakedb/snowflake-cli-action@v1.5
@@ -62,19 +75,6 @@ jobs:
           echo "Pre-release validation"
           echo "=========================================="
 
-          # Check that QA channel has a release directive
-          QA_DIRECTIVE_JSON=$(snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; SHOW RELEASE DIRECTIVES IN APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }};" \
-            --connection mkt_blendx_demo -o json 2>/dev/null) || QA_DIRECTIVE_JSON="[]"
-
-          QA_EXISTS=$(echo "$QA_DIRECTIVE_JSON" | jq '[.[] | select(.channel | ascii_upcase == "QA")] | length')
-
-          if [ "$QA_EXISTS" -eq "0" ]; then
-            echo "::error::No QA release directive found. Deploy to QA first before promoting to production."
-            exit 1
-          fi
-
-          echo "✓ QA release directive exists"
-
           # Verify application package exists and has versions
           VERSIONS_JSON=$(snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; SHOW VERSIONS IN APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }};" \
             --connection mkt_blendx_demo -o json 2>/dev/null) || VERSIONS_JSON="[]"
@@ -96,53 +96,34 @@ jobs:
           VERSION="${{ github.event.inputs.version }}"
           PATCH="${{ github.event.inputs.patch }}"
 
-          # If version not specified, auto-detect from QA channel
+          VERSIONS_JSON=$(snow sql -q "
+          USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }};
+          SHOW VERSIONS IN APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }};
+          " --connection mkt_blendx_demo -o json)
+
+          QA_VERSIONS=$(echo "$VERSIONS_JSON" | jq '[.[] | select(.release_channel_name | ascii_upcase=="QA")]')
+
+          COUNT=$(echo "$QA_VERSIONS" | jq 'length')
+          if [ "$COUNT" -eq "0" ]; then
+            echo "::error::No versions found in QA release channel. Cannot promote to production."
+            exit 1
+          fi
+
+          LATEST=$(echo "$QA_VERSIONS" | jq -r 'sort_by(.created_on) | last')
+
           if [ -z "$VERSION" ]; then
-            echo "Auto-detecting version from QA channel..."
-
-            # Get release directives using JSON output
-            DIRECTIVES_JSON=$(snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; SHOW RELEASE DIRECTIVES IN APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }};" \
-              --connection mkt_blendx_demo -o json 2>/dev/null) || DIRECTIVES_JSON="[]"
-
-            QA_COUNT=$(echo "$DIRECTIVES_JSON" | jq '[.[] | select(.channel | ascii_upcase == "QA")] | length')
-            if [ "$QA_COUNT" -ne 1 ]; then
-              echo "::error::Expected exactly 1 QA release directive, found $QA_COUNT"
-              echo "$DIRECTIVES_JSON" | jq '.'
-              exit 1
-            fi
-
-            # Extract QA channel version
-            VERSION=$(echo "$DIRECTIVES_JSON" | jq -r '.[] | select(.channel | ascii_upcase == "QA") | .version' | head -1)
-
-            if [ -z "$VERSION" ] || [ "$VERSION" == "null" ]; then
-              echo "Error: No release directive found for QA channel"
-              echo "Available release directives:"
-              echo "$DIRECTIVES_JSON" | jq '.'
-              exit 1
-            fi
-
+            VERSION=$(echo "$LATEST" | jq -r '.version')
             echo "Detected version from QA: $VERSION"
           fi
 
-          # If patch not specified, auto-detect from QA channel
           if [ -z "$PATCH" ]; then
-            echo "Auto-detecting patch from QA channel..."
-
-            # Get release directives if not already fetched
-            if [ -z "$DIRECTIVES_JSON" ]; then
-              DIRECTIVES_JSON=$(snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; SHOW RELEASE DIRECTIVES IN APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }};" \
-                --connection mkt_blendx_demo -o json 2>/dev/null) || DIRECTIVES_JSON="[]"
-            fi
-
-            # Extract patch from QA directive
-            PATCH=$(echo "$DIRECTIVES_JSON" | jq -r '.[] | select(.channel | ascii_upcase == "QA") | .patch' | head -1)
-
-            if [ -z "$PATCH" ] || [ "$PATCH" == "null" ] || ! [[ "$PATCH" =~ ^[0-9]+$ ]]; then
-              echo "::error::QA release directive does not define a valid patch. Refusing to promote."
-              exit 1
-            fi
-
+            PATCH=$(echo "$LATEST" | jq -r '.patch')
             echo "Detected patch from QA: $PATCH"
+          fi
+
+          if [ -z "$VERSION" ] || [ -z "$PATCH" ]; then
+            echo "::error::Unable to determine version or patch from QA"
+            exit 1
           fi
 
           echo "version=$VERSION" >> $GITHUB_OUTPUT
@@ -152,8 +133,8 @@ jobs:
           echo "Release Configuration:"
           echo "  Version: $VERSION"
           echo "  Patch: $PATCH"
-          echo "  Source Channel: QA"
-          echo "  Target Channel: DEFAULT"
+          echo "  Source Release Channel: QA"
+          echo "  Target Release Channel: DEFAULT"
           echo "=========================================="
 
       - name: Verify version exists
@@ -178,6 +159,43 @@ jobs:
           fi
 
           echo "Version ${VERSION} exists"
+
+      - name: Validate PROD release monotonicity
+        run: |
+          echo "Validating PROD release monotonicity..."
+
+          VERSION="${{ steps.detect_version.outputs.version }}"
+          PATCH="${{ steps.detect_version.outputs.patch }}"
+
+          VERSIONS_JSON=$(snow sql -q "
+          USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }};
+          SHOW VERSIONS IN APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }};
+          " --connection mkt_blendx_demo -o json)
+
+          CURRENT=$(echo "$VERSIONS_JSON" | jq -r '
+            [.[] | select(.release_channel_name=="DEFAULT")]
+            | sort_by(.created_on)
+            | last // empty
+          ')
+
+          if [ -n "$CURRENT" ]; then
+            CUR_VERSION=$(echo "$CURRENT" | jq -r '.version' | sed 's/V//')
+            CUR_PATCH=$(echo "$CURRENT" | jq -r '.patch')
+
+            NEW_VERSION=$(echo "$VERSION" | sed 's/V//')
+            NEW_PATCH="$PATCH"
+
+            echo "Current PROD: V$CUR_VERSION patch $CUR_PATCH"
+            echo "New PROD:     V$NEW_VERSION patch $NEW_PATCH"
+
+            if [ "$NEW_VERSION" -lt "$CUR_VERSION" ] || \
+               { [ "$NEW_VERSION" -eq "$CUR_VERSION" ] && [ "$NEW_PATCH" -le "$CUR_PATCH" ]; }; then
+              echo "::error::PROD release regression detected. Refusing to move production backwards."
+              exit 1
+            fi
+          else
+            echo "No existing PROD release found (first production release)."
+          fi
 
       - name: Add version to DEFAULT release channel
         run: |
