@@ -357,6 +357,19 @@ Create `checklists/marketplace_listing.md` with all required fields:
 
 ---
 
+### 31. Generic Makefile with Useful Commands
+
+- [ ] Create a `Makefile` with common development and deployment commands
+- [ ] Include commands for running tests (unit, integration)
+- [ ] Add command to start the app locally (backend and frontend)
+- [ ] Add commands to validate linters and formatters
+- [ ] Include commands to run DB migration scripts
+- [ ] Add commands for building and pushing Docker images
+- [ ] Provide commands for cleaning build artifacts and caches
+- [ ] Document usage of each Makefile command in README or separate doc
+
+---
+
 ## Proposed Template Structure
 
 ```text
@@ -441,7 +454,7 @@ marketplace-app-template/
 | Local Development | 5 |
 | Marketplace Listing Checklist | 25+ |
 | Testing / Versioning / Security | 15 |
-
+| Makefile Commands | 8 |
 
 ---
 
