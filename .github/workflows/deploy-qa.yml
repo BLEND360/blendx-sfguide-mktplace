@@ -1,9 +1,9 @@
-name: Deploy to QA (develop)
+name: Deploy to QA
 
 on:
   push:
     branches:
-      - develop
+      - qa
   workflow_dispatch:
 
 env:
@@ -257,7 +257,7 @@ jobs:
         run: |
           echo "Checking for orphan versions to clean up..."
           # Get versions not in any release channel (max 2 allowed)
-          ORPHAN_VERSIONS=$(snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; SHOW VERSIONS IN APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }};" --connection ${{ env.SNOWFLAKE_CONNECTION }} -o json 2>/dev/null | jq -r '.[] | select(.release_channel == null) | .version' 2>/dev/null || echo "")
+          ORPHAN_VERSIONS=$(snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; SHOW VERSIONS IN APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }};" --connection ${{ env.SNOWFLAKE_CONNECTION }} -o json 2>/dev/null | jq -r '.[] | select(.release_channel_name == null) | .version' 2>/dev/null || echo "")
 
           ORPHAN_COUNT=$(echo "$ORPHAN_VERSIONS" | grep -c . || echo "0")
           echo "Found $ORPHAN_COUNT orphan versions"
@@ -325,6 +325,43 @@ jobs:
 
           echo "patch=$NEW_PATCH" >> $GITHUB_OUTPUT
           echo "Registered version $VERSION patch $NEW_PATCH"
+
+      - name: Validate QA release monotonicity
+        run: |
+          echo "Validating QA release monotonicity..."
+
+          VERSION="${{ steps.version.outputs.version }}"
+          PATCH="${{ steps.register.outputs.patch }}"
+
+          VERSIONS_JSON=$(snow sql -q "
+          USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }};
+          SHOW VERSIONS IN APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }};
+          " --connection ${{ env.SNOWFLAKE_CONNECTION }} -o json)
+
+          CURRENT=$(echo "$VERSIONS_JSON" | jq -r '
+            [.[] | select(.release_channel_name=="QA")]
+            | sort_by(.created_on)
+            | last // empty
+          ')
+
+          if [ -n "$CURRENT" ]; then
+            CUR_VERSION=$(echo "$CURRENT" | jq -r '.version' | sed 's/V//')
+            CUR_PATCH=$(echo "$CURRENT" | jq -r '.patch')
+
+            NEW_VERSION=$(echo "$VERSION" | sed 's/V//')
+            NEW_PATCH="$PATCH"
+
+            echo "Current QA: V$CUR_VERSION patch $CUR_PATCH"
+            echo "New QA:     V$NEW_VERSION patch $NEW_PATCH"
+
+            if [ "$NEW_VERSION" -lt "$CUR_VERSION" ] || \
+               { [ "$NEW_VERSION" -eq "$CUR_VERSION" ] && [ "$NEW_PATCH" -le "$CUR_PATCH" ]; }; then
+              echo "::error::QA release regression detected. Refusing to move QA backwards."
+              exit 1
+            fi
+          else
+            echo "No existing QA release found (first deploy)."
+          fi
 
       - name: Update QA release channel
         run: |
