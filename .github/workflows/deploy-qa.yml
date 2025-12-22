@@ -67,19 +67,34 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Ensure commits passed through develop
+      - name: Ensure qa is updated via merge from develop
         run: |
-          echo "Validating that qa branch includes develop history..."
+          echo "Validating that qa was updated via merge from develop..."
 
-          git fetch origin develop
+          git fetch origin develop qa
 
-          if ! git merge-base --is-ancestor origin/develop HEAD; then
-            echo "::error::QA deployment blocked. Commits on qa must come from develop."
-            echo "Make sure qa is updated via merge from develop."
+          DEVELOP_HEAD=$(git rev-parse origin/develop)
+          QA_HEAD=$(git rev-parse HEAD)
+
+          echo "Develop HEAD: $DEVELOP_HEAD"
+          echo "QA HEAD:      $QA_HEAD"
+
+          # 1) develop HEAD must be included in qa
+          if ! git merge-base --is-ancestor "$DEVELOP_HEAD" "$QA_HEAD"; then
+            echo "::error::QA is missing commits from develop. Merge develop into qa first."
             exit 1
           fi
 
-          echo "✓ All commits passed through develop"
+          # 2) last integration must be a merge commit from develop
+          LAST_MERGE=$(git log --merges --oneline origin/develop..HEAD | head -n 1)
+
+          if [ -z "$LAST_MERGE" ]; then
+            echo "::error::QA deployment blocked."
+            echo "qa must be updated via a merge commit from develop (no direct commits allowed)."
+            exit 1
+          fi
+
+          echo "✓ QA updated via merge from develop"
 
   # ============================================
   # PARALLEL BUILD JOBS
