@@ -94,6 +94,9 @@ jobs:
         run: |
           TAG="${{ steps.tag.outputs.tag }}"
 
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
           git tag "$TAG" -m "Production release $TAG"
           git push origin "$TAG"
 
