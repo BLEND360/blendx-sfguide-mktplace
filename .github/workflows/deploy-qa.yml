@@ -384,8 +384,8 @@ jobs:
             | tail -1 || true)
 
           if [ -n "$QA_ROW" ]; then
-            CUR_VERSION=$(echo "$QA_ROW" | awk -F'|' '{gsub(/V/,\"\",$2); gsub(/ /,\"\",$2); print $2}')
-            CUR_PATCH=$(echo "$QA_ROW" | awk -F'|' '{gsub(/ /,\"\",$3); print $3}')
+            CUR_VERSION=$(echo "$QA_ROW" | awk -F'|' '{gsub(/V/,"",$2); gsub(/ /,"",$2); print $2}')
+            CUR_PATCH=$(echo "$QA_ROW" | awk -F'|' '{gsub(/ /,"",$3); print $3}')
 
             NEW_VERSION=$(echo "$VERSION" | sed 's/V//')
             NEW_PATCH="$PATCH"
