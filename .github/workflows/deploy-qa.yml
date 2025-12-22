@@ -56,10 +56,36 @@ jobs:
           done
 
   # ============================================
+  # PREFLIGHT: Ensure commits passed through develop before any build
+  # ============================================
+  preflight:
+    runs-on: ubuntu-latest
+    needs: [validate]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Ensure commits passed through develop
+        run: |
+          echo "Validating that qa branch includes develop history..."
+
+          git fetch origin develop
+
+          if ! git merge-base --is-ancestor origin/develop HEAD; then
+            echo "::error::QA deployment blocked. Commits on qa must come from develop."
+            echo "Make sure qa is updated via merge from develop."
+            exit 1
+          fi
+
+          echo "✓ All commits passed through develop"
+
+  # ============================================
   # PARALLEL BUILD JOBS
   # ============================================
   build-backend:
-    needs: [validate]
+    needs: [validate, preflight]
     runs-on: ubuntu-latest
     environment: qa
     outputs:
@@ -101,7 +127,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=backend
 
   build-frontend:
-    needs: [validate]
+    needs: [validate, preflight]
     runs-on: ubuntu-latest
     environment: qa
     outputs:
@@ -143,7 +169,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=frontend
 
   build-router:
-    needs: [validate]
+    needs: [validate, preflight]
     runs-on: ubuntu-latest
     environment: qa
     outputs:
@@ -201,20 +227,6 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Ensure commits passed through develop
-        run: |
-          echo "Validating that qa branch includes develop history..."
-
-          git fetch origin develop
-
-          # Check that current commit is a descendant of develop
-          if ! git merge-base --is-ancestor origin/develop HEAD; then
-            echo "::error::QA deployment blocked. Commits on qa must come from develop."
-            echo "Make sure qa is updated via merge from develop."
-            exit 1
-          fi
-
-          echo "✓ All commits passed through develop"
 
       - name: Determine version from git tag
         id: version
