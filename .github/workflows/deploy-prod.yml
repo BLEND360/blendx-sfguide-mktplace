@@ -196,7 +196,7 @@ jobs:
           VERSIONS_JSON=$(snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; SHOW VERSIONS IN APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }};" \
             --connection mkt_blendx_demo --format json 2>/dev/null) || VERSIONS_JSON="[]"
 
-          VERSION_EXISTS=$(echo "$VERSIONS_JSON" | jq -r --arg v "$VERSION" '[flatten | .[] | select(.version | ascii_upcase == ($v | ascii_upcase))] | length')
+          VERSION_EXISTS=$(echo "$VERSIONS_JSON" | jq -r --arg v "$VERSION" '[flatten | .[] | select(.version != null) | select((.version | tostring | ascii_upcase) == ($v | ascii_upcase))] | length')
 
           if [ "$VERSION_EXISTS" -eq "0" ]; then
             echo "Error: Version ${VERSION} does not exist in package ${{ secrets.SNOWFLAKE_APP_PACKAGE }}"
