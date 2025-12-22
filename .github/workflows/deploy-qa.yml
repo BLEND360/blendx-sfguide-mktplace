@@ -375,20 +375,17 @@ jobs:
           VERSION="${{ steps.version.outputs.version }}"
           PATCH="${{ steps.register.outputs.patch }}"
 
-          VERSIONS_JSON=$(snow sql -q "
-          USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }};
-          SHOW VERSIONS IN APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }};
-          " --connection ${{ env.SNOWFLAKE_CONNECTION }} -o json)
+          # Get current QA release 
+          QA_ROW=$(snow sql -q "
+            USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }};
+            SHOW VERSIONS IN APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }};
+          " --connection ${{ env.SNOWFLAKE_CONNECTION }} \
+            | grep -i "| *QA *|" \
+            | tail -1 || true)
 
-          CURRENT=$(echo "$VERSIONS_JSON" | jq -r '
-            [.[] | select(.release_channel_name=="QA")]
-            | sort_by(.created_on)
-            | last // empty
-          ')
-
-          if [ -n "$CURRENT" ]; then
-            CUR_VERSION=$(echo "$CURRENT" | jq -r '.version' | sed 's/V//')
-            CUR_PATCH=$(echo "$CURRENT" | jq -r '.patch')
+          if [ -n "$QA_ROW" ]; then
+            CUR_VERSION=$(echo "$QA_ROW" | awk -F'|' '{gsub(/V/,\"\",$2); gsub(/ /,\"\",$2); print $2}')
+            CUR_PATCH=$(echo "$QA_ROW" | awk -F'|' '{gsub(/ /,\"\",$3); print $3}')
 
             NEW_VERSION=$(echo "$VERSION" | sed 's/V//')
             NEW_PATCH="$PATCH"
