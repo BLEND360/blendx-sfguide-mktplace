@@ -6,10 +6,11 @@ This guide explains how to set up and use the automatic CI/CD deployment pipelin
 
 The deployment pipeline automatically deploys the application to Snowflake when code is pushed to specific branches:
 
-| Branch | Environment | Action |
-|--------|-------------|--------|
-| `develop` | QA | Builds images, creates/updates Application Package, deploys to QA release channel |
-| `main` | Production | Promotes the QA version to the DEFAULT (production) release channel |
+| Branch | Environment | Purpose |
+|--------|-------------|---------|
+| `develop` | Local | Local development and testing |
+| `qa` | QA | Builds images, creates/updates Application Package, deploys to QA release channel |
+| `main` | Production | Promotes the QA version to the DEFAULT (production) release channel for listing |
 
 ## Prerequisites
 
@@ -87,9 +88,13 @@ Copy the **entire content** including the `-----BEGIN PRIVATE KEY-----` and `---
 
 ## How the Pipeline Works
 
-### QA Deployment (`develop` branch)
+### Local Development (`develop` branch)
 
-When you push to `develop`, the pipeline:
+The `develop` branch is used for local development and testing. No automatic deployment is triggered when pushing to this branch. Use this branch to develop and test changes locally before pushing to QA.
+
+### QA Deployment (`qa` branch)
+
+When you push to `qa`, the pipeline:
 
 1. **Determines version** from git tags (e.g., `v1.0.0` → `v1`)
 2. **Builds Docker images** for backend, frontend, and router
@@ -118,7 +123,7 @@ The pipeline uses git tags to determine versions:
 - Tag `v2.3.1` → Version `v2`
 - No tag → Default `v1`
 
-Each push to `develop` creates a new **patch** for the current version.
+Each push to `qa` creates a new **patch** for the current version.
 
 To create a new major version:
 

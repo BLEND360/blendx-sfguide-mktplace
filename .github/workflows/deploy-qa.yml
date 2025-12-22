@@ -201,6 +201,21 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Ensure commits passed through develop
+        run: |
+          echo "Validating that qa branch includes develop history..."
+
+          git fetch origin develop
+
+          # Check that current commit is a descendant of develop
+          if ! git merge-base --is-ancestor origin/develop HEAD; then
+            echo "::error::QA deployment blocked. Commits on qa must come from develop."
+            echo "Make sure qa is updated via merge from develop."
+            exit 1
+          fi
+
+          echo "✓ All commits passed through develop"
+
       - name: Determine version from git tag
         id: version
         run: |
