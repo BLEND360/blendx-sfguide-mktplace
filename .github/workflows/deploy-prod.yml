@@ -109,7 +109,7 @@ jobs:
           SHOW VERSIONS IN APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }};
           " --connection mkt_blendx_demo --format json)
 
-          QA_VERSIONS=$(echo "$VERSIONS_JSON" | jq '[.[] | select(.release_channel_name | ascii_upcase=="QA")]')
+          QA_VERSIONS=$(echo "$VERSIONS_JSON" | jq '[flatten | .[] | select(.release_channel_names | "QA")]')
 
           COUNT=$(echo "$QA_VERSIONS" | jq 'length')
           if [ "$COUNT" -eq "0" ]; then
@@ -196,7 +196,7 @@ jobs:
           VERSIONS_JSON=$(snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; SHOW VERSIONS IN APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }};" \
             --connection mkt_blendx_demo --format json 2>/dev/null) || VERSIONS_JSON="[]"
 
-          VERSION_EXISTS=$(echo "$VERSIONS_JSON" | jq -r --arg v "$VERSION" '[.[] | select(.version | ascii_upcase == ($v | ascii_upcase))] | length')
+          VERSION_EXISTS=$(echo "$VERSIONS_JSON" | jq -r --arg v "$VERSION" '[flatten | .[] | select(.version | ascii_upcase == ($v | ascii_upcase))] | length')
 
           if [ "$VERSION_EXISTS" -eq "0" ]; then
             echo "Error: Version ${VERSION} does not exist in package ${{ secrets.SNOWFLAKE_APP_PACKAGE }}"
@@ -221,7 +221,7 @@ jobs:
           " --connection mkt_blendx_demo --format json)
 
           CURRENT=$(echo "$VERSIONS_JSON" | jq -r '
-            [.[] | select(.release_channel_name=="DEFAULT")]
+            [flatten | .[] | select(.release_channel_names | "DEFAULT")]
             | sort_by(.created_on)
             | last // empty
           ')
@@ -252,7 +252,7 @@ jobs:
           CHANNEL_JSON=$(snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; SHOW RELEASE DIRECTIVES IN APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }};" \
             --connection mkt_blendx_demo --format json 2>/dev/null) || CHANNEL_JSON="[]"
 
-          IN_DEFAULT=$(echo "$CHANNEL_JSON" | jq -r --arg v "$VERSION" '[.[] | select(.channel | ascii_upcase=="DEFAULT" and .version | ascii_upcase==($v|ascii_upcase))] | length')
+          IN_DEFAULT=$(echo "$CHANNEL_JSON" | jq -r --arg v "$VERSION" '[flatten | .[] | select(.channel | ascii_upcase=="DEFAULT" and .version | ascii_upcase==($v|ascii_upcase))] | length')
 
           if [ "$IN_DEFAULT" -eq "0" ]; then
             echo "Adding version $VERSION to DEFAULT release channel..."
