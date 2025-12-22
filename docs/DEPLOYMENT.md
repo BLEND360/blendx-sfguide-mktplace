@@ -2,12 +2,56 @@
 
 This guide explains how to set up and use the automatic CI/CD deployment pipeline for the BlendX Marketplace application.
 
-## Overview
+## Branch Flow
 
-The deployment pipeline follows a strict branch promotion flow:
+```mermaid
+flowchart LR
+    subgraph Development
+        A[develop] -->|merge| B[qa]
+    end
 
+    subgraph QA
+        B -->|deploy-qa.yml| C[Build Images]
+        C --> D[Deploy to QA Channel]
+        D --> E[Upgrade App]
+    end
+
+    subgraph Production
+        B -->|merge| F[main]
+        F -->|release.yml| G[Create Tag]
+        G -->|trigger| H[deploy-prod.yml]
+        H --> I[Promote to DEFAULT]
+    end
+
+    style A fill:#e1f5fe
+    style B fill:#fff3e0
+    style F fill:#e8f5e9
+    style I fill:#f3e5f5
 ```
-develop → qa → main (auto-tag) → production
+
+### Pipeline Flow
+
+```mermaid
+sequenceDiagram
+    participant Dev as Developer
+    participant GH as GitHub
+    participant QA as QA Pipeline
+    participant Rel as Release Pipeline
+    participant Prod as Prod Pipeline
+    participant SF as Snowflake
+
+    Dev->>GH: merge develop → qa
+    GH->>QA: trigger deploy-qa.yml
+    QA->>SF: Build & push images
+    QA->>SF: Register patch in QA channel
+    QA->>SF: Upgrade application
+
+    Dev->>GH: merge qa → main
+    GH->>Rel: trigger release.yml
+    Rel->>GH: create tag (release/vX.Y.Z)
+    Rel->>Prod: trigger deploy-prod.yml
+    Prod->>SF: Read QA version
+    Prod->>SF: Promote to DEFAULT channel
 ```
 
 | Branch | Environment | Purpose |
@@ -90,86 +134,105 @@ cat keys/pipeline/snowflake_key.p8
 
 Copy the **entire content** including the `-----BEGIN PRIVATE KEY-----` and `-----END PRIVATE KEY-----` headers.
 
-## How the Pipeline Works
+## Pipelines Overview
 
-### Local Development (`develop` branch)
+| Pipeline | File | Trigger | Purpose |
+|----------|------|---------|---------|
+| QA Deployment | `deploy-qa.yml` | Push to `qa` (merge from develop) | Build, deploy, and restart QA environment |
+| Create Release Tag | `release.yml` | Push to `main` or manual | Auto-create release tag and trigger production deploy |
+| Production Release | `deploy-prod.yml` | Called by `release.yml` or manual | Promote QA version to production |
 
-The `develop` branch is used for local development and testing. No automatic deployment is triggered when pushing to this branch. Use this branch to develop and test changes locally before pushing to QA.
+## QA Pipeline (deploy-qa.yml)
 
-### QA Deployment (`qa` branch)
+### Trigger
 
-When you push to `qa`, the pipeline:
+- **Automatic**: Push to `qa` branch (must be merged from `develop`)
+- **Manual**: GitHub Actions workflow dispatch
+
+### Preflight Validation
+
+Before building, the pipeline validates:
+- `qa` branch must contain all commits from `develop`
+- `qa` must be updated via merge commit from `develop` (no direct commits)
+
+### Steps
 
 1. Validates that `qa` was updated via a merge from `develop`
-2. Determines the QA version (fixed major version, patch-based)
-3. Builds Docker images for backend, frontend, and router
-4. Pushes images to Snowflake Image Repository
-5. Generates `setup.sql` from templates
-6. Uploads application files to Snowflake stage
-7. Creates the Application Package if it doesn't exist
-8. Registers a new patch in the QA release channel
-9. Restarts the application (if installed)
+2. Builds Docker images for backend, frontend, and router (parallel)
+3. Pushes images to Snowflake Image Repository
+4. Generates `setup.sql` from templates
+5. Uploads application files to Snowflake stage
+6. Creates the Application Package if it doesn't exist
+7. Registers a new patch in the QA release channel
+8. Upgrades and restarts the application (if installed)
 
-### Production Release (`main` branch)
+### Version Strategy
 
-When you merge `qa` into `main`:
+- Version is derived from git tags: `v1.x.x` → `V1`, `v2.x.x` → `V2`
+- Each push to `qa` adds a new patch to the current version
+- Default version is `V1` if no tags exist
 
-1. The `release.yml` workflow automatically creates a release tag (e.g., `release/v1.0.1`)
-2. The tag triggers the `deploy-prod.yml` workflow
-3. The production pipeline:
-   - Verifies the tag is on the `main` branch
-   - Reads the latest version and patch from the QA release channel
-   - Validates the promotion is monotonic (no regressions)
-   - Promotes the QA version to the DEFAULT (production) release channel
-   - Sets the DEFAULT release directive
+## Release Tag Pipeline (release.yml)
 
-## Versioning Model
+### Trigger
 
-The deployment pipeline uses a strict separation between QA and Production:
+- **Automatic**: Push to `main` branch (merge from qa)
+- **Manual**: GitHub Actions workflow dispatch with optional version input
 
-- **QA**
-  - Uses a fixed major version (e.g. `V1`)
-  - Each deployment creates a new patch
-  - QA is the single source of truth for production
+### Auto-increment
 
-- **Production**
-  - Auto-incremented release tags (`release/vX.Y.Z`)
-  - Tags are created automatically on merge to `main`
-  - Production always promotes the latest QA patch
+When triggered automatically (push to main), the tag version is auto-incremented:
+- If no `release/*` tags exist: `release/v1.0.0`
+- Otherwise: increments patch number (e.g., `release/v1.0.0` → `release/v1.0.1`)
 
-## Manual Triggers
+### Output
 
-Both pipelines can be triggered manually from GitHub Actions:
+Creates an annotated tag on `main` and directly triggers the `deploy-prod.yml` workflow via `workflow_dispatch`.
 
-1. Go to **Actions** tab in GitHub
-2. Select the workflow
-3. Click **Run workflow**
+## Production Pipeline (deploy-prod.yml)
 
-For production releases, you can optionally specify version and patch numbers.
+### Trigger
+
+- **Automatic**: Called by `release.yml` after creating the tag
+- **Manual**: GitHub Actions workflow dispatch with optional version/patch inputs
+
+### Steps
+
+1. Reads the latest version and patch from the QA release channel
+2. Validates the promotion is monotonic (no regressions)
+3. Promotes the QA version to the DEFAULT (production) release channel
+4. Sets the DEFAULT release directive
+
+### Manual Override
+
+When triggering manually, you can specify:
+- `version`: Version to release (e.g., `V1`)
+- `patch`: Patch number to release (e.g., `5`)
+
+If not specified, values are auto-detected from QA channel.
 
 ## Release Channels
 
-The pipeline uses Snowflake release channels:
+| Channel | Purpose | Updated by |
+|---------|---------|------------|
+| `QA` | Testing and development | QA pipeline on every push to `qa` |
+| `DEFAULT` | Production (marketplace consumers) | Production pipeline (triggered by `release.yml`) |
 
-| Channel | Purpose |
-|---------|---------|
-| `QA` | Testing and development |
-| `DEFAULT` | Production (marketplace consumers) |
+> **Note**: Versions in DEFAULT channel require Snowflake security review before they are available to marketplace consumers.
 
+## Typical Workflow
 
-## Release Flow Summary
-
-1. Develop features on `develop`
-2. Merge `develop` → `qa`
-3. QA pipeline deploys and validates changes
-4. Merge `qa` → `main`
-5. Release tag is auto-created (e.g., `release/v1.0.1`)
-6. Production pipeline promotes QA → DEFAULT
-
-This flow guarantees:
-- No direct deployments from development branches
-- Full auditability of production releases
-- Strong separation between build, validation, and release
+1. Developer creates feature branch from `develop`
+2. Developer creates PR to `develop`
+3. PR is merged to `develop`
+4. When ready for QA: merge `develop` → `qa`
+5. QA pipeline triggers → builds images, deploys, restarts service
+6. QA testing is performed
+7. When ready for release: merge `qa` → `main`
+8. Release tag is auto-created (e.g., `release/v1.0.1`)
+9. Production pipeline is triggered → promotes QA version to DEFAULT channel
+10. Submit for Snowflake security review (manual step in Provider Studio)
+11. After approval, version is available on Marketplace
 
 ## Troubleshooting
 
@@ -224,6 +287,30 @@ If Docker image push fails:
 
 2. Check the `SNOWFLAKE_REPO` secret format matches your image repository URL
 
+### Build Takes Too Long
+
+- Docker builds use GHA cache with separate scopes per image
+- First build will be slow, subsequent builds use cache
+- Backend image is typically the slowest due to Python dependencies
+
+### Service Not Restarting
+
+- Check if `SNOWFLAKE_APP_INSTANCE` secret is set correctly
+- Verify the application exists with `SHOW APPLICATIONS`
+- Check service logs with `get_service_logs()` procedure
+
+### Version Conflicts
+
+- Snowflake allows max 2 versions not in any release channel
+- Pipeline automatically cleans up orphan versions
+- If issues persist, manually deregister old versions
+
+### Application Not Found
+
+- Ensure the application was created with `setup/create-application.sh`
+- Verify the `SNOWFLAKE_ROLE` has access to the application
+- Check that `SNOWFLAKE_APP_INSTANCE` matches the actual app name
+
 ## Security Considerations
 
 1. **Private Key**: Never commit `snowflake_key.p8` to the repository
@@ -236,7 +323,7 @@ If Docker image push fails:
 | File | Purpose |
 |------|---------|
 | `.github/workflows/deploy-qa.yml` | QA deployment workflow |
-| `.github/workflows/release.yml` | Auto-creates release tags on merge to main |
+| `.github/workflows/release.yml` | Auto-creates release tags and triggers production deploy |
 | `.github/workflows/deploy-prod.yml` | Production promotion workflow (QA → DEFAULT) |
 | `scripts/provider-setup.sh` | Initial setup script |
 | `scripts/sql/setup_cicd_permissions.sql` | SQL permissions reference |
