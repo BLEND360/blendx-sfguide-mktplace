@@ -1,0 +1,217 @@
+name: Deploy to Stable
+
+on:
+  push:
+    branches:
+      - stable
+  workflow_dispatch:
+
+env:
+  SNOWFLAKE_CONNECTION: ${{ vars.SNOWFLAKE_CONNECTION }}
+
+jobs:
+  # ============================================
+  # PREFLIGHT: Ensure stable is merged from qa
+  # ============================================
+  preflight:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Ensure stable is updated via merge from qa
+        run: |
+          echo "Validating that stable was updated via merge from qa..."
+
+          git fetch origin qa stable
+
+          QA_HEAD=$(git rev-parse origin/qa)
+          STABLE_HEAD=$(git rev-parse HEAD)
+
+          echo "QA HEAD:     $QA_HEAD"
+          echo "Stable HEAD: $STABLE_HEAD"
+
+          # 1) qa HEAD must be included in stable
+          if ! git merge-base --is-ancestor "$QA_HEAD" "$STABLE_HEAD"; then
+            echo "::error::Stable is missing commits from qa. Merge qa into stable first."
+            exit 1
+          fi
+
+          # 2) last integration must be a merge commit from qa
+          LAST_MERGE=$(git log --merges --oneline origin/qa..HEAD | head -n 1)
+
+          if [ -z "$LAST_MERGE" ]; then
+            echo "::error::Stable deployment blocked."
+            echo "stable must be updated via a merge commit from qa (no direct commits allowed)."
+            exit 1
+          fi
+
+          echo "Stable updated via merge from qa"
+
+  # ============================================
+  # PROMOTE: Promote QA version to STABLE channel
+  # ============================================
+  promote-to-stable:
+    runs-on: ubuntu-latest
+    environment: stable
+    needs: [preflight]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Snowflake
+        uses: ./.github/actions/snowflake-setup
+        with:
+          private-key: ${{ secrets.SNOWFLAKE_PRIVATE_KEY_RAW }}
+          account: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+          user: ${{ vars.SNOWFLAKE_DEPLOY_USER }}
+          role: ${{ vars.SNOWFLAKE_DEPLOY_ROLE }}
+          warehouse: ${{ vars.SNOWFLAKE_WAREHOUSE }}
+          database: ${{ vars.SNOWFLAKE_DATABASE }}
+          schema: ${{ vars.SNOWFLAKE_SCHEMA }}
+          host: ${{ secrets.SNOWFLAKE_HOST }}
+          login-registry: 'false'
+
+      - name: Validate QA has versions
+        run: |
+          echo "Validating QA release channel has versions..."
+
+          QA_ROW=$(snow sql -q "
+            USE ROLE ${{ vars.SNOWFLAKE_DEPLOY_ROLE }};
+            SHOW VERSIONS IN APPLICATION PACKAGE ${{ vars.SNOWFLAKE_APP_PACKAGE }};
+          " --connection ${{ env.SNOWFLAKE_CONNECTION }} \
+            | grep -i "| *QA *|" \
+            | tail -1 || true)
+
+          if [ -z "$QA_ROW" ]; then
+            echo "::error::No versions found in QA release channel. Deploy to QA first."
+            exit 1
+          fi
+
+          echo "QA release channel has at least one version"
+
+      - name: Detect version and patch from QA channel
+        id: detect_version
+        run: |
+          echo "Detecting latest version from QA channel..."
+
+          VERSIONS_TABLE=$(snow sql -q "
+            USE ROLE ${{ vars.SNOWFLAKE_DEPLOY_ROLE }};
+            SHOW VERSIONS IN APPLICATION PACKAGE ${{ vars.SNOWFLAKE_APP_PACKAGE }};
+          " --connection ${{ env.SNOWFLAKE_CONNECTION }} 2>/dev/null || echo "")
+
+          echo "Versions table:"
+          echo "$VERSIONS_TABLE"
+
+          # Find the latest QA version (last row with QA in release_channel_name)
+          QA_ROW=$(echo "$VERSIONS_TABLE" | grep -i "| *QA *|" | tail -1)
+
+          if [ -z "$QA_ROW" ]; then
+            echo "::error::No versions found in QA release channel."
+            exit 1
+          fi
+
+          # Parse version and patch from pipe-separated format
+          VERSION=$(echo "$QA_ROW" | awk -F'|' '{gsub(/^[ \t]+|[ \t]+$/, "", $2); print $2}')
+          PATCH=$(echo "$QA_ROW" | awk -F'|' '{gsub(/^[ \t]+|[ \t]+$/, "", $3); print $3}')
+
+          if [ -z "$VERSION" ] || [ -z "$PATCH" ]; then
+            echo "::error::Could not parse version/patch from QA channel"
+            exit 1
+          fi
+
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "patch=$PATCH" >> $GITHUB_OUTPUT
+
+          echo "=========================================="
+          echo "Promotion Configuration:"
+          echo "  Version: $VERSION"
+          echo "  Patch: $PATCH"
+          echo "  Source: QA"
+          echo "  Target: STABLE"
+          echo "=========================================="
+
+      - name: Validate STABLE release monotonicity
+        run: |
+          echo "Validating STABLE release monotonicity..."
+
+          VERSION="${{ steps.detect_version.outputs.version }}"
+          PATCH="${{ steps.detect_version.outputs.patch }}"
+
+          STABLE_ROW=$(snow sql -q "
+            USE ROLE ${{ vars.SNOWFLAKE_DEPLOY_ROLE }};
+            SHOW VERSIONS IN APPLICATION PACKAGE ${{ vars.SNOWFLAKE_APP_PACKAGE }};
+          " --connection ${{ env.SNOWFLAKE_CONNECTION }} \
+            | grep -i "| *STABLE *|" \
+            | tail -1 || true)
+
+          if [ -n "$STABLE_ROW" ]; then
+            CUR_VERSION=$(echo "$STABLE_ROW" | awk -F'|' '{gsub(/V/,"",$2); gsub(/ /,"",$2); print $2}')
+            CUR_PATCH=$(echo "$STABLE_ROW" | awk -F'|' '{gsub(/ /,"",$3); print $3}')
+
+            NEW_VERSION=$(echo "$VERSION" | sed 's/V//')
+            NEW_PATCH="$PATCH"
+
+            echo "Current STABLE: V$CUR_VERSION patch $CUR_PATCH"
+            echo "New STABLE:     V$NEW_VERSION patch $NEW_PATCH"
+
+            if [ "$NEW_VERSION" -lt "$CUR_VERSION" ] || \
+               { [ "$NEW_VERSION" -eq "$CUR_VERSION" ] && [ "$NEW_PATCH" -lt "$CUR_PATCH" ]; }; then
+              echo "::error::STABLE release regression detected. Refusing to move STABLE backwards."
+              exit 1
+            fi
+          else
+            echo "No existing STABLE release found (first stable release)."
+          fi
+
+      - name: Add version to STABLE release channel
+        run: |
+          VERSION="${{ steps.detect_version.outputs.version }}"
+
+          echo "Adding version $VERSION to STABLE release channel..."
+          snow sql -q "USE ROLE ${{ vars.SNOWFLAKE_DEPLOY_ROLE }}; ALTER APPLICATION PACKAGE ${{ vars.SNOWFLAKE_APP_PACKAGE }} MODIFY RELEASE CHANNEL STABLE ADD VERSION $VERSION;" --connection ${{ env.SNOWFLAKE_CONNECTION }} 2>&1 || echo "Version may already be in STABLE channel (OK)"
+
+      - name: Set STABLE release directive
+        run: |
+          VERSION="${{ steps.detect_version.outputs.version }}"
+          PATCH="${{ steps.detect_version.outputs.patch }}"
+
+          echo "Setting STABLE release directive to version $VERSION patch $PATCH..."
+          snow sql -q "USE ROLE ${{ vars.SNOWFLAKE_DEPLOY_ROLE }}; ALTER APPLICATION PACKAGE ${{ vars.SNOWFLAKE_APP_PACKAGE }} MODIFY RELEASE CHANNEL STABLE SET DEFAULT RELEASE DIRECTIVE VERSION=$VERSION PATCH=$PATCH;" --connection ${{ env.SNOWFLAKE_CONNECTION }}
+
+          echo "STABLE channel updated successfully"
+
+      - name: Show current release status
+        run: |
+          echo ""
+          echo "=========================================="
+          echo "Current Release Status"
+          echo "=========================================="
+
+          echo ""
+          echo "Versions:"
+          snow sql -q "USE ROLE ${{ vars.SNOWFLAKE_DEPLOY_ROLE }}; SHOW VERSIONS IN APPLICATION PACKAGE ${{ vars.SNOWFLAKE_APP_PACKAGE }};" --connection ${{ env.SNOWFLAKE_CONNECTION }}
+
+          echo ""
+          echo "Release Directives:"
+          snow sql -q "USE ROLE ${{ vars.SNOWFLAKE_DEPLOY_ROLE }}; SHOW RELEASE DIRECTIVES IN APPLICATION PACKAGE ${{ vars.SNOWFLAKE_APP_PACKAGE }};" --connection ${{ env.SNOWFLAKE_CONNECTION }}
+
+      - name: Summary
+        run: |
+          VERSION="${{ steps.detect_version.outputs.version }}"
+          PATCH="${{ steps.detect_version.outputs.patch }}"
+
+          echo ""
+          echo "=========================================="
+          echo "STABLE Promotion Complete"
+          echo "=========================================="
+          echo ""
+          echo "Version $VERSION patch $PATCH has been promoted to the STABLE channel."
+          echo ""
+          echo "Next steps:"
+          echo "  1. Merge stable -> main to trigger production release"
+          echo "  2. Or manually trigger deploy-prod.yml workflow"
+          echo ""

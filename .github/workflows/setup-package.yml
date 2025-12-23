@@ -1,0 +1,375 @@
+name: Setup Package
+
+# This workflow is meant to be run ONCE after provider-setup.sh
+# It creates the application package and deploys the first version
+# WITHOUT attempting to upgrade an application (which doesn't exist yet)
+
+on:
+  workflow_dispatch:
+
+env:
+  BACKEND_IMAGE: eap_backend
+  FRONTEND_IMAGE: eap_frontend
+  ROUTER_IMAGE: eap_router
+  SNOWFLAKE_CONNECTION: ${{ vars.SNOWFLAKE_CONNECTION }}
+
+jobs:
+  # ============================================
+  # VALIDATE
+  # ============================================
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Validate YAML templates
+        run: |
+          echo "Validating YAML files..."
+          python3 -c "
+          import yaml
+          import sys
+          files = ['templates/manifest_template.yml', 'templates/fullstack_template.yaml']
+          errors = []
+          for f in files:
+              try:
+                  with open(f) as fh:
+                      yaml.safe_load(fh)
+                  print(f'OK: {f}')
+              except Exception as e:
+                  errors.append(f'{f}: {e}')
+                  print(f'FAIL: {f}: {e}')
+          if errors:
+              sys.exit(1)
+          "
+
+      - name: Validate SQL syntax (basic)
+        run: |
+          echo "Checking SQL files for basic syntax..."
+          for f in scripts/sql/*.sql templates/*.sql; do
+            if [ -f "$f" ]; then
+              # Check for unclosed parentheses, missing semicolons at end
+              if grep -qE "^[^-]*\([^)]*$" "$f" 2>/dev/null; then
+                echo "WARNING: Possible unclosed parenthesis in $f"
+              fi
+              echo "OK: $f"
+            fi
+          done
+
+      - name: Validate Alembic migrations have SQL files
+        run: |
+          echo "Checking that all Alembic migrations have corresponding SQL files..."
+
+          MIGRATIONS_DIR="scripts/sql/migrations"
+          ALEMBIC_DIR="backend/alembic/versions"
+          ERRORS=0
+
+          # Get all alembic migration revision IDs (from filenames like abc123_description.py)
+          for alembic_file in "$ALEMBIC_DIR"/*.py; do
+            if [ -f "$alembic_file" ]; then
+              filename=$(basename "$alembic_file")
+
+              # Skip __pycache__ and __init__.py
+              if [[ "$filename" == "__init__.py" ]] || [[ "$filename" == "__pycache__" ]]; then
+                continue
+              fi
+
+              # Extract revision ID (first part before underscore)
+              revision_id=$(echo "$filename" | cut -d'_' -f1)
+
+              # Check if corresponding SQL file exists
+              sql_file="$MIGRATIONS_DIR/${revision_id}.sql"
+
+              if [ ! -f "$sql_file" ]; then
+                echo "::error::Missing SQL file for migration: $filename"
+                echo "  Expected: $sql_file"
+                echo "  Run: python scripts/generate_migrations_sql.py"
+                ERRORS=$((ERRORS + 1))
+              else
+                echo "OK: $filename -> $sql_file"
+              fi
+            fi
+          done
+
+          if [ $ERRORS -gt 0 ]; then
+            echo ""
+            echo "::error::Found $ERRORS Alembic migrations without corresponding SQL files."
+            echo "Run 'python scripts/generate_migrations_sql.py' to generate the SQL files."
+            exit 1
+          fi
+
+          echo "All Alembic migrations have corresponding SQL files."
+
+  # ============================================
+  # PARALLEL BUILD JOBS
+  # ============================================
+  build-backend:
+    needs: [validate]
+    runs-on: ubuntu-latest
+    environment: qa
+    outputs:
+      image-tag: ${{ steps.meta.outputs.tag }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Setup Snowflake
+        uses: ./.github/actions/snowflake-setup
+        with:
+          private-key: ${{ secrets.SNOWFLAKE_PRIVATE_KEY_RAW }}
+          account: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+          user: ${{ vars.SNOWFLAKE_DEPLOY_USER }}
+          role: ${{ vars.SNOWFLAKE_DEPLOY_ROLE }}
+          warehouse: ${{ vars.SNOWFLAKE_WAREHOUSE }}
+          database: ${{ vars.SNOWFLAKE_DATABASE }}
+          schema: ${{ vars.SNOWFLAKE_SCHEMA }}
+          host: ${{ secrets.SNOWFLAKE_HOST }}
+
+      - name: Generate image metadata
+        id: meta
+        run: |
+          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          echo "short_sha=$SHORT_SHA" >> $GITHUB_OUTPUT
+          echo "tag=${{ vars.SNOWFLAKE_REPO }}/${{ env.BACKEND_IMAGE }}:$SHORT_SHA" >> $GITHUB_OUTPUT
+
+      - name: Build and push backend image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend
+          platforms: linux/amd64
+          tags: ${{ steps.meta.outputs.tag }}
+          push: true
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,mode=max,scope=backend
+
+  build-frontend:
+    needs: [validate]
+    runs-on: ubuntu-latest
+    environment: qa
+    outputs:
+      image-tag: ${{ steps.meta.outputs.tag }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Setup Snowflake
+        uses: ./.github/actions/snowflake-setup
+        with:
+          private-key: ${{ secrets.SNOWFLAKE_PRIVATE_KEY_RAW }}
+          account: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+          user: ${{ vars.SNOWFLAKE_DEPLOY_USER }}
+          role: ${{ vars.SNOWFLAKE_DEPLOY_ROLE }}
+          warehouse: ${{ vars.SNOWFLAKE_WAREHOUSE }}
+          database: ${{ vars.SNOWFLAKE_DATABASE }}
+          schema: ${{ vars.SNOWFLAKE_SCHEMA }}
+          host: ${{ secrets.SNOWFLAKE_HOST }}
+
+      - name: Generate image metadata
+        id: meta
+        run: |
+          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          echo "short_sha=$SHORT_SHA" >> $GITHUB_OUTPUT
+          echo "tag=${{ vars.SNOWFLAKE_REPO }}/${{ env.FRONTEND_IMAGE }}:$SHORT_SHA" >> $GITHUB_OUTPUT
+
+      - name: Build and push frontend image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./frontend
+          platforms: linux/amd64
+          tags: ${{ steps.meta.outputs.tag }}
+          push: true
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,mode=max,scope=frontend
+
+  build-router:
+    needs: [validate]
+    runs-on: ubuntu-latest
+    environment: qa
+    outputs:
+      image-tag: ${{ steps.meta.outputs.tag }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Setup Snowflake
+        uses: ./.github/actions/snowflake-setup
+        with:
+          private-key: ${{ secrets.SNOWFLAKE_PRIVATE_KEY_RAW }}
+          account: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+          user: ${{ vars.SNOWFLAKE_DEPLOY_USER }}
+          role: ${{ vars.SNOWFLAKE_DEPLOY_ROLE }}
+          warehouse: ${{ vars.SNOWFLAKE_WAREHOUSE }}
+          database: ${{ vars.SNOWFLAKE_DATABASE }}
+          schema: ${{ vars.SNOWFLAKE_SCHEMA }}
+          host: ${{ secrets.SNOWFLAKE_HOST }}
+
+      - name: Generate image metadata
+        id: meta
+        run: |
+          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          echo "short_sha=$SHORT_SHA" >> $GITHUB_OUTPUT
+          echo "tag=${{ vars.SNOWFLAKE_REPO }}/${{ env.ROUTER_IMAGE }}:$SHORT_SHA" >> $GITHUB_OUTPUT
+
+      - name: Build and push router image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./router
+          platforms: linux/amd64
+          tags: ${{ steps.meta.outputs.tag }}
+          push: true
+          cache-from: type=gha,scope=router
+          cache-to: type=gha,mode=max,scope=router
+
+  # ============================================
+  # DEPLOY-PACKAGE: Create package and register first version
+  # ============================================
+  deploy-package:
+    runs-on: ubuntu-latest
+    environment: qa
+    needs: [validate, build-backend, build-frontend, build-router]
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      short_sha: ${{ steps.version.outputs.short_sha }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine version from git tag
+        id: version
+        run: |
+          LATEST_TAG=$(git describe --tags --match "v*" --abbrev=0 2>/dev/null || echo "")
+          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+
+          if [ -n "$LATEST_TAG" ]; then
+            VERSION=$(echo "$LATEST_TAG" | sed -E 's/^(v[0-9]+).*/\1/' | tr '[:lower:]' '[:upper:]')
+            echo "Found git tag: $LATEST_TAG -> Using version: $VERSION"
+          else
+            VERSION="V1"
+            echo "No git tag found. Using default version: $VERSION"
+          fi
+
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "short_sha=$SHORT_SHA" >> $GITHUB_OUTPUT
+
+      - name: Setup Snowflake
+        uses: ./.github/actions/snowflake-setup
+        with:
+          private-key: ${{ secrets.SNOWFLAKE_PRIVATE_KEY_RAW }}
+          account: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+          user: ${{ vars.SNOWFLAKE_DEPLOY_USER }}
+          role: ${{ vars.SNOWFLAKE_DEPLOY_ROLE }}
+          warehouse: ${{ vars.SNOWFLAKE_WAREHOUSE }}
+          database: ${{ vars.SNOWFLAKE_DATABASE }}
+          schema: ${{ vars.SNOWFLAKE_SCHEMA }}
+          host: ${{ secrets.SNOWFLAKE_HOST }}
+          login-registry: 'false'
+
+      - name: Generate application files from templates
+        run: |
+          IMG_REPO=$(echo "${{ vars.SNOWFLAKE_REPO }}" | awk -F'/' '{print $NF}')
+          python3 scripts/generate-app-files.py \
+            --database "${{ vars.SNOWFLAKE_DATABASE }}" \
+            --schema "${{ vars.SNOWFLAKE_SCHEMA }}" \
+            --img-repo "${IMG_REPO}" \
+            --image-tag "${{ steps.version.outputs.short_sha }}"
+
+      - name: Upload application files to Snowflake stage
+        env:
+          SNOWFLAKE_INSECURE_MODE: "true"
+          REQUESTS_CA_BUNDLE: ""
+          CURL_CA_BUNDLE: ""
+        run: |
+          snow sql --query "PUT file://${{ github.workspace }}/app/src/* @${{ vars.SNOWFLAKE_DATABASE }}.${{ vars.SNOWFLAKE_SCHEMA }}.app_stage AUTO_COMPRESS=FALSE OVERWRITE=TRUE;" --connection ${{ env.SNOWFLAKE_CONNECTION }}
+
+      - name: Create application package
+        run: |
+          echo "Creating application package..."
+          snow sql -q "USE ROLE ${{ vars.SNOWFLAKE_DEPLOY_ROLE }}; CREATE APPLICATION PACKAGE IF NOT EXISTS ${{ vars.SNOWFLAKE_APP_PACKAGE }} DISTRIBUTION = INTERNAL;" --connection ${{ env.SNOWFLAKE_CONNECTION }}
+
+      - name: Create QA release channel
+        run: |
+          echo "Creating QA release channel..."
+          snow sql -q "USE ROLE ${{ vars.SNOWFLAKE_DEPLOY_ROLE }}; ALTER APPLICATION PACKAGE ${{ vars.SNOWFLAKE_APP_PACKAGE }} ADD RELEASE CHANNEL QA;" --connection ${{ env.SNOWFLAKE_CONNECTION }} 2>&1 || echo "QA channel may already exist (OK)"
+
+      - name: Grant install permission to consumer role
+        run: |
+          echo "Granting install permission to consumer role..."
+          snow sql -q "USE ROLE ${{ vars.SNOWFLAKE_DEPLOY_ROLE }}; GRANT INSTALL, DEVELOP ON APPLICATION PACKAGE ${{ vars.SNOWFLAKE_APP_PACKAGE }} TO ROLE ${{ vars.SNOWFLAKE_ROLE }};" --connection ${{ env.SNOWFLAKE_CONNECTION }} 2>&1 || echo "Permission may already exist (OK)"
+
+      - name: Register first version
+        id: register
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          STAGE_PATH="@${{ vars.SNOWFLAKE_DATABASE }}.${{ vars.SNOWFLAKE_SCHEMA }}.app_stage"
+          echo "Registering version $VERSION from $STAGE_PATH..."
+
+          snow sql -q "USE ROLE ${{ vars.SNOWFLAKE_DEPLOY_ROLE }}; ALTER APPLICATION PACKAGE ${{ vars.SNOWFLAKE_APP_PACKAGE }} REGISTER VERSION $VERSION USING '$STAGE_PATH';" --connection ${{ env.SNOWFLAKE_CONNECTION }}
+
+          echo "patch=0" >> $GITHUB_OUTPUT
+          echo "Registered version $VERSION patch 0"
+
+      - name: Add version to QA channel and set release directive
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          PATCH="${{ steps.register.outputs.patch }}"
+          echo "Setting QA release channel to version $VERSION patch $PATCH..."
+
+          # Add version to QA channel
+          snow sql -q "USE ROLE ${{ vars.SNOWFLAKE_DEPLOY_ROLE }}; ALTER APPLICATION PACKAGE ${{ vars.SNOWFLAKE_APP_PACKAGE }} MODIFY RELEASE CHANNEL QA ADD VERSION $VERSION;" --connection ${{ env.SNOWFLAKE_CONNECTION }} 2>&1 || echo "Version may already be in QA channel (OK)"
+
+          # Set the release directive
+          snow sql -q "USE ROLE ${{ vars.SNOWFLAKE_DEPLOY_ROLE }}; ALTER APPLICATION PACKAGE ${{ vars.SNOWFLAKE_APP_PACKAGE }} MODIFY RELEASE CHANNEL QA SET DEFAULT RELEASE DIRECTIVE VERSION=$VERSION PATCH=$PATCH;" --connection ${{ env.SNOWFLAKE_CONNECTION }}
+
+          echo "QA channel configured successfully"
+
+  # ============================================
+  # SUMMARY
+  # ============================================
+  summary:
+    runs-on: ubuntu-latest
+    needs: [deploy-package]
+    if: ${{ always() && needs.deploy-package.result == 'success' }}
+
+    steps:
+      - name: Setup Summary
+        env:
+          SHORT_SHA: ${{ needs.deploy-package.outputs.short_sha }}
+          VERSION: ${{ needs.deploy-package.outputs.version }}
+        run: |
+          echo ""
+          echo "=========================================="
+          echo "      SETUP PACKAGE COMPLETE"
+          echo "=========================================="
+          echo ""
+          echo "Git Info:"
+          echo "  Commit:     ${{ github.sha }}"
+          echo "  Short SHA:  ${SHORT_SHA}"
+          echo "  Branch:     ${{ github.ref_name }}"
+          echo ""
+          echo "Snowflake App Package:"
+          echo "  Package:    ${{ vars.SNOWFLAKE_APP_PACKAGE }}"
+          echo "  Version:    ${VERSION}"
+          echo "  Patch:      0"
+          echo ""
+          echo "=========================================="
+          echo ""
+          echo "NEXT STEPS:"
+          echo "  1. Run ./setup/create-application.sh --all-envs"
+          echo "     to create the application instances"
+          echo ""
+          echo "  2. After that, the QA pipeline will work"
+          echo "     automatically on pushes to qa branch"
+          echo ""
+          echo "=========================================="

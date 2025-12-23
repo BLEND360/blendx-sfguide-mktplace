@@ -5,7 +5,7 @@
 # 1. Database, Schema, Stage, and Image Repository
 # 2. CI/CD User with JWT authentication
 # 3. CI/CD Role with necessary permissions
-# 4. Application Package (optional, pipeline can also create it)
+# 4. Application Package permissions (pipeline will create the package)
 #
 # After this, the GitHub Actions pipeline will handle all deployments.
 
@@ -37,11 +37,11 @@ CICD_USER=${CICD_USER:-"MK_BLENDX_DEPLOY_USER"}
 CICD_ROLE=${CICD_ROLE:-"MK_BLENDX_DEPLOY_ROLE"}
 
 # Database objects
-DATABASE_NAME=${DATABASE_NAME:-"BLENDX_APP"}
-SCHEMA_NAME=${SCHEMA_NAME:-"NAPP"}
+DATABASE_NAME=${DATABASE_NAME:-"BLENDX_APP_DB"}
+SCHEMA_NAME=${SCHEMA_NAME:-"BLENDX_SCHEMA"}
 STAGE_NAME=${STAGE_NAME:-"APP_STAGE"}
 IMAGE_REPO_NAME=${IMAGE_REPO_NAME:-"img_repo"}
-WAREHOUSE_NAME=${WAREHOUSE_NAME:-"DEV_WH"}
+WAREHOUSE_NAME=${WAREHOUSE_NAME:-"BLENDX_APP_WH"}
 
 # Application Package (optional - pipeline can create this)
 APP_PACKAGE_NAME=${APP_PACKAGE_NAME:-"MK_BLENDX_APP_PKG"}
@@ -151,6 +151,14 @@ fi
 
 log_step "Step 1: Creating Database Infrastructure"
 
+run_sql "Creating warehouse" \
+    "USE ROLE ACCOUNTADMIN;
+     CREATE WAREHOUSE IF NOT EXISTS ${WAREHOUSE_NAME}
+         WAREHOUSE_SIZE = 'XSMALL'
+         AUTO_SUSPEND = 60
+         AUTO_RESUME = TRUE
+         COMMENT = 'Warehouse for BlendX CI/CD pipeline';"
+
 run_sql "Creating database" \
     "USE ROLE ACCOUNTADMIN;
      CREATE DATABASE IF NOT EXISTS ${DATABASE_NAME};"
@@ -167,7 +175,7 @@ run_sql "Creating image repository" \
     "USE ROLE ACCOUNTADMIN;
      CREATE IMAGE REPOSITORY IF NOT EXISTS ${DATABASE_NAME}.${SCHEMA_NAME}.${IMAGE_REPO_NAME};"
 
-log_info "Database infrastructure created"
+log_info "Database infrastructure created (including warehouse)"
 
 # ============================================
 # Step 2: Create CI/CD User
@@ -286,38 +294,10 @@ run_sql "Granting create application package" \
 log_info "Application package creation permission granted"
 
 # ============================================
-# Step 9: Create Application Package (Optional)
+# Step 9: Verify Permissions
 # ============================================
 
-log_step "Step 9: Creating Application Package (Optional)"
-
-echo "The pipeline can create the application package automatically."
-read -p "Do you want to create the application package now? (y/n) " -n 1 -r
-echo
-
-if [[ $REPLY =~ ^[Yy]$ ]]; then
-    run_sql "Creating application package" \
-        "USE ROLE ${CICD_ROLE};
-         CREATE APPLICATION PACKAGE IF NOT EXISTS ${APP_PACKAGE_NAME} DISTRIBUTION = INTERNAL;"
-
-    run_sql "Creating QA release channel" \
-        "USE ROLE ${CICD_ROLE};
-         ALTER APPLICATION PACKAGE ${APP_PACKAGE_NAME} ADD RELEASE CHANNEL QA;" || log_warning "QA channel may already exist"
-
-    run_sql "Granting install permission to consumer role" \
-        "USE ROLE ${CICD_ROLE};
-         GRANT INSTALL, DEVELOP ON APPLICATION PACKAGE ${APP_PACKAGE_NAME} TO ROLE ${APP_CONSUMER_ROLE};" || log_warning "Could not grant to consumer role"
-
-    log_info "Application package created"
-else
-    log_info "Skipped - Pipeline will create the application package"
-fi
-
-# ============================================
-# Step 10: Verify Permissions
-# ============================================
-
-log_step "Step 10: Verifying Permissions"
+log_step "Step 9: Verifying Permissions"
 
 run_sql "Showing grants to CI/CD role" \
     "SHOW GRANTS TO ROLE ${CICD_ROLE};"
@@ -335,12 +315,16 @@ echo "GitHub Secrets to configure:"
 echo ""
 echo "  SNOWFLAKE_ACCOUNT: <your-account-identifier>"
 echo "  SNOWFLAKE_HOST: <your-account>.snowflakecomputing.com"
+echo "  SNOWFLAKE_PRIVATE_KEY_RAW: <content of keys/pipeline/snowflake_key.p8>"
+echo ""
+echo "GitHub Variables to configure:"
+echo ""
+echo "  SNOWFLAKE_CONNECTION: ${SNOW_CONNECTION}"
 echo "  SNOWFLAKE_DEPLOY_USER: ${CICD_USER}"
 echo "  SNOWFLAKE_DEPLOY_ROLE: ${CICD_ROLE}"
 echo "  SNOWFLAKE_WAREHOUSE: ${WAREHOUSE_NAME}"
 echo "  SNOWFLAKE_DATABASE: ${DATABASE_NAME}"
 echo "  SNOWFLAKE_SCHEMA: ${SCHEMA_NAME}"
-echo "  SNOWFLAKE_PRIVATE_KEY_RAW: <content of keys/pipeline/snowflake_key.p8>"
 echo "  SNOWFLAKE_REPO: <your-image-repo-url>"
 echo "  SNOWFLAKE_APP_PACKAGE: ${APP_PACKAGE_NAME}"
 echo "  SNOWFLAKE_APP_INSTANCE: BLENDX_APP_INSTANCE"
@@ -352,7 +336,7 @@ echo "  cat $PROJECT_ROOT/keys/pipeline/snowflake_key.p8"
 echo ""
 echo "Next steps:"
 echo "  1. Configure the GitHub secrets in your repository"
-echo "  2. Run the pipeline to deploy the first version of the application package"
-echo "  3. Run ./scripts/create-application.sh to create the application instance"
-echo "  4. For subsequent updates, the pipeline will handle upgrades automatically"
+echo "  2. Run the 'Setup Package' workflow (manual) to create the app package and first version"
+echo "  3. Run ./setup/create-application.sh --all-envs to create the application instances"
+echo "  4. For subsequent updates, the QA/Stable pipelines will handle upgrades automatically"
 echo ""
