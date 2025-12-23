@@ -107,37 +107,12 @@ The setup script creates the CI/CD user, role, and necessary permissions in Snow
 ```
 
 The script will:
-1. Create a service user (`MK_BLENDX_DEPLOY_USER`) with JWT authentication
-2. Create a role (`MK_BLENDX_DEPLOY_ROLE`) with necessary permissions
-3. Grant permissions on warehouse, database, schema, stage, and image repository
-4. Grant permission to create Application Packages
-5. Optionally create the Application Package
-
-### Step 2b: Create Application Instances
-
-After the first pipeline run deploys a version to the Application Package, create the application instances for QA and STABLE environments:
-
-```bash
-# Create both QA and STABLE application instances
-./setup/create-application.sh --all-envs
-```
-
-This creates:
-- `BLENDX_APP_INSTANCE_QA` - for QA testing
-- `BLENDX_APP_INSTANCE_STABLE` - for stable/pre-production testing
-
-The script will:
-1. Check prerequisites (version exists in the application package)
-2. Create application instances from the deployed package
-3. Grant account-level permissions to each application (CREATE COMPUTE POOL, BIND SERVICE ENDPOINT, etc.)
-
-You can also create instances individually:
-```bash
-./setup/create-application.sh --env qa      # Only QA
-./setup/create-application.sh --env stable  # Only STABLE
-```
-
-> **Note**: This script requires ACCOUNTADMIN role for granting account-level permissions to the applications.
+1. Create database, schema, stage, and image repository
+2. Create a service user (`MK_BLENDX_DEPLOY_USER`) with JWT authentication
+3. Create a role (`MK_BLENDX_DEPLOY_ROLE`) with necessary permissions
+4. Grant permissions on warehouse, database, schema, stage, and image repository
+5. Grant permission to create Application Packages
+6. Display all GitHub secrets and variables you need to configure
 
 ### Step 3: Configure GitHub Secrets and Variables
 
@@ -179,15 +154,40 @@ These variables differ per environment:
 
 > **Note**: The `production` environment only promotes versions to the DEFAULT channel and doesn't manage an app instance directly. Using separate compute pools per environment ensures resource isolation between QA and STABLE.
 
-### Step 4: Get the Private Key Content
+### Step 4: Run Setup Package Workflow
 
-To copy the private key content for the GitHub secret:
+In GitHub Actions, manually run the **"Setup Package"** workflow. This is a one-time workflow that:
+- Builds and pushes Docker images to Snowflake Image Repository
+- Creates the Application Package
+- Registers the first version (V1)
+- Creates the QA release channel
+
+> **Note**: This workflow should only be run once for initial setup. After this, use the regular QA/Stable pipelines.
+
+### Step 5: Create Application Instances
+
+After the Setup Package workflow completes successfully, create the application instances:
 
 ```bash
-cat keys/pipeline/snowflake_key.p8
+./setup/create-application.sh --all-envs
 ```
 
-Copy the **entire content** including the `-----BEGIN PRIVATE KEY-----` and `-----END PRIVATE KEY-----` headers.
+This creates:
+- `BLENDX_APP_INSTANCE_QA` - for QA testing
+- `BLENDX_APP_INSTANCE_STABLE` - for stable/pre-production testing
+
+The script will:
+1. Check prerequisites (version exists in the application package)
+2. Create application instances from the deployed package
+3. Grant account-level permissions to each application (CREATE COMPUTE POOL, BIND SERVICE ENDPOINT, etc.)
+
+You can also create instances individually:
+```bash
+./setup/create-application.sh --env qa      # Only QA
+./setup/create-application.sh --env stable  # Only STABLE
+```
+
+> **Note**: This script requires ACCOUNTADMIN role for granting account-level permissions to the applications.
 
 ## Pipelines Overview
 
@@ -461,6 +461,7 @@ Then commit the generated SQL files before pushing again.
 | `.github/workflows/deploy-stable.yml` | Stable promotion workflow (QA → STABLE) |
 | `.github/workflows/release.yml` | Auto-creates release tags and triggers production deploy |
 | `.github/workflows/deploy-prod.yml` | Production promotion workflow (STABLE → DEFAULT) |
-| `setup/provider-setup.sh` | Initial Snowflake setup (user, role, package) |
+| `.github/workflows/setup-package.yml` | Initial package setup (first deploy) |
+| `setup/config.sh` | Shared configuration for all setup scripts |
+| `setup/provider-setup.sh` | Initial Snowflake setup (user, role, permissions) |
 | `setup/create-application.sh` | Create application instances (QA, STABLE) |
-| `scripts/sql/setup_cicd_permissions.sql` | SQL permissions reference |

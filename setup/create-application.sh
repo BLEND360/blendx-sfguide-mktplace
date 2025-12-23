@@ -13,11 +13,11 @@
 set -e  # Exit on error
 
 # ============================================
-# Script Setup
+# Load Shared Configuration
 # ============================================
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+source "$SCRIPT_DIR/config.sh"
 
 # ============================================
 # Parse Arguments
@@ -47,9 +47,9 @@ while [[ $# -gt 0 ]]; do
             echo "  --all-envs           Create both QA and STABLE environments"
             echo ""
             echo "Examples:"
-            echo "  $0                   # Creates BLENDX_APP_INSTANCE"
-            echo "  $0 --env qa          # Creates BLENDX_APP_INSTANCE_QA"
-            echo "  $0 --env stable      # Creates BLENDX_APP_INSTANCE_STABLE"
+            echo "  $0                   # Creates ${APP_INSTANCE_BASE}"
+            echo "  $0 --env qa          # Creates ${APP_INSTANCE_BASE}_QA"
+            echo "  $0 --env stable      # Creates ${APP_INSTANCE_BASE}_STABLE"
             echo "  $0 --all-envs        # Creates both _QA and _STABLE"
             echo "  $0 --env qa --env stable  # Same as --all-envs"
             exit 0
@@ -71,77 +71,6 @@ fi
 if [ ${#ENVIRONMENTS[@]} -eq 0 ]; then
     ENVIRONMENTS=("")
 fi
-
-# Colors for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-CYAN='\033[0;36m'
-NC='\033[0m' # No Color
-
-# ============================================
-# Configuration - Same values as provider-setup.sh
-# ============================================
-
-SNOW_CONNECTION=${SNOW_CONNECTION:-"mkt_blendx_demo"}
-
-# CI/CD Role (from provider-setup.sh)
-CICD_ROLE=${CICD_ROLE:-"MK_BLENDX_DEPLOY_ROLE"}
-
-# Consumer role (for app installation)
-APP_CONSUMER_ROLE=${APP_CONSUMER_ROLE:-"BLENDX_APP_ROLE"}
-
-# Application Package (from provider-setup.sh)
-APP_PACKAGE_NAME=${APP_PACKAGE_NAME:-"MK_BLENDX_APP_PKG"}
-
-# Application Instance base name (suffix added per environment)
-APP_INSTANCE_BASE=${APP_INSTANCE_BASE:-"BLENDX_APP_INSTANCE"}
-APP_VERSION=${APP_VERSION:-"V1"}
-
-# Compute Pool
-COMPUTE_POOL_NAME=${COMPUTE_POOL_NAME:-"BLENDX_APP_COMPUTE_POOL"}
-
-# Load .env file if it exists
-if [ -f "$SCRIPT_DIR/.env" ]; then
-    echo -e "${BLUE}Loading configuration from .env file...${NC}"
-    source "$SCRIPT_DIR/.env"
-fi
-
-# ============================================
-# Helper Functions
-# ============================================
-
-log_step() {
-    echo ""
-    echo -e "${CYAN}========================================${NC}"
-    echo -e "${CYAN}$1${NC}"
-    echo -e "${CYAN}========================================${NC}"
-}
-
-log_info() {
-    echo -e "${GREEN}✓${NC} $1"
-}
-
-log_warning() {
-    echo -e "${YELLOW}⚠${NC} $1"
-}
-
-log_error() {
-    echo -e "${RED}✗${NC} $1"
-}
-
-run_sql() {
-    local description=$1
-    local sql=$2
-    echo -e "${BLUE}▶${NC} $description"
-    snow sql -q "$sql" --connection ${SNOW_CONNECTION}
-}
-
-run_sql_silent() {
-    local sql=$1
-    snow sql -q "$sql" --connection ${SNOW_CONNECTION} 2>/dev/null || true
-}
 
 # ============================================
 # Build list of instances to create
