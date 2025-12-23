@@ -1,195 +1,222 @@
 # TODO List - Snowflake Marketplace App Template
 
-> Objetivo: Transformar este proyecto en un template reutilizable para cualquier aplicación del Snowflake Marketplace.
+> Objective: Transform this project into a reusable template for any Snowflake Marketplace application.
 
-## Arquitectura Base del Template
+## Base Template Architecture
 
-Por defecto el template incluye:
+By default, the template includes:
 - **Backend** (Python/FastAPI)
 - **Frontend** (Vue.js)
 - **Router** (NGINX reverse proxy)
 
-Todos los containers están comunicados entre sí a través del router.
+All containers communicate with each other through the router.
 
 ---
 
-## Ya Implementado (Validar/Mejorar)
+## Already Implemented (Validate / Improve)
 
-| # | Item | Estado | Ubicación |
-|---|------|--------|-----------|
-| 1 | Manifest template | ✅ Existe | `templates/manifest_template.yml` |
-| 2 | Setup SQL template | ✅ Existe | `templates/setup_template.sql` |
-| 3 | Dockerfiles (backend/frontend/router) | ✅ Existe | Templatizar más |
-| 4 | CI/CD pipelines (QA/Prod) | ✅ Existe | `.github/workflows/` |
-| 5 | External Access Integration | ✅ Parcial | Mejorar con template modular |
-| 6 | Secret management básico | ✅ Parcial | Usa env vars y GitHub secrets |
-| 7 | Docs de deployment | ✅ Existe | `docs/DEPLOYMENT.md` |
-| 8 | Local development guide | ✅ Existe | `docs/LOCAL_DEVELOPMENT.md` |
+| # | Item | Status | Location |
+|---|------|--------|----------|
+| 1 | Manifest template | ✅ Exists | `templates/manifest_template.yml` |
+| 2 | Setup SQL template | ✅ Exists | `templates/setup_template.sql` |
+| 3 | Dockerfiles (backend/frontend/router) | ✅ Exists | Needs further templating |
+| 4 | CI/CD pipelines (QA/Prod) | ✅ Exists | `.github/workflows/` |
+| 5 | External Access Integration | ✅ Partial | Improve with modular templates |
+| 6 | Basic secret management | ✅ Partial | Uses env vars and GitHub secrets |
+| 7 | Deployment docs | ✅ Exists | `docs/DEPLOYMENT.md` |
+| 8 | Local development guide | ✅ Exists | `docs/LOCAL_DEVELOPMENT.md` |
 
 ---
 
-## Por Implementar
+## To Be Implemented
 
 ### 1. DB Migrations
 
-- [ ] Sistema de migraciones SQL versionadas (`migrations/V001__initial.sql`)
-- [ ] Script para aplicar migraciones automáticamente en CI/CD
-- [ ] Rollback de migraciones
-- [ ] Tracking de versión de schema aplicada
-- [ ] Template de migración vacío para nuevos cambios
+- [ ] Versioned SQL migration system (`migrations/V001__initial.sql`)
+- [ ] Script to automatically apply migrations in CI/CD
+- [ ] Migration rollback support
+- [ ] Applied schema version tracking
+- [ ] Empty migration template for new changes
 
 ---
 
 ### 2. Autoscale Compute Pool
 
-- [ ] Template de compute pool con autoscaling (`templates/compute_pool_template.sql`)
-- [ ] Configuración de MIN/MAX nodes parametrizable
-- [ ] Políticas de scaling basadas en métricas
-- [ ] Documentación de configuración de compute pool
-- [ ] Ejemplos de diferentes tamaños (small/medium/large)
+- [ ] Compute pool template with autoscaling (`templates/compute_pool_template.sql`)
+- [ ] Parametrized MIN/MAX node configuration
+- [ ] Metric-based scaling policies
+- [ ] Compute pool configuration documentation
+- [ ] Examples for different sizes (small/medium/large)
 
 ---
 
-### 3. Logging Avanzado
+### 3. Advanced Logging
 
-- [ ] Integración con Snowflake Event Tables
-- [ ] Log forwarding estructurado (JSON)
-- [ ] Niveles de log configurables por ambiente
-- [ ] Dashboard/queries para análisis de logs
-- [ ] Template de event table
-
----
-
-### 4. Tracking de Usage (CPU/Memory)
-
-- [ ] Queries para monitorear usage del compute pool
-- [ ] Alertas de uso excesivo
-- [ ] Dashboard de métricas
-- [ ] Histórico de consumo para billing
-- [ ] Script de reporte de usage
+- [ ] Integration with Snowflake Event Tables
+- [ ] Structured log forwarding (JSON)
+- [ ] Environment-based log level configuration
+- [ ] Dashboards / queries for log analysis
+- [ ] Event table template
 
 ---
 
-### 5. Secret Management Mejorado
+### 4. Usage Tracking (CPU / Memory)
 
-- [ ] Documentación completa de secrets requeridos
-- [ ] Template de creación de secrets en Snowflake
-- [ ] Rotación de secrets
-- [ ] Validación de secrets en startup
-- [ ] Script para setup de secrets del provider
+- [ ] Queries to monitor compute pool usage
+- [ ] Excessive usage alerts
+- [ ] Metrics dashboard
+- [ ] Historical consumption for billing
+- [ ] Usage reporting script
+
+---
+
+### 5. Secret Management
+
+#### CI/CD Pipeline Secrets
+
+- [ ] Complete documentation of required GitHub secrets
+- [ ] List of all secrets needed for deploy pipelines (QA/Prod)
+- [ ] Secret rotation guide for CI/CD credentials
+- [ ] Validation script to check pipeline secrets before deploy
+
+#### App Secrets (Consumer Configuration)
+
+- [ ] Documentation with screenshots of Snowflake UI for secret setup
+- [ ] Example manifest configuration for secrets (`references` section)
+- [ ] Template showing how to declare required secrets in manifest
+- [ ] Guide explaining the consumer flow (install → configure secrets → use app)
 
 ---
 
 ### 6. External Access Integration (EAI)
 
-#### Template Modular de EAI
+#### Modular EAI Templates
 
-- [ ] `templates/eai/external_access_template.sql` - Template base
+- [ ] `templates/eai/external_access_template.sql` - Base template
 - [ ] `templates/eai/network_rule_template.sql` - Network rules
-- [ ] `templates/eai/secret_template.sql` - Secrets para APIs externas
-- [ ] Flag en `setup_template.sql` para incluir/excluir EAI
-- [ ] Documentación de cuándo y cómo usar EAI
+- [ ] `templates/eai/secret_template.sql` - External API secrets
+- [ ] Flag in `setup_template.sql` to include/exclude EAI
+- [ ] Documentation on when and how to use EAI
 
-#### Ejemplos Pre-configurados
+#### Preconfigured Examples
 
-- [ ] EAI para APIs REST genéricas
-- [ ] EAI para OpenAI/LLM providers
-- [ ] EAI para webhooks
-- [ ] EAI para servicios de storage externos
+- [ ] EAI for generic REST APIs
+- [ ] EAI for OpenAI / LLM providers
+- [ ] EAI for webhooks
+- [ ] EAI for external storage services
 
-#### Instrucciones
+#### Documentation
 
-- [ ] `docs/EXTERNAL_ACCESS.md` - Guía completa de EAI
-- [ ] Diagrama de flujo de configuración
-- [ ] Troubleshooting de errores comunes de EAI
-- [ ] Checklist de seguridad para EAI
+- [ ] `docs/EXTERNAL_ACCESS.md` - Complete EAI guide
+- [ ] Configuration flow diagram
+- [ ] Common EAI error troubleshooting
+- [ ] EAI security checklist
 
 ---
 
 ### 7. Add Container Script
 
-#### Script de Alta de Containers
+#### Container Bootstrap Script
 
-- [ ] `scripts/add-container.sh` - Script interactivo para agregar nuevo container
+- [ ] `scripts/add-container.sh` - Interactive script to add a new container
 
 ```bash
 ./scripts/add-container.sh --name api-worker --port 8082 --type python
 ```
 
-- [ ] Genera automáticamente:
-  - [ ] `{container_name}/Dockerfile` desde template
-  - [ ] Entrada en `docker-compose.yml`
-  - [ ] Configuración en `router/nginx.conf`
-  - [ ] Entrada en `templates/fullstack_template.yaml`
-  - [ ] Variables de entorno en `.env.example`
-  - [ ] Entrada en CI/CD (build job)
+- [ ] Automatically generates:
+  - [ ] `{container_name}/Dockerfile` from template
+  - [ ] Entry in `docker-compose.yml`
+  - [ ] Configuration in `router/nginx.conf`
+  - [ ] Entry in `templates/fullstack_template.yaml`
+  - [ ] Environment variables in `.env.example`
+  - [ ] CI/CD entry (build job)
 
-#### Templates de Containers
+#### Container Templates
 
-- [ ] `templates/containers/python/Dockerfile.template`
+- [ ] `templates/containers/python/Dockerfile.template` (base)
+- [ ] `templates/containers/python/Dockerfile.uv.template` (uv-based)
+- [ ] `templates/containers/python/Dockerfile.poetry.template` (poetry-based)
 - [ ] `templates/containers/node/Dockerfile.template`
+- [ ] `templates/containers/node/Dockerfile.pnpm.template` (pnpm-based)
 - [ ] `templates/containers/go/Dockerfile.template`
-- [ ] `templates/containers/nginx.location.template` (para el router)
+- [ ] `templates/containers/nginx.location.template` (router)
 
-#### Automatizaciones
+#### Automations
 
-- [ ] Auto-registro en el router (nginx.conf)
-- [ ] Auto-registro en docker-compose.yml
-- [ ] Auto-registro en fullstack_template.yaml
-- [ ] Auto-registro en CI/CD pipelines
-- [ ] Health check endpoint por defecto
-- [ ] Validación de puerto disponible
+- [ ] Auto-registration in the router (`nginx.conf`)
+- [ ] Auto-registration in `docker-compose.yml`
+- [ ] Auto-registration in `fullstack_template.yaml`
+- [ ] Auto-registration in CI/CD pipelines
+- [ ] Default health check endpoint
+- [ ] Available port validation
 
-#### Comandos Adicionales
+#### Additional Commands
 
-- [ ] `scripts/remove-container.sh` - Remover container
-- [ ] `scripts/list-containers.sh` - Listar containers actuales
+- [ ] `scripts/remove-container.sh` - Remove container
+- [ ] `scripts/list-containers.sh` - List existing containers
 
 ---
 
 ### 8. Provider Instructions
 
-- [ ] `docs/PROVIDER_SETUP.md` - Guía paso a paso
-- [ ] Checklist de pre-requisitos
-- [ ] `scripts/provider-init.sh` - Script automatizado de setup
+- [ ] `docs/PROVIDER_SETUP.md` - Step-by-step guide
+- [ ] Prerequisites checklist
+- [ ] `scripts/provider-init.sh` - Automated setup script
 - [ ] Troubleshooting guide
-- [ ] Diagrama de arquitectura del provider
+- [ ] Provider architecture diagram
 
 ---
 
 ### 9. Consumer Instructions
 
-- [ ] `docs/CONSUMER_GUIDE.md` - Guía de instalación
-- [ ] Configuración post-instalación
-- [ ] FAQ de problemas comunes
-- [ ] Video/screenshots del proceso
-- [ ] Template de `consumer_setup.sql` parametrizable
+- [ ] `docs/CONSUMER_GUIDE.md` - Installation guide
+- [ ] Post-installation configuration
+- [ ] Common issues FAQ
+- [ ] Videos / screenshots of the process
+- [ ] Parametrized `consumer_setup.sql` template
 
 ---
 
-### 10. Template Dockerfiles
+### 10. Dockerfile Templates
 
-- [ ] Dockerfile base parametrizable por lenguaje
-- [ ] Multi-stage build optimizado
-- [ ] Best practices documentadas
-- [ ] ARG/ENV configurables
-- [ ] Health check incluido por defecto
+- [ ] Base Dockerfile parametrized by language
+- [ ] Optimized multi-stage builds
+- [ ] Documented best practices
+- [ ] Configurable ARG / ENV
+- [ ] Default health check included
+
+#### Python Package Manager Support
+
+- [ ] Support for `uv` based projects (`pyproject.toml` + `uv.lock`)
+- [ ] Support for traditional `pip` + `requirements.txt`
+- [ ] Support for `poetry` based projects
+- [ ] Auto-detection of package manager from project files
+- [ ] Template flag to select package manager: `--pkg-manager [uv|pip|poetry]`
+
+#### UV-Specific Optimizations
+
+- [ ] Multi-stage build with `uv` for faster dependency resolution
+- [ ] Cached `uv` layers for faster rebuilds
+- [ ] `uv sync --frozen` for reproducible builds
+- [ ] Support for `uv` workspaces (monorepo)
+- [ ] Documentation on migrating from pip/poetry to uv
 
 ---
 
 ### 11. How to Run Locally Guide
 
-- [ ] Mejorar `docs/LOCAL_DEVELOPMENT.md`
-- [ ] `scripts/local-setup.sh` - Setup one-liner
-- [ ] Mock de servicios de Snowflake para testing local
-- [ ] Hot-reload habilitado por defecto
-- [ ] Instrucciones para debugging
+- [ ] Improve `docs/LOCAL_DEVELOPMENT.md`
+- [ ] `scripts/local-setup.sh` - One-line setup
+- [ ] Snowflake service mocks for local testing
+- [ ] Hot-reload enabled by default
+- [ ] Debugging instructions
 
 ---
 
 ### 12. Marketplace Listing Checklist
 
-Crear `checklists/marketplace_listing.md` con todos los campos requeridos:
+Create `checklists/marketplace_listing.md` with all required fields:
 
 #### Basic Information
 
@@ -198,14 +225,14 @@ Crear `checklists/marketplace_listing.md` con todos los campos requeridos:
 - [ ] Full Description (≤4000 chars)
 - [ ] Category
 - [ ] Subcategory
-- [ ] Tags/Keywords
+- [ ] Tags / Keywords
 
 #### Branding
 
 - [ ] Logo (512x512 PNG)
 - [ ] Banner Image (1200x400)
 - [ ] Screenshots (min 3, max 10)
-- [ ] Demo Video URL (opcional)
+- [ ] Demo Video URL (optional)
 
 #### Documentation Links
 
@@ -222,12 +249,12 @@ Crear `checklists/marketplace_listing.md` con todos los campos requeridos:
 - [ ] External Access Requirements
 - [ ] Estimated Resource Usage
 - [ ] Supported Regions
-- [ ] Supported Cloud Providers (AWS/Azure/GCP)
+- [ ] Supported Cloud Providers (AWS / Azure / GCP)
 
 #### Pricing
 
-- [ ] Pricing Model (Free/Paid/Free Trial)
-- [ ] Price per month (if paid)
+- [ ] Pricing Model (Free / Paid / Free Trial)
+- [ ] Monthly price (if paid)
 - [ ] Trial duration (if applicable)
 - [ ] Usage-based pricing details
 
@@ -256,61 +283,96 @@ Crear `checklists/marketplace_listing.md` con todos los campos requeridos:
 
 ### 13. Testing Framework
 
-- [ ] Tests de integración para el native app
-- [ ] Tests de smoke post-deployment
-- [ ] Validación automática de permisos
-- [ ] Test de conectividad entre containers
+- [ ] Integration tests for the native app
+- [ ] Post-deployment smoke tests
+- [ ] Automatic privilege validation
+- [ ] Container connectivity tests
 
 ---
 
 ### 14. Versioning Strategy
 
-- [ ] Semantic versioning automatizado
-- [ ] Changelog generation automático
+- [ ] Automated semantic versioning
+- [ ] Automatic changelog generation
 - [ ] Release notes template
-- [ ] Script de bump version
+- [ ] Version bump script
 
 ---
 
-### 15. Health Checks Avanzados
+### 15. Advanced Health Checks
 
-- [ ] Endpoint de health check completo (`/health`, `/ready`, `/live`)
-- [ ] Verificación de conectividad a Snowflake
-- [ ] Status de dependencias externas
-- [ ] Health check agregado en el router
+- [ ] Complete health check endpoints (`/health`, `/ready`, `/live`)
+- [ ] Snowflake connectivity verification
+- [ ] External dependency status
+- [ ] Health check integrated into the router
 
 ---
 
 ### 16. Configuration Management
 
-- [ ] Template de `.env` con todas las variables documentadas
-- [ ] Validación de configuración al inicio
-- [ ] `configure.sh` mejorado (wizard interactivo)
-- [ ] Generación automática de `.env` desde template
+- [ ] `.env` template with all variables documented
+- [ ] Startup configuration validation
+- [ ] Improved `configure.sh` (interactive wizard)
+- [ ] Automatic `.env` generation from template
 
 ---
 
 ### 17. Security Hardening
 
 - [ ] `checklists/security_review.md`
-- [ ] Scan de vulnerabilidades en CI/CD
+- [ ] CI/CD vulnerability scanning
 - [ ] OWASP guidelines checklist
-- [ ] Dependabot/Renovate configurado
+- [ ] Dependabot / Renovate configured
 
 ---
 
 ### 18. Consumer Onboarding Automation
 
-- [ ] Script de first-time setup para consumers
-- [ ] Wizard interactivo de configuración
-- [ ] Validación de setup completo
-- [ ] Welcome message/tutorial en la app
+- [ ] First-time consumer setup script
+- [ ] Interactive configuration wizard
+- [ ] Full setup validation
+- [ ] Welcome message / in-app tutorial
 
 ---
 
-## Estructura Propuesta del Template
+### 29. QA Pipeline Enhancements
 
-```
+- [ ] Execute unit tests automatically in QA pipeline
+- [ ] Run linter checks (Python, JavaScript/TypeScript) in QA pipeline
+- [ ] Pre-commit hooks configured for repo (black, isort, eslint, prettier)
+- [ ] Enforce code style and quality gates before merge
+- [ ] Report unit test results in pipeline dashboard
+- [ ] Fail QA pipeline if any tests or lint checks fail
+
+---
+
+### 30. Container Resource Monitoring
+
+- [ ] Track CPU usage per container
+- [ ] Track memory usage per container
+- [ ] Collect container metrics into a central dashboard
+- [ ] Alert on resource thresholds (high CPU/memory)
+- [ ] Historical resource usage reports for cost analysis
+- [ ] Optional automatic scaling or throttling based on metrics
+
+---
+
+### 31. Generic Makefile with Useful Commands
+
+- [ ] Create a `Makefile` with common development and deployment commands
+- [ ] Include commands for running tests (unit, integration)
+- [ ] Add command to start the app locally (backend and frontend)
+- [ ] Add commands to validate linters and formatters
+- [ ] Include commands to run DB migration scripts
+- [ ] Add commands for building and pushing Docker images
+- [ ] Provide commands for cleaning build artifacts and caches
+- [ ] Document usage of each Makefile command in README or separate doc
+
+---
+
+## Proposed Template Structure
+
+```text
 marketplace-app-template/
 ├── .github/
 │   └── workflows/
@@ -329,25 +391,30 @@ marketplace-app-template/
 │   └── nginx.conf
 ├── scripts/
 │   ├── sql/
-│   │   └── migrations/         # DB Migrations
-│   ├── add-container.sh        # Add new container
-│   ├── remove-container.sh     # Remove container
-│   ├── list-containers.sh      # List containers
-│   ├── provider-init.sh        # Provider setup
-│   └── local-setup.sh          # One-liner local setup
+│   │   └── migrations/         # DB migrations
+│   ├── add-container.sh
+│   ├── remove-container.sh
+│   ├── list-containers.sh
+│   ├── provider-init.sh
+│   └── local-setup.sh
 ├── templates/
 │   ├── manifest_template.yml
 │   ├── setup_template.sql
 │   ├── fullstack_template.yaml
 │   ├── compute_pool_template.sql
-│   ├── eai/                            # External Access
+│   ├── eai/
 │   │   ├── external_access_template.sql
 │   │   ├── network_rule_template.sql
 │   │   └── secret_template.sql
-│   └── containers/                     # Container templates
+│   └── containers/
 │       ├── python/
-│       │   └── Dockerfile.template
+│       │   ├── Dockerfile.template
+│       │   ├── Dockerfile.uv.template
+│       │   └── Dockerfile.poetry.template
 │       ├── node/
+│       │   ├── Dockerfile.template
+│       │   └── Dockerfile.pnpm.template
+│       ├── go/
 │       │   └── Dockerfile.template
 │       └── nginx.location.template
 ├── docs/
@@ -363,36 +430,36 @@ marketplace-app-template/
 │   └── pre_release.md
 ├── docker-compose.yml
 ├── Makefile
-├── configure.sh                # Wizard de configuración
+├── configure.sh
 ├── .env.example
 └── README.md
 ```
 
 ---
 
-## Resumen
+## Summary
 
-| Categoría | Items |
-|-----------|-------|
-| Infraestructura Base (existente) | 8 |
+| Category | Items |
+|---------|-------|
+| Base Infrastructure (existing) | 8 |
 | DB Migrations | 5 |
 | Autoscale Compute Pool | 5 |
 | Logging | 5 |
 | Usage Tracking | 5 |
-| Secret Management | 5 |
+| Secret Management | 8 |
 | External Access Integration | 13 |
-| Add Container Script | 15 |
-| Provider/Consumer Docs | 10 |
-| Template Dockerfiles | 5 |
+| Add Container Script | 18 |
+| Provider / Consumer Docs | 10 |
+| Dockerfile Templates | 15 |
 | Local Development | 5 |
 | Marketplace Listing Checklist | 25+ |
-| Testing/Versioning/Security | 15 |
-| **TOTAL** | **~120 items** |
+| Testing / Versioning / Security | 15 |
+| Makefile Commands | 8 |
 
 ---
 
-## Notas
+## Notes
 
-- Los items marcados con ✅ ya existen pero pueden necesitar mejoras para ser más genéricos/templatizables.
-- La prioridad de implementación puede variar según las necesidades del proyecto.
-- Este documento debe actualizarse a medida que se completan los items.
+- Items marked with ✅ already exist but may require improvements to be more generic / templated.
+- Implementation priority may vary depending on project needs.
+- This document should be updated as items are completed.

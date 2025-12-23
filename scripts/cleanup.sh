@@ -1,8 +1,13 @@
 #!/bin/bash
 
 # Cleanup Script for Snowflake Native App
-# This script removes all resources created during deployment
-# Use this to clean up after failed deployments or to start fresh
+# This script removes all resources created by provider-setup.sh and the pipelines
+# Use this to clean up everything and start fresh
+#
+# Usage:
+#   ./scripts/cleanup.sh              # Interactive cleanup
+#   ./scripts/cleanup.sh --dry-run    # Show what would be deleted
+#   ./scripts/cleanup.sh --all        # Delete everything including infrastructure
 
 set -e  # Exit on error
 
@@ -11,6 +16,7 @@ set -e  # Exit on error
 # ============================================
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 
 # Colors for output
 RED='\033[0;31m'
@@ -21,18 +27,37 @@ CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
 # ============================================
-# Load Configuration
+# Configuration - Same as provider-setup.sh
 # ============================================
 
 SNOW_CONNECTION=${SNOW_CONNECTION:-"mkt_blendx_demo"}
-APP_PROVIDER_ROLE=${APP_PROVIDER_ROLE:-"naspcs_role"}
-APP_CONSUMER_ROLE=${APP_CONSUMER_ROLE:-"nac_test"}
-APP_PACKAGE_NAME=${APP_PACKAGE_NAME:-"spcs_app_pkg_test"}
-APP_INSTANCE_NAME=${APP_INSTANCE_NAME:-"spcs_app_instance_test"}
-COMPUTE_POOL=${COMPUTE_POOL:-"pool_nac"}
-SECRET_DATABASE=${SECRET_DATABASE:-"secrets_db"}
+
+# CI/CD User and Role
+CICD_USER=${CICD_USER:-"MK_BLENDX_DEPLOY_USER"}
+CICD_ROLE=${CICD_ROLE:-"MK_BLENDX_DEPLOY_ROLE"}
+
+# Database objects
+DATABASE_NAME=${DATABASE_NAME:-"BLENDX_APP"}
+SCHEMA_NAME=${SCHEMA_NAME:-"NAPP"}
+STAGE_NAME=${STAGE_NAME:-"APP_STAGE"}
+IMAGE_REPO_NAME=${IMAGE_REPO_NAME:-"img_repo"}
+WAREHOUSE_NAME=${WAREHOUSE_NAME:-"DEV_WH"}
+
+# Application Package
+APP_PACKAGE_NAME=${APP_PACKAGE_NAME:-"MK_BLENDX_APP_PKG"}
+
+# Consumer role
+APP_CONSUMER_ROLE=${APP_CONSUMER_ROLE:-"BLENDX_APP_ROLE"}
+
+# Application Instance
+APP_INSTANCE_NAME=${APP_INSTANCE_NAME:-"BLENDX_APP_INSTANCE"}
+
+# Compute Pool
+COMPUTE_POOL_NAME=${COMPUTE_POOL_NAME:-"BLENDX_CP"}
+
+# Options
 DRY_RUN=false
-CLEAN_SECRETS=false
+CLEAN_ALL=false
 
 # Load .env file if it exists
 if [ -f "$SCRIPT_DIR/.env" ]; then
@@ -50,26 +75,28 @@ while [[ $# -gt 0 ]]; do
             DRY_RUN=true
             shift
             ;;
-        --clean-secrets)
-            CLEAN_SECRETS=true
+        --all)
+            CLEAN_ALL=true
             shift
             ;;
         --help)
             echo "Usage: $0 [OPTIONS]"
             echo ""
             echo "Options:"
-            echo "  --dry-run          Show what would be deleted without making changes"
-            echo "  --clean-secrets    Also delete the secrets database (WARNING: destructive)"
-            echo "  --help             Show this help message"
+            echo "  --dry-run    Show what would be deleted without making changes"
+            echo "  --all        Delete everything including database infrastructure and CI/CD user/role"
+            echo "  --help       Show this help message"
             echo ""
             echo "Environment Variables (can also be set in .env file):"
-            echo "  SNOW_CONNECTION    Snowflake connection name (default: mkt_blendx_demo)"
-            echo "  APP_PROVIDER_ROLE  Provider role (default: naspcs_role)"
-            echo "  APP_CONSUMER_ROLE  Consumer role (default: nac_test)"
-            echo "  APP_PACKAGE_NAME   Application package name (default: spcs_app_pkg_test)"
-            echo "  APP_INSTANCE_NAME  Application instance name (default: spcs_app_instance_test)"
-            echo "  COMPUTE_POOL       Compute pool name (default: pool_nac)"
-            echo "  SECRET_DATABASE    Secret database name (default: secrets_db)"
+            echo "  SNOW_CONNECTION      Snowflake connection name (default: mkt_blendx_demo)"
+            echo "  CICD_USER            CI/CD user name (default: MK_BLENDX_DEPLOY_USER)"
+            echo "  CICD_ROLE            CI/CD role name (default: MK_BLENDX_DEPLOY_ROLE)"
+            echo "  DATABASE_NAME        Database name (default: BLENDX_APP)"
+            echo "  SCHEMA_NAME          Schema name (default: NAPP)"
+            echo "  APP_PACKAGE_NAME     Application package name (default: MK_BLENDX_APP_PKG)"
+            echo "  APP_INSTANCE_NAME    Application instance name (default: BLENDX_APP_INSTANCE)"
+            echo "  APP_CONSUMER_ROLE    Consumer role name (default: BLENDX_APP_ROLE)"
+            echo "  COMPUTE_POOL_NAME    Compute pool name (default: BLENDX_CP)"
             exit 0
             ;;
         *)
@@ -109,10 +136,10 @@ run_sql() {
 
     if [ "$DRY_RUN" = true ]; then
         echo -e "${YELLOW}[DRY RUN]${NC} ${BLUE}▶${NC} $description"
-        echo -e "${YELLOW}Would execute:${NC} $sql"
+        echo -e "  ${YELLOW}Would execute:${NC} $sql"
     else
         echo -e "${BLUE}▶${NC} $description"
-        snow sql -q "$sql" --connection ${SNOW_CONNECTION} || true
+        snow sql -q "$sql" --connection ${SNOW_CONNECTION} 2>/dev/null || true
     fi
 }
 
@@ -126,15 +153,18 @@ echo "Snowflake Native App Cleanup"
 echo "==========================================="
 echo ""
 echo "Configuration:"
-echo "  Connection: $SNOW_CONNECTION"
-echo "  Provider Role: $APP_PROVIDER_ROLE"
-echo "  Consumer Role: $APP_CONSUMER_ROLE"
-echo "  Package: $APP_PACKAGE_NAME"
-echo "  Instance: $APP_INSTANCE_NAME"
-echo "  Compute Pool: $COMPUTE_POOL"
-echo "  Secret Database: $SECRET_DATABASE"
-echo "  Dry Run: $DRY_RUN"
-echo "  Clean Secrets: $CLEAN_SECRETS"
+echo "  Connection:      $SNOW_CONNECTION"
+echo "  CI/CD User:      $CICD_USER"
+echo "  CI/CD Role:      $CICD_ROLE"
+echo "  Consumer Role:   $APP_CONSUMER_ROLE"
+echo "  Database:        $DATABASE_NAME"
+echo "  Schema:          $SCHEMA_NAME"
+echo "  Package:         $APP_PACKAGE_NAME"
+echo "  Instance:        $APP_INSTANCE_NAME"
+echo "  Compute Pool:    $COMPUTE_POOL_NAME"
+echo ""
+echo "  Dry Run:         $DRY_RUN"
+echo "  Clean All:       $CLEAN_ALL"
 echo ""
 
 if [ "$DRY_RUN" = false ]; then
@@ -148,17 +178,16 @@ if [ "$DRY_RUN" = false ]; then
 fi
 
 # ============================================
-# Step 1: Stop and Drop Service
+# Step 1: Drop Service (if running inside app)
 # ============================================
 
-log_step "Step 1: Stop and Drop Service"
+log_step "Step 1: Stop Services"
 
-run_sql "Stopping service" \
+run_sql "Stopping service in application (if exists)" \
     "USE ROLE ${APP_CONSUMER_ROLE};
-     USE APPLICATION ${APP_INSTANCE_NAME};
-     DROP SERVICE IF EXISTS app_public.blendx_st_spcs;"
+     CALL ${APP_INSTANCE_NAME}.app_public.service_stop();" || true
 
-log_info "Service dropped (if it existed)"
+log_info "Service stop attempted"
 
 # ============================================
 # Step 2: Drop Application Instance
@@ -170,7 +199,7 @@ run_sql "Dropping application instance" \
     "USE ROLE ${APP_CONSUMER_ROLE};
      DROP APPLICATION IF EXISTS ${APP_INSTANCE_NAME} CASCADE;"
 
-log_info "Application instance dropped (if it existed)"
+log_info "Application instance dropped (if existed)"
 
 # ============================================
 # Step 3: Drop Compute Pool
@@ -180,9 +209,9 @@ log_step "Step 3: Drop Compute Pool"
 
 run_sql "Dropping compute pool" \
     "USE ROLE ${APP_CONSUMER_ROLE};
-     DROP COMPUTE POOL IF EXISTS ${COMPUTE_POOL};"
+     DROP COMPUTE POOL IF EXISTS ${COMPUTE_POOL_NAME};"
 
-log_info "Compute pool dropped (if they existed)"
+log_info "Compute pool dropped (if existed)"
 
 # ============================================
 # Step 4: Drop Application Package
@@ -191,37 +220,65 @@ log_info "Compute pool dropped (if they existed)"
 log_step "Step 4: Drop Application Package"
 
 run_sql "Dropping application package" \
-    "USE ROLE ${APP_PROVIDER_ROLE};
+    "USE ROLE ${CICD_ROLE};
      DROP APPLICATION PACKAGE IF EXISTS ${APP_PACKAGE_NAME};"
 
-log_info "Application package dropped (if it existed)"
+log_info "Application package dropped (if existed)"
 
 # ============================================
-# Step 5: Clean Secrets (Optional)
+# Step 5: Clean Stage Contents
 # ============================================
 
-if [ "$CLEAN_SECRETS" = true ]; then
-    log_step "Step 5: Clean Secrets Database"
+log_step "Step 5: Clean Stage Contents"
 
-    log_warning "This will delete the secrets database and all secrets in it!"
+run_sql "Removing files from stage" \
+    "USE ROLE ${CICD_ROLE};
+     REMOVE @${DATABASE_NAME}.${SCHEMA_NAME}.${STAGE_NAME};"
+
+log_info "Stage contents removed (if existed)"
+
+# ============================================
+# Step 6: Clean Infrastructure (Optional)
+# ============================================
+
+if [ "$CLEAN_ALL" = true ]; then
+    log_step "Step 6: Clean Infrastructure (--all flag)"
 
     if [ "$DRY_RUN" = false ]; then
-        read -p "Are you ABSOLUTELY sure you want to delete secrets? (yes/no): " secret_confirmation
-        if [ "$secret_confirmation" != "yes" ]; then
-            log_warning "Skipping secrets cleanup"
-        else
-            run_sql "Dropping secrets database" \
-                "USE ROLE ${APP_CONSUMER_ROLE};
-                 DROP DATABASE IF EXISTS ${SECRET_DATABASE};"
-
-            log_info "Secrets database dropped"
+        log_warning "This will delete the database, CI/CD user, and roles!"
+        read -p "Are you ABSOLUTELY sure? (yes/no): " infra_confirmation
+        if [ "$infra_confirmation" != "yes" ]; then
+            log_warning "Skipping infrastructure cleanup"
+            CLEAN_ALL=false
         fi
-    else
-        echo -e "${YELLOW}[DRY RUN]${NC} Would drop secrets database: ${SECRET_DATABASE}"
+    fi
+
+    if [ "$CLEAN_ALL" = true ]; then
+        # Drop database (includes schema, stage, image repo)
+        run_sql "Dropping database (includes schema, stage, image repo)" \
+            "USE ROLE ACCOUNTADMIN;
+             DROP DATABASE IF EXISTS ${DATABASE_NAME};"
+
+        # Drop CI/CD user
+        run_sql "Dropping CI/CD user" \
+            "USE ROLE ACCOUNTADMIN;
+             DROP USER IF EXISTS ${CICD_USER};"
+
+        # Drop CI/CD role
+        run_sql "Dropping CI/CD role" \
+            "USE ROLE ACCOUNTADMIN;
+             DROP ROLE IF EXISTS ${CICD_ROLE};"
+
+        # Drop Consumer role
+        run_sql "Dropping Consumer role" \
+            "USE ROLE ACCOUNTADMIN;
+             DROP ROLE IF EXISTS ${APP_CONSUMER_ROLE};"
+
+        log_info "Infrastructure cleaned"
     fi
 else
     echo ""
-    log_info "Skipping secrets cleanup (use --clean-secrets to include)"
+    log_info "Skipping infrastructure cleanup (use --all to include database, user, and roles)"
 fi
 
 # ============================================
@@ -239,13 +296,39 @@ else
     echo -e "${GREEN}Cleanup Complete!${NC}"
     echo "==========================================="
     echo ""
-    echo "All resources have been removed."
+    echo "Resources removed:"
+    echo "  - Application instance: ${APP_INSTANCE_NAME}"
+    echo "  - Compute pool: ${COMPUTE_POOL_NAME}"
+    echo "  - Application package: ${APP_PACKAGE_NAME}"
+    echo "  - Stage contents: ${DATABASE_NAME}.${SCHEMA_NAME}.${STAGE_NAME}"
+    if [ "$CLEAN_ALL" = true ]; then
+        echo "  - Database: ${DATABASE_NAME}"
+        echo "  - CI/CD User: ${CICD_USER}"
+        echo "  - CI/CD Role: ${CICD_ROLE}"
+        echo "  - Consumer Role: ${APP_CONSUMER_ROLE}"
+    fi
     echo ""
-    echo "Next steps:"
+    echo "Next steps to redeploy from scratch:"
     echo ""
-    echo "1. Run complete setup to redeploy:"
-    echo -e "   ${CYAN}./scripts/provider-setup.sh${NC}"
-    echo ""
-    echo "2. Or manually recreate resources as needed"
+    if [ "$CLEAN_ALL" = true ]; then
+        echo "  1. Run provider setup:"
+        echo -e "     ${CYAN}./setup/provider-setup.sh${NC}"
+        echo ""
+        echo "  2. Configure GitHub secrets/variables"
+        echo ""
+        echo "  3. Run create-major-version pipeline (manual trigger)"
+        echo ""
+        echo "  4. Run deploy-qa pipeline (merge to qa branch)"
+        echo ""
+        echo "  5. Create application instance:"
+        echo -e "     ${CYAN}./setup/create-application.sh${NC}"
+    else
+        echo "  1. Run create-major-version pipeline (manual trigger)"
+        echo ""
+        echo "  2. Run deploy-qa pipeline (merge to qa branch)"
+        echo ""
+        echo "  3. Create application instance:"
+        echo -e "     ${CYAN}./setup/create-application.sh${NC}"
+    fi
 fi
 echo ""
