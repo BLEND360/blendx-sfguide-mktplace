@@ -5,101 +5,175 @@ This guide explains how to set up and deploy the BlendX Native Application to Sn
 ## Prerequisites
 
 - Snowflake account with ACCOUNTADMIN access
-- Snowflake CLI (`snow`) installed
+- Snowflake CLI (`snow`) installed and configured
 - GitHub repository with Actions enabled
-- RSA key pair for CI/CD authentication
 
-## Setup Steps
+## Setup Files
 
-### Step 1: Provider Setup (One-time)
+| File | Purpose |
+|------|---------|
+| `config.sh` | Shared configuration (variables, helper functions) |
+| `provider-setup.sh` | Creates Snowflake infrastructure and CI/CD user |
+| `create-application.sh` | Creates application instances after first deploy |
 
-Run the provider setup script as ACCOUNTADMIN to create:
-- Database, schema, stage, and image repository
-- CI/CD user with JWT authentication
-- CI/CD role with necessary permissions
-- Application package (optional)
+## Quick Start
 
 ```bash
-# Generate RSA keys first (if not already done)
+# 1. Generate RSA keys
 mkdir -p keys/pipeline
 openssl genrsa 2048 | openssl pkcs8 -topk8 -inform PEM -out keys/pipeline/snowflake_key.p8 -nocrypt
 openssl rsa -in keys/pipeline/snowflake_key.p8 -pubout -out keys/pipeline/snowflake_key.pub
 
-# Run provider setup
+# 2. (Optional) Customize configuration - edit config.sh or create .env
+
+# 3. Run provider setup
+./setup/provider-setup.sh
+
+# 4. Configure GitHub secrets/variables (values shown by script)
+
+# 5. Run "Setup Package" workflow in GitHub Actions
+
+# 6. Create application instances
+./setup/create-application.sh --all-envs
+```
+
+## Configuration
+
+All configuration is centralized in `config.sh`. You can customize values by:
+
+1. **Editing `config.sh` directly**
+2. **Creating a `.env` file** in the setup directory
+3. **Setting environment variables** before running scripts
+
+### Configuration Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SNOW_CONNECTION` | `mkt_blendx_demo` | Snowflake CLI connection name |
+| `CICD_USER` | `MK_BLENDX_DEPLOY_USER` | CI/CD user name |
+| `CICD_ROLE` | `MK_BLENDX_DEPLOY_ROLE` | CI/CD role name |
+| `DATABASE_NAME` | `BLENDX_APP_DB` | Database for app artifacts |
+| `SCHEMA_NAME` | `BLENDX_SCHEMA` | Schema for app artifacts |
+| `WAREHOUSE_NAME` | `BLENDX_APP_WH` | Warehouse name |
+| `APP_PACKAGE_NAME` | `MK_BLENDX_APP_PKG` | Application package name |
+| `APP_CONSUMER_ROLE` | `BLENDX_APP_ROLE` | Role for app consumers |
+| `APP_INSTANCE_BASE` | `BLENDX_APP_INSTANCE` | Application instance base name |
+| `COMPUTE_POOL_NAME` | `BLENDX_APP_COMPUTE_POOL` | Compute pool name |
+
+## Step-by-Step Setup
+
+### Step 1: Generate RSA Keys
+
+```bash
+mkdir -p keys/pipeline
+openssl genrsa 2048 | openssl pkcs8 -topk8 -inform PEM -out keys/pipeline/snowflake_key.p8 -nocrypt
+openssl rsa -in keys/pipeline/snowflake_key.p8 -pubout -out keys/pipeline/snowflake_key.pub
+```
+
+> **Important**: Keep `snowflake_key.p8` secure. Never commit it to the repository.
+
+### Step 2: Run Provider Setup
+
+```bash
 ./setup/provider-setup.sh
 ```
 
-After running, configure the GitHub secrets as shown in the script output.
+This creates:
+- Database, schema, stage, and image repository
+- CI/CD user with JWT authentication
+- CI/CD role with necessary permissions
+- Consumer role for app installation
 
-### Step 2: Run Pipeline (First Deploy)
+At the end, it shows all GitHub secrets and variables you need to configure.
 
-Push to the `develop` branch or trigger the workflow manually to:
-- Build and push Docker images
-- Upload application files to stage
-- Create/update application package
-- Register version and patches
+### Step 3: Configure GitHub
+
+Copy the values shown by the script to **Settings > Secrets and variables > Actions**:
+
+**Secrets:**
+- `SNOWFLAKE_ACCOUNT`
+- `SNOWFLAKE_HOST`
+- `SNOWFLAKE_PRIVATE_KEY_RAW`
+
+**Variables:**
+- `SNOWFLAKE_CONNECTION`
+- `SNOWFLAKE_DEPLOY_USER`
+- `SNOWFLAKE_DEPLOY_ROLE`
+- `SNOWFLAKE_WAREHOUSE`
+- `SNOWFLAKE_DATABASE`
+- `SNOWFLAKE_SCHEMA`
+- `SNOWFLAKE_REPO`
+- `SNOWFLAKE_APP_PACKAGE`
+- `SNOWFLAKE_APP_INSTANCE`
+- `SNOWFLAKE_COMPUTE_POOL`
+- `SNOWFLAKE_ROLE`
+
+### Step 4: Run Setup Package Workflow
+
+In GitHub Actions, manually run the **"Setup Package"** workflow. This:
+- Builds and pushes Docker images
+- Creates the application package
+- Registers the first version
+
+### Step 5: Create Application Instances
+
+After the workflow completes:
 
 ```bash
-git push origin develop
+./setup/create-application.sh --all-envs
 ```
 
-Or trigger manually via GitHub Actions.
+This creates:
+- `BLENDX_APP_INSTANCE_QA` - for QA testing
+- `BLENDX_APP_INSTANCE_STABLE` - for stable/pre-production
 
-### Step 3: Create Application Instance (One-time)
-
-After the pipeline has deployed at least one version, run:
-
+Options:
 ```bash
-./setup/create-application.sh
+./setup/create-application.sh              # Creates default instance
+./setup/create-application.sh --env qa     # Creates only _QA
+./setup/create-application.sh --env stable # Creates only _STABLE
+./setup/create-application.sh --all-envs   # Creates both _QA and _STABLE
 ```
 
-This script will:
-1. Check for available versions in the package
-2. Get the latest patch number
-3. Create the application instance
-4. Grant required account-level permissions (CREATE COMPUTE POOL, BIND SERVICE ENDPOINT, CREATE WAREHOUSE, CREATE EXTERNAL ACCESS INTEGRATION)
-5. Optionally start the application service
-
-### Step 4: Configure Application (UI)
+### Step 6: Configure Application (UI)
 
 After the application is created, go to Snowsight:
 
-1. Navigate to **Data Products** > **Apps** > **BLENDX_APP_INSTANCE**
+1. Navigate to **Data Products** > **Apps** > **BLENDX_APP_INSTANCE_QA**
 2. Click on the application
 3. Go to the **Security** tab
 4. Configure any required references (e.g., Serper API key secret)
 
-### Step 5: Start Application
+### Step 7: Start Application
 
-Run the pipeline again or start the application manually:
+Start the application manually:
 
 ```sql
 USE ROLE BLENDX_APP_ROLE;
-CALL BLENDX_APP_INSTANCE.app_public.start_app('BLENDX_CP');
+CALL BLENDX_APP_INSTANCE_QA.app_public.start_app('BLENDX_APP_COMPUTE_POOL');
 ```
- 
 
-### Step 6: Get Application URL
+### Step 8: Get Application URL
 
 Once the service is running, get the URL:
 
 ```sql
 USE ROLE BLENDX_APP_ROLE;
-CALL BLENDX_APP_INSTANCE.app_public.app_url();
+CALL BLENDX_APP_INSTANCE_QA.app_public.app_url();
 ```
 
 ## Useful Commands
 
 ```sql
 -- Check service status
-CALL BLENDX_APP_INSTANCE.app_public.get_service_status();
+CALL BLENDX_APP_INSTANCE_QA.app_public.get_service_status();
 
 -- View service logs
-CALL BLENDX_APP_INSTANCE.app_public.get_service_logs('frontend', 100);
-CALL BLENDX_APP_INSTANCE.app_public.get_service_logs('backend', 100);
+CALL BLENDX_APP_INSTANCE_QA.app_public.get_service_logs('frontend', 100);
+CALL BLENDX_APP_INSTANCE_QA.app_public.get_service_logs('backend', 100);
 
 -- Stop the service
-CALL BLENDX_APP_INSTANCE.app_public.stop_app();
+CALL BLENDX_APP_INSTANCE_QA.app_public.stop_app();
 
 -- Check application versions
 USE ROLE MK_BLENDX_DEPLOY_ROLE;
@@ -120,22 +194,6 @@ After the initial setup, the pipeline will automatically:
 
 **No manual intervention required for updates.**
 
-## Configuration Variables
-
-Both scripts use the same default values. Override via environment variables:
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `SNOW_CONNECTION` | `mkt_blendx_demo` | Snowflake CLI connection name |
-| `CICD_USER` | `MK_BLENDX_DEPLOY_USER` | CI/CD user name |
-| `CICD_ROLE` | `MK_BLENDX_DEPLOY_ROLE` | CI/CD role name |
-| `DATABASE_NAME` | `BLENDX_APP` | Database for app artifacts |
-| `SCHEMA_NAME` | `NAPP` | Schema for app artifacts |
-| `APP_PACKAGE_NAME` | `MK_BLENDX_APP_PKG` | Application package name |
-| `APP_CONSUMER_ROLE` | `BLENDX_APP_ROLE` | Role for app consumers |
-| `APP_INSTANCE_NAME` | `BLENDX_APP_INSTANCE` | Application instance name |
-| `COMPUTE_POOL_NAME` | `BLENDX_CP` | Compute pool name |
-
 ## Troubleshooting
 
 ### Application creation fails with privilege error
@@ -144,7 +202,7 @@ Make sure the pipeline has run at least once to deploy the latest setup.sql that
 ### Service won't start
 Check the service logs:
 ```sql
-CALL BLENDX_APP_INSTANCE.app_public.get_service_logs('backend', 100);
+CALL BLENDX_APP_INSTANCE_QA.app_public.get_service_logs('backend', 100);
 ```
 
 ### Upgrade fails
