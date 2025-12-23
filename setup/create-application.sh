@@ -19,6 +19,59 @@ set -e  # Exit on error
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 
+# ============================================
+# Parse Arguments
+# ============================================
+
+ENV_SUFFIX=""
+ALL_ENVS=false
+ENVIRONMENTS=()
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --env)
+            ENVIRONMENTS+=("${2^^}")  # Convert to uppercase
+            shift 2
+            ;;
+        --all-envs)
+            ALL_ENVS=true
+            shift
+            ;;
+        -h|--help)
+            echo "Usage: $0 [--env <environment>] [--all-envs]"
+            echo ""
+            echo "Options:"
+            echo "  --env <environment>  Environment suffix (e.g., qa, stable)"
+            echo "                       This will append _QA or _STABLE to instance names"
+            echo "                       Can be specified multiple times"
+            echo "  --all-envs           Create both QA and STABLE environments"
+            echo ""
+            echo "Examples:"
+            echo "  $0                   # Creates BLENDX_APP_INSTANCE"
+            echo "  $0 --env qa          # Creates BLENDX_APP_INSTANCE_QA"
+            echo "  $0 --env stable      # Creates BLENDX_APP_INSTANCE_STABLE"
+            echo "  $0 --all-envs        # Creates both _QA and _STABLE"
+            echo "  $0 --env qa --env stable  # Same as --all-envs"
+            exit 0
+            ;;
+        *)
+            echo "Unknown option: $1"
+            echo "Use --help for usage information"
+            exit 1
+            ;;
+    esac
+done
+
+# Handle --all-envs flag
+if [ "$ALL_ENVS" = true ]; then
+    ENVIRONMENTS=("QA" "STABLE")
+fi
+
+# If no environments specified, use empty string (default behavior)
+if [ ${#ENVIRONMENTS[@]} -eq 0 ]; then
+    ENVIRONMENTS=("")
+fi
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -42,12 +95,12 @@ APP_CONSUMER_ROLE=${APP_CONSUMER_ROLE:-"BLENDX_APP_ROLE"}
 # Application Package (from provider-setup.sh)
 APP_PACKAGE_NAME=${APP_PACKAGE_NAME:-"MK_BLENDX_APP_PKG"}
 
-# Application Instance
-APP_INSTANCE_NAME=${APP_INSTANCE_NAME:-"BLENDX_APP_INSTANCE"}
+# Application Instance base name (suffix added per environment)
+APP_INSTANCE_BASE=${APP_INSTANCE_BASE:-"BLENDX_APP_INSTANCE"}
 APP_VERSION=${APP_VERSION:-"V1"}
 
 # Compute Pool
-COMPUTE_POOL_NAME=${COMPUTE_POOL_NAME:-"BLENDX_CP"}
+COMPUTE_POOL_NAME=${COMPUTE_POOL_NAME:-"BLENDX_APP_COMPUTE_POOL"}
 
 # Load .env file if it exists
 if [ -f "$SCRIPT_DIR/.env" ]; then
@@ -91,12 +144,25 @@ run_sql_silent() {
 }
 
 # ============================================
+# Build list of instances to create
+# ============================================
+
+INSTANCES_TO_CREATE=()
+for env in "${ENVIRONMENTS[@]}"; do
+    if [ -n "$env" ]; then
+        INSTANCES_TO_CREATE+=("${APP_INSTANCE_BASE}_${env}")
+    else
+        INSTANCES_TO_CREATE+=("${APP_INSTANCE_BASE}")
+    fi
+done
+
+# ============================================
 # Display Configuration
 # ============================================
 
 echo ""
 echo "=========================================="
-echo "Create Application Instance"
+echo "Create Application Instance(s)"
 echo "=========================================="
 echo ""
 echo "Configuration:"
@@ -104,9 +170,13 @@ echo "  Connection: $SNOW_CONNECTION"
 echo "  CI/CD Role: $CICD_ROLE"
 echo "  Consumer Role: $APP_CONSUMER_ROLE"
 echo "  Package: $APP_PACKAGE_NAME"
-echo "  Instance: $APP_INSTANCE_NAME"
 echo "  Version: $APP_VERSION"
 echo "  Compute Pool: $COMPUTE_POOL_NAME"
+echo ""
+echo "Instances to create:"
+for instance in "${INSTANCES_TO_CREATE[@]}"; do
+    echo "  - $instance"
+done
 echo ""
 
 read -p "Continue with application creation? (y/n) " -n 1 -r
@@ -158,60 +228,69 @@ fi
 log_info "Latest patch: ${LATEST_PATCH}"
 
 # ============================================
-# Step 3: Create Application Instance
+# Function to create/upgrade application instance
 # ============================================
 
-log_step "Step 3: Creating Application Instance"
+create_application_instance() {
+    local APP_INSTANCE_NAME=$1
 
-# Check if application exists using SELECT COUNT
-echo -e "${BLUE}▶${NC} Checking if application instance exists..."
-APP_EXISTS=$(snow sql -q "SELECT COUNT(*) FROM SNOWFLAKE.INFORMATION_SCHEMA.DATABASES WHERE DATABASE_NAME = '${APP_INSTANCE_NAME}' AND TYPE = 'APPLICATION';" --connection ${SNOW_CONNECTION} 2>/dev/null | grep -E "^\| *[0-9]+ *\|$" | tr -d '| ' || echo "0")
+    log_step "Creating Application Instance: ${APP_INSTANCE_NAME}"
 
-# Ensure APP_EXISTS is a valid number
-if [ -z "$APP_EXISTS" ] || ! [[ "$APP_EXISTS" =~ ^[0-9]+$ ]]; then
-    APP_EXISTS=0
-fi
+    # Check if application exists using SELECT COUNT
+    echo -e "${BLUE}▶${NC} Checking if application instance exists..."
+    APP_EXISTS=$(snow sql -q "SELECT COUNT(*) FROM SNOWFLAKE.INFORMATION_SCHEMA.DATABASES WHERE DATABASE_NAME = '${APP_INSTANCE_NAME}' AND TYPE = 'APPLICATION';" --connection ${SNOW_CONNECTION} 2>/dev/null | grep -E "^\| *[0-9]+ *\|$" | tr -d '| ' || echo "0")
 
-if [ "$APP_EXISTS" -gt "0" ]; then
-    log_warning "Application instance already exists. Upgrading..."
-    run_sql "Upgrading application" \
-        "USE ROLE ${APP_CONSUMER_ROLE};
-         ALTER APPLICATION ${APP_INSTANCE_NAME} UPGRADE USING VERSION ${APP_VERSION} PATCH ${LATEST_PATCH};"
-else
-    log_info "Creating new application instance with version ${APP_VERSION} patch ${LATEST_PATCH}..."
-    run_sql "Creating application instance" \
-        "USE ROLE ${APP_CONSUMER_ROLE};
-         CREATE APPLICATION ${APP_INSTANCE_NAME}
-         FROM APPLICATION PACKAGE ${APP_PACKAGE_NAME}
-         USING VERSION ${APP_VERSION} PATCH ${LATEST_PATCH}
-         COMMENT = 'BlendX Native Application';"
-fi
+    # Ensure APP_EXISTS is a valid number
+    if [ -z "$APP_EXISTS" ] || ! [[ "$APP_EXISTS" =~ ^[0-9]+$ ]]; then
+        APP_EXISTS=0
+    fi
 
-log_info "Application instance created/upgraded"
+    if [ "$APP_EXISTS" -gt "0" ]; then
+        log_warning "Application instance already exists. Upgrading..."
+        run_sql "Upgrading application" \
+            "USE ROLE ${APP_CONSUMER_ROLE};
+             ALTER APPLICATION ${APP_INSTANCE_NAME} UPGRADE USING VERSION ${APP_VERSION} PATCH ${LATEST_PATCH};"
+    else
+        log_info "Creating new application instance with version ${APP_VERSION} patch ${LATEST_PATCH}..."
+        run_sql "Creating application instance" \
+            "USE ROLE ${APP_CONSUMER_ROLE};
+             CREATE APPLICATION ${APP_INSTANCE_NAME}
+             FROM APPLICATION PACKAGE ${APP_PACKAGE_NAME}
+             USING VERSION ${APP_VERSION} PATCH ${LATEST_PATCH}
+             COMMENT = 'BlendX Native Application';"
+    fi
+
+    log_info "Application instance created/upgraded"
+
+    # Grant Account-Level Permissions
+    log_step "Granting Account-Level Permissions to ${APP_INSTANCE_NAME}"
+
+    run_sql "Granting CREATE COMPUTE POOL to application" \
+        "USE ROLE ACCOUNTADMIN;
+         GRANT CREATE COMPUTE POOL ON ACCOUNT TO APPLICATION ${APP_INSTANCE_NAME};"
+
+    run_sql "Granting BIND SERVICE ENDPOINT to application" \
+        "USE ROLE ACCOUNTADMIN;
+         GRANT BIND SERVICE ENDPOINT ON ACCOUNT TO APPLICATION ${APP_INSTANCE_NAME};"
+
+    run_sql "Granting CREATE WAREHOUSE to application" \
+        "USE ROLE ACCOUNTADMIN;
+         GRANT CREATE WAREHOUSE ON ACCOUNT TO APPLICATION ${APP_INSTANCE_NAME};"
+
+    run_sql "Granting CREATE EXTERNAL ACCESS INTEGRATION to application" \
+        "USE ROLE ACCOUNTADMIN;
+         GRANT CREATE EXTERNAL ACCESS INTEGRATION ON ACCOUNT TO APPLICATION ${APP_INSTANCE_NAME};"
+
+    log_info "Account-level permissions granted to ${APP_INSTANCE_NAME}"
+}
 
 # ============================================
-# Step 4: Grant Account-Level Permissions to Application
+# Step 3: Create All Application Instances
 # ============================================
 
-log_step "Step 4: Granting Account-Level Permissions to Application"
-
-run_sql "Granting CREATE COMPUTE POOL to application" \
-    "USE ROLE ACCOUNTADMIN;
-     GRANT CREATE COMPUTE POOL ON ACCOUNT TO APPLICATION ${APP_INSTANCE_NAME};"
-
-run_sql "Granting BIND SERVICE ENDPOINT to application" \
-    "USE ROLE ACCOUNTADMIN;
-     GRANT BIND SERVICE ENDPOINT ON ACCOUNT TO APPLICATION ${APP_INSTANCE_NAME};"
-
-run_sql "Granting CREATE WAREHOUSE to application" \
-    "USE ROLE ACCOUNTADMIN;
-     GRANT CREATE WAREHOUSE ON ACCOUNT TO APPLICATION ${APP_INSTANCE_NAME};"
-
-run_sql "Granting CREATE EXTERNAL ACCESS INTEGRATION to application" \
-    "USE ROLE ACCOUNTADMIN;
-     GRANT CREATE EXTERNAL ACCESS INTEGRATION ON ACCOUNT TO APPLICATION ${APP_INSTANCE_NAME};"
-
-log_info "Account-level permissions granted to application"
+for instance in "${INSTANCES_TO_CREATE[@]}"; do
+    create_application_instance "$instance"
+done
 
 # ============================================
 # Completion Message
@@ -219,8 +298,11 @@ log_info "Account-level permissions granted to application"
 
 echo ""
 echo "=========================================="
-echo -e "${GREEN}Application Instance Setup Complete!${NC}"
+echo -e "${GREEN}Application Instance(s) Setup Complete!${NC}"
 echo "=========================================="
 echo ""
-echo "Application: ${APP_INSTANCE_NAME}"
+echo "Created applications:"
+for instance in "${INSTANCES_TO_CREATE[@]}"; do
+    echo "  - $instance"
+done
 echo ""

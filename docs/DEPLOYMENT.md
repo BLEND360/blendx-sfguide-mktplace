@@ -13,20 +13,27 @@ flowchart LR
     subgraph QA
         B -->|deploy-qa.yml| C[Build Images]
         C --> D[Deploy to QA Channel]
-        D --> E[Upgrade App]
+        D --> E[Upgrade QA App]
+    end
+
+    subgraph Stable
+        B -->|merge| F[stable]
+        F -->|deploy-stable.yml| G[Promote to STABLE]
+        G --> G2[Upgrade STABLE App]
     end
 
     subgraph Production
-        B -->|merge| F[main]
-        F -->|release.yml| G[Create Tag]
-        G -->|trigger| H[deploy-prod.yml]
-        H --> I[Promote to DEFAULT]
+        F -->|merge| H[main]
+        H -->|release.yml| I[Create Tag]
+        I -->|trigger| J[deploy-prod.yml]
+        J --> K[Promote to DEFAULT]
     end
 
     style A fill:#e1f5fe
     style B fill:#fff3e0
-    style F fill:#e8f5e9
-    style I fill:#f3e5f5
+    style F fill:#ffe0b2
+    style H fill:#e8f5e9
+    style K fill:#f3e5f5
 ```
 
 ### Pipeline Flow
@@ -36,6 +43,7 @@ sequenceDiagram
     participant Dev as Developer
     participant GH as GitHub
     participant QA as QA Pipeline
+    participant Stb as Stable Pipeline
     participant Rel as Release Pipeline
     participant Prod as Prod Pipeline
     participant SF as Snowflake
@@ -44,13 +52,19 @@ sequenceDiagram
     GH->>QA: trigger deploy-qa.yml
     QA->>SF: Build & push images
     QA->>SF: Register patch in QA channel
-    QA->>SF: Upgrade application
+    QA->>SF: Upgrade QA app instance
 
-    Dev->>GH: merge qa → main
+    Dev->>GH: merge qa → stable
+    GH->>Stb: trigger deploy-stable.yml
+    Stb->>SF: Read QA version
+    Stb->>SF: Promote to STABLE channel
+    Stb->>SF: Upgrade STABLE app instance
+
+    Dev->>GH: merge stable → main
     GH->>Rel: trigger release.yml
     Rel->>GH: create tag (release/vX.Y.Z)
     Rel->>Prod: trigger deploy-prod.yml
-    Prod->>SF: Read QA version
+    Prod->>SF: Read STABLE version
     Prod->>SF: Promote to DEFAULT channel
 ```
 
@@ -58,7 +72,8 @@ sequenceDiagram
 |--------|-------------|---------|
 | `develop` | Local | Local development and testing (no CI) |
 | `qa` | QA | Builds images, deploys to QA release channel (merge from develop) |
-| `main` | Production | Auto-creates release tag, triggers production deploy (merge from qa) |
+| `stable` | Stable | Promotes QA version to STABLE channel (merge from qa) |
+| `main` | Production | Auto-creates release tag, triggers production deploy (merge from stable) |
 
 ## Prerequisites
 
@@ -88,7 +103,7 @@ The setup script creates the CI/CD user, role, and necessary permissions in Snow
 
 ```bash
 # Ensure you have a connection with ACCOUNTADMIN role configured
-./scripts/provider-setup.sh
+./setup/provider-setup.sh
 ```
 
 The script will:
@@ -98,31 +113,71 @@ The script will:
 4. Grant permission to create Application Packages
 5. Optionally create the Application Package
 
-### Step 3: Configure GitHub Secrets
+### Step 2b: Create Application Instances
 
-In your GitHub repository, go to **Settings > Secrets and variables > Actions** and create two environments:
+After the first pipeline run deploys a version to the Application Package, create the application instances for QA and STABLE environments:
 
-#### Environment: `qa`
+```bash
+# Create both QA and STABLE application instances
+./setup/create-application.sh --all-envs
+```
+
+This creates:
+- `BLENDX_APP_INSTANCE_QA` - for QA testing
+- `BLENDX_APP_INSTANCE_STABLE` - for stable/pre-production testing
+
+The script will:
+1. Check prerequisites (version exists in the application package)
+2. Create application instances from the deployed package
+3. Grant account-level permissions to each application (CREATE COMPUTE POOL, BIND SERVICE ENDPOINT, etc.)
+
+You can also create instances individually:
+```bash
+./setup/create-application.sh --env qa      # Only QA
+./setup/create-application.sh --env stable  # Only STABLE
+```
+
+> **Note**: This script requires ACCOUNTADMIN role for granting account-level permissions to the applications.
+
+### Step 3: Configure GitHub Secrets and Variables
+
+In your GitHub repository, go to **Settings > Secrets and variables > Actions** and create the following environments: `qa`, `stable`, and `production`.
+
+#### Secrets (sensitive - same for all environments)
+
+These contain sensitive information and must be stored as **secrets**:
 
 | Secret | Description | Example |
 |--------|-------------|---------|
 | `SNOWFLAKE_ACCOUNT` | Snowflake account identifier | `xy12345.us-east-1` |
 | `SNOWFLAKE_HOST` | Snowflake host URL | `xy12345.us-east-1.snowflakecomputing.com` |
+| `SNOWFLAKE_PRIVATE_KEY_RAW` | Content of `snowflake_key.p8` | (full PEM content) |
+
+#### Variables (shared across all environments)
+
+These can be stored as **variables** since they are not sensitive:
+
+| Variable | Description | Example |
+|----------|-------------|---------|
 | `SNOWFLAKE_DEPLOY_USER` | CI/CD user name | `MK_BLENDX_DEPLOY_USER` |
 | `SNOWFLAKE_DEPLOY_ROLE` | CI/CD role name | `MK_BLENDX_DEPLOY_ROLE` |
-| `SNOWFLAKE_WAREHOUSE` | Warehouse name | `DEV_WH` |
-| `SNOWFLAKE_DATABASE` | Database name | `SPCS_APP_TEST` |
-| `SNOWFLAKE_SCHEMA` | Schema name | `NAPP` |
-| `SNOWFLAKE_PRIVATE_KEY_RAW` | Content of `snowflake_key.p8` | (full PEM content) |
-| `SNOWFLAKE_REPO` | Image repository URL | `xy12345.registry.snowflakecomputing.com/spcs_app_test/napp/img_repo` |
+| `SNOWFLAKE_WAREHOUSE` | Warehouse name | `BLENDX_APP_WH` |
+| `SNOWFLAKE_DATABASE` | Database name | `BLENDX_APP_DB` |
+| `SNOWFLAKE_SCHEMA` | Schema name | `BLENDX_SCHEMA` |
+| `SNOWFLAKE_REPO` | Image repository URL | `org-account.registry.snowflakecomputing.com/db/schema/img_repo` |
 | `SNOWFLAKE_APP_PACKAGE` | Application package name | `MK_BLENDX_APP_PKG` |
-| `SNOWFLAKE_APP_INSTANCE` | Installed app instance name | `BLENDX_APP` |
-| `SNOWFLAKE_COMPUTE_POOL` | Compute pool for the app | `MY_COMPUTE_POOL` |
-| `SNOWFLAKE_ROLE` | Role for app management | `nac_test` |
+| `SNOWFLAKE_ROLE` | Role for app management | `BLENDX_APP_ROLE` |
 
-#### Environment: `production`
+#### Variables (environment-specific)
 
-Configure the same secrets for production, potentially with different values for production resources.
+These variables differ per environment:
+
+| Variable | `qa` | `stable` | `production` |
+|----------|------|----------|--------------|
+| `SNOWFLAKE_APP_INSTANCE` | `BLENDX_APP_INSTANCE_QA` | `BLENDX_APP_INSTANCE_STABLE` | *(not used)* |
+| `SNOWFLAKE_COMPUTE_POOL` | `BLENDX_APP_COMPUTE_POOL_QA` | `BLENDX_APP_COMPUTE_POOL_STABLE` | *(not used)* |
+
+> **Note**: The `production` environment only promotes versions to the DEFAULT channel and doesn't manage an app instance directly. Using separate compute pools per environment ensures resource isolation between QA and STABLE.
 
 ### Step 4: Get the Private Key Content
 
@@ -139,8 +194,9 @@ Copy the **entire content** including the `-----BEGIN PRIVATE KEY-----` and `---
 | Pipeline | File | Trigger | Purpose |
 |----------|------|---------|---------|
 | QA Deployment | `deploy-qa.yml` | Push to `qa` (merge from develop) | Build, deploy, and restart QA environment |
+| Stable Promotion | `deploy-stable.yml` | Push to `stable` (merge from qa) | Promote QA version to STABLE channel |
 | Create Release Tag | `release.yml` | Push to `main` or manual | Auto-create release tag and trigger production deploy |
-| Production Release | `deploy-prod.yml` | Called by `release.yml` or manual | Promote QA version to production |
+| Production Release | `deploy-prod.yml` | Called by `release.yml` or manual | Promote STABLE version to production |
 
 ## QA Pipeline (deploy-qa.yml)
 
@@ -172,11 +228,32 @@ Before building, the pipeline validates:
 - Each push to `qa` adds a new patch to the current version
 - Default version is `V1` if no tags exist
 
+## Stable Pipeline (deploy-stable.yml)
+
+### Trigger
+
+- **Automatic**: Push to `stable` branch (must be merged from `qa`)
+- **Manual**: GitHub Actions workflow dispatch
+
+### Preflight Validation
+
+Before promoting, the pipeline validates:
+- `stable` branch must contain all commits from `qa`
+- `stable` must be updated via merge commit from `qa` (no direct commits)
+
+### Steps
+
+1. Validates that `stable` was updated via a merge from `qa`
+2. Reads the latest version and patch from the QA release channel
+3. Validates the promotion is monotonic (no regressions)
+4. Promotes the QA version to the STABLE release channel
+5. Sets the STABLE release directive
+
 ## Release Tag Pipeline (release.yml)
 
 ### Trigger
 
-- **Automatic**: Push to `main` branch (merge from qa)
+- **Automatic**: Push to `main` branch (merge from stable)
 - **Manual**: GitHub Actions workflow dispatch with optional version input
 
 ### Auto-increment
@@ -198,9 +275,9 @@ Creates an annotated tag on `main` and directly triggers the `deploy-prod.yml` w
 
 ### Steps
 
-1. Reads the latest version and patch from the QA release channel
+1. Reads the latest version and patch from the STABLE release channel (or uses manual override)
 2. Validates the promotion is monotonic (no regressions)
-3. Promotes the QA version to the DEFAULT (production) release channel
+3. Promotes the version to the DEFAULT (production) release channel
 4. Sets the DEFAULT release directive
 
 ### Manual Override
@@ -209,13 +286,16 @@ When triggering manually, you can specify:
 - `version`: Version to release (e.g., `V1`)
 - `patch`: Patch number to release (e.g., `5`)
 
-If not specified, values are auto-detected from QA channel.
+If both are specified, they take priority over the STABLE channel version. This allows releasing any specific version in case of emergency or rollback scenarios.
+
+If not specified, values are auto-detected from STABLE channel.
 
 ## Release Channels
 
 | Channel | Purpose | Updated by |
 |---------|---------|------------|
 | `QA` | Testing and development | QA pipeline on every push to `qa` |
+| `STABLE` | Pre-production validation | Stable pipeline on every push to `stable` |
 | `DEFAULT` | Production (marketplace consumers) | Production pipeline (triggered by `release.yml`) |
 
 > **Note**: Versions in DEFAULT channel require Snowflake security review before they are available to marketplace consumers.
@@ -228,11 +308,13 @@ If not specified, values are auto-detected from QA channel.
 4. When ready for QA: merge `develop` → `qa`
 5. QA pipeline triggers → builds images, deploys, restarts service
 6. QA testing is performed
-7. When ready for release: merge `qa` → `main`
-8. Release tag is auto-created (e.g., `release/v1.0.1`)
-9. Production pipeline is triggered → promotes QA version to DEFAULT channel
-10. Submit for Snowflake security review (manual step in Provider Studio)
-11. After approval, version is available on Marketplace
+7. When QA is approved: merge `qa` → `stable`
+8. Stable pipeline triggers → promotes QA version to STABLE channel
+9. When ready for release: merge `stable` → `main`
+10. Release tag is auto-created (e.g., `release/v1.0.1`)
+11. Production pipeline is triggered → promotes STABLE version to DEFAULT channel
+12. Submit for Snowflake security review (manual step in Provider Studio)
+13. After approval, version is available on Marketplace
 
 ## Database Migrations
 
@@ -347,19 +429,19 @@ The migration SQL is automatically generated during the QA deployment pipeline:
 3. Combined `migrations.sql` is injected into `setup.sql`
 4. When installed/upgraded, idempotent SQL ensures correct schema state
 
-### Pre-commit Hook
+### Pipeline Validation
 
-A pre-commit hook warns if you modify models or migrations without regenerating SQL:
+The QA pipeline validates that all Alembic migrations have corresponding SQL files before deploying. If any migration is missing its SQL file, the pipeline will fail with an error indicating which files need to be generated.
 
+This validation runs in the `validate` job of `deploy-qa.yml` and checks:
+- Every `.py` file in `backend/alembic/versions/` has a corresponding `.sql` file in `scripts/sql/migrations/`
+
+If validation fails, run:
 ```bash
-# Install pre-commit hooks
-pip install pre-commit
-pre-commit install
+python scripts/generate_migrations_sql.py
 ```
 
-The hook checks if `migrations.sql` was updated when you change:
-- `backend/app/database/models/*.py`
-- `backend/alembic/versions/*.py`
+Then commit the generated SQL files before pushing again.
 
 > **Note**: The `alembic_version` table tracks which migrations have been applied. Use `CALL app_data.get_migration_status()` to check the current state.
 
@@ -376,7 +458,9 @@ The hook checks if `migrations.sql` was updated when you change:
 | File | Purpose |
 |------|---------|
 | `.github/workflows/deploy-qa.yml` | QA deployment workflow |
+| `.github/workflows/deploy-stable.yml` | Stable promotion workflow (QA → STABLE) |
 | `.github/workflows/release.yml` | Auto-creates release tags and triggers production deploy |
-| `.github/workflows/deploy-prod.yml` | Production promotion workflow (QA → DEFAULT) |
-| `scripts/provider-setup.sh` | Initial setup script |
+| `.github/workflows/deploy-prod.yml` | Production promotion workflow (STABLE → DEFAULT) |
+| `setup/provider-setup.sh` | Initial Snowflake setup (user, role, package) |
+| `setup/create-application.sh` | Create application instances (QA, STABLE) |
 | `scripts/sql/setup_cicd_permissions.sql` | SQL permissions reference |

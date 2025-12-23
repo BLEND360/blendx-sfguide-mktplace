@@ -10,7 +10,7 @@ env:
   BACKEND_IMAGE: eap_backend
   FRONTEND_IMAGE: eap_frontend
   ROUTER_IMAGE: eap_router
-  SNOWFLAKE_CONNECTION: mkt_blendx_demo
+  SNOWFLAKE_CONNECTION: ${{ vars.SNOWFLAKE_CONNECTION }}
 
 jobs:
   # ============================================
@@ -55,12 +55,82 @@ jobs:
             fi
           done
 
+      - name: Validate Alembic migrations have SQL files
+        run: |
+          echo "Checking that all Alembic migrations have corresponding SQL files..."
+
+          MIGRATIONS_DIR="scripts/sql/migrations"
+          ALEMBIC_DIR="backend/alembic/versions"
+          ERRORS=0
+
+          # Get all alembic migration revision IDs (from filenames like abc123_description.py)
+          for alembic_file in "$ALEMBIC_DIR"/*.py; do
+            if [ -f "$alembic_file" ]; then
+              filename=$(basename "$alembic_file")
+
+              # Skip __pycache__ and __init__.py
+              if [[ "$filename" == "__init__.py" ]] || [[ "$filename" == "__pycache__" ]]; then
+                continue
+              fi
+
+              # Extract revision ID (first part before underscore)
+              revision_id=$(echo "$filename" | cut -d'_' -f1)
+
+              # Check if corresponding SQL file exists
+              sql_file="$MIGRATIONS_DIR/${revision_id}.sql"
+
+              if [ ! -f "$sql_file" ]; then
+                echo "::error::Missing SQL file for migration: $filename"
+                echo "  Expected: $sql_file"
+                echo "  Run: python scripts/generate_migrations_sql.py"
+                ERRORS=$((ERRORS + 1))
+              else
+                echo "OK: $filename -> $sql_file"
+              fi
+            fi
+          done
+
+          if [ $ERRORS -gt 0 ]; then
+            echo ""
+            echo "::error::Found $ERRORS Alembic migrations without corresponding SQL files."
+            echo "Run 'python scripts/generate_migrations_sql.py' to generate the SQL files."
+            exit 1
+          fi
+
+          echo "All Alembic migrations have corresponding SQL files."
+
+  # ============================================
+  # TEST: Run backend tests
+  # ============================================
+  test:
+    runs-on: ubuntu-latest
+    needs: [validate]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+
+      - name: Set up Python
+        run: uv python install 3.10
+
+      - name: Install dependencies
+        working-directory: backend
+        run: uv sync --dev
+
+      - name: Run tests
+        working-directory: backend
+        run: uv run pytest -v --tb=short
+
   # ============================================
   # PREFLIGHT: Ensure commits passed through develop before any build
   # ============================================
   preflight:
     runs-on: ubuntu-latest
-    needs: [validate]
+    needs: [validate, test]
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -117,11 +187,11 @@ jobs:
         with:
           private-key: ${{ secrets.SNOWFLAKE_PRIVATE_KEY_RAW }}
           account: ${{ secrets.SNOWFLAKE_ACCOUNT }}
-          user: ${{ secrets.SNOWFLAKE_DEPLOY_USER }}
-          role: ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}
-          warehouse: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
-          database: ${{ secrets.SNOWFLAKE_DATABASE }}
-          schema: ${{ secrets.SNOWFLAKE_SCHEMA }}
+          user: ${{ vars.SNOWFLAKE_DEPLOY_USER }}
+          role: ${{ vars.SNOWFLAKE_DEPLOY_ROLE }}
+          warehouse: ${{ vars.SNOWFLAKE_WAREHOUSE }}
+          database: ${{ vars.SNOWFLAKE_DATABASE }}
+          schema: ${{ vars.SNOWFLAKE_SCHEMA }}
           host: ${{ secrets.SNOWFLAKE_HOST }}
 
       - name: Generate image metadata
@@ -129,7 +199,7 @@ jobs:
         run: |
           SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
           echo "short_sha=$SHORT_SHA" >> $GITHUB_OUTPUT
-          echo "tag=${{ secrets.SNOWFLAKE_REPO }}/${{ env.BACKEND_IMAGE }}:$SHORT_SHA" >> $GITHUB_OUTPUT
+          echo "tag=${{ vars.SNOWFLAKE_REPO }}/${{ env.BACKEND_IMAGE }}:$SHORT_SHA" >> $GITHUB_OUTPUT
 
       - name: Build and push backend image
         uses: docker/build-push-action@v5
@@ -159,11 +229,11 @@ jobs:
         with:
           private-key: ${{ secrets.SNOWFLAKE_PRIVATE_KEY_RAW }}
           account: ${{ secrets.SNOWFLAKE_ACCOUNT }}
-          user: ${{ secrets.SNOWFLAKE_DEPLOY_USER }}
-          role: ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}
-          warehouse: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
-          database: ${{ secrets.SNOWFLAKE_DATABASE }}
-          schema: ${{ secrets.SNOWFLAKE_SCHEMA }}
+          user: ${{ vars.SNOWFLAKE_DEPLOY_USER }}
+          role: ${{ vars.SNOWFLAKE_DEPLOY_ROLE }}
+          warehouse: ${{ vars.SNOWFLAKE_WAREHOUSE }}
+          database: ${{ vars.SNOWFLAKE_DATABASE }}
+          schema: ${{ vars.SNOWFLAKE_SCHEMA }}
           host: ${{ secrets.SNOWFLAKE_HOST }}
 
       - name: Generate image metadata
@@ -171,7 +241,7 @@ jobs:
         run: |
           SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
           echo "short_sha=$SHORT_SHA" >> $GITHUB_OUTPUT
-          echo "tag=${{ secrets.SNOWFLAKE_REPO }}/${{ env.FRONTEND_IMAGE }}:$SHORT_SHA" >> $GITHUB_OUTPUT
+          echo "tag=${{ vars.SNOWFLAKE_REPO }}/${{ env.FRONTEND_IMAGE }}:$SHORT_SHA" >> $GITHUB_OUTPUT
 
       - name: Build and push frontend image
         uses: docker/build-push-action@v5
@@ -201,11 +271,11 @@ jobs:
         with:
           private-key: ${{ secrets.SNOWFLAKE_PRIVATE_KEY_RAW }}
           account: ${{ secrets.SNOWFLAKE_ACCOUNT }}
-          user: ${{ secrets.SNOWFLAKE_DEPLOY_USER }}
-          role: ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}
-          warehouse: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
-          database: ${{ secrets.SNOWFLAKE_DATABASE }}
-          schema: ${{ secrets.SNOWFLAKE_SCHEMA }}
+          user: ${{ vars.SNOWFLAKE_DEPLOY_USER }}
+          role: ${{ vars.SNOWFLAKE_DEPLOY_ROLE }}
+          warehouse: ${{ vars.SNOWFLAKE_WAREHOUSE }}
+          database: ${{ vars.SNOWFLAKE_DATABASE }}
+          schema: ${{ vars.SNOWFLAKE_SCHEMA }}
           host: ${{ secrets.SNOWFLAKE_HOST }}
 
       - name: Generate image metadata
@@ -213,7 +283,7 @@ jobs:
         run: |
           SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
           echo "short_sha=$SHORT_SHA" >> $GITHUB_OUTPUT
-          echo "tag=${{ secrets.SNOWFLAKE_REPO }}/${{ env.ROUTER_IMAGE }}:$SHORT_SHA" >> $GITHUB_OUTPUT
+          echo "tag=${{ vars.SNOWFLAKE_REPO }}/${{ env.ROUTER_IMAGE }}:$SHORT_SHA" >> $GITHUB_OUTPUT
 
       - name: Build and push router image
         uses: docker/build-push-action@v5
@@ -265,20 +335,20 @@ jobs:
         with:
           private-key: ${{ secrets.SNOWFLAKE_PRIVATE_KEY_RAW }}
           account: ${{ secrets.SNOWFLAKE_ACCOUNT }}
-          user: ${{ secrets.SNOWFLAKE_DEPLOY_USER }}
-          role: ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}
-          warehouse: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
-          database: ${{ secrets.SNOWFLAKE_DATABASE }}
-          schema: ${{ secrets.SNOWFLAKE_SCHEMA }}
+          user: ${{ vars.SNOWFLAKE_DEPLOY_USER }}
+          role: ${{ vars.SNOWFLAKE_DEPLOY_ROLE }}
+          warehouse: ${{ vars.SNOWFLAKE_WAREHOUSE }}
+          database: ${{ vars.SNOWFLAKE_DATABASE }}
+          schema: ${{ vars.SNOWFLAKE_SCHEMA }}
           host: ${{ secrets.SNOWFLAKE_HOST }}
           login-registry: 'false'
 
       - name: Generate application files from templates
         run: |
-          IMG_REPO=$(echo "${{ secrets.SNOWFLAKE_REPO }}" | awk -F'/' '{print $NF}')
+          IMG_REPO=$(echo "${{ vars.SNOWFLAKE_REPO }}" | awk -F'/' '{print $NF}')
           python3 scripts/generate-app-files.py \
-            --database "${{ secrets.SNOWFLAKE_DATABASE }}" \
-            --schema "${{ secrets.SNOWFLAKE_SCHEMA }}" \
+            --database "${{ vars.SNOWFLAKE_DATABASE }}" \
+            --schema "${{ vars.SNOWFLAKE_SCHEMA }}" \
             --img-repo "${IMG_REPO}" \
             --image-tag "${{ steps.version.outputs.short_sha }}"
 
@@ -288,18 +358,18 @@ jobs:
           REQUESTS_CA_BUNDLE: ""
           CURL_CA_BUNDLE: ""
         run: |
-          snow sql --query "PUT file://${{ github.workspace }}/app/src/* @${{ secrets.SNOWFLAKE_DATABASE }}.${{ secrets.SNOWFLAKE_SCHEMA }}.app_stage AUTO_COMPRESS=FALSE OVERWRITE=TRUE;" --connection ${{ env.SNOWFLAKE_CONNECTION }}
+          snow sql --query "PUT file://${{ github.workspace }}/app/src/* @${{ vars.SNOWFLAKE_DATABASE }}.${{ vars.SNOWFLAKE_SCHEMA }}.app_stage AUTO_COMPRESS=FALSE OVERWRITE=TRUE;" --connection ${{ env.SNOWFLAKE_CONNECTION }}
 
       - name: Create application package if not exists
         run: |
           echo "Creating application package if not exists..."
-          snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; CREATE APPLICATION PACKAGE IF NOT EXISTS ${{ secrets.SNOWFLAKE_APP_PACKAGE }} DISTRIBUTION = INTERNAL;" --connection ${{ env.SNOWFLAKE_CONNECTION }} || true
+          snow sql -q "USE ROLE ${{ vars.SNOWFLAKE_DEPLOY_ROLE }}; CREATE APPLICATION PACKAGE IF NOT EXISTS ${{ vars.SNOWFLAKE_APP_PACKAGE }} DISTRIBUTION = INTERNAL;" --connection ${{ env.SNOWFLAKE_CONNECTION }} || true
 
       - name: Clean up orphan versions
         run: |
           echo "Checking for orphan versions to clean up..."
           # Get versions not in any release channel (max 2 allowed)
-          ORPHAN_VERSIONS=$(snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; SHOW VERSIONS IN APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }};" --connection ${{ env.SNOWFLAKE_CONNECTION }} -o json 2>/dev/null | jq -r '.[] | select(.release_channel_name == null) | .version' 2>/dev/null || echo "")
+          ORPHAN_VERSIONS=$(snow sql -q "USE ROLE ${{ vars.SNOWFLAKE_DEPLOY_ROLE }}; SHOW VERSIONS IN APPLICATION PACKAGE ${{ vars.SNOWFLAKE_APP_PACKAGE }};" --connection ${{ env.SNOWFLAKE_CONNECTION }} -o json 2>/dev/null | jq -r '.[] | select(.release_channel_name == null) | .version' 2>/dev/null || echo "")
 
           ORPHAN_COUNT=$(echo "$ORPHAN_VERSIONS" | grep -c . || echo "0")
           echo "Found $ORPHAN_COUNT orphan versions"
@@ -310,7 +380,7 @@ jobs:
               if [ -n "$ver" ]; then
                 echo "Deregistering orphan version: $ver"
                 # Use DEREGISTER for packages with release channels enabled
-                snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; ALTER APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }} DEREGISTER VERSION $ver;" --connection ${{ env.SNOWFLAKE_CONNECTION }} 2>/dev/null || true
+                snow sql -q "USE ROLE ${{ vars.SNOWFLAKE_DEPLOY_ROLE }}; ALTER APPLICATION PACKAGE ${{ vars.SNOWFLAKE_APP_PACKAGE }} DEREGISTER VERSION $ver;" --connection ${{ env.SNOWFLAKE_CONNECTION }} 2>/dev/null || true
               fi
             done
           fi
@@ -319,12 +389,12 @@ jobs:
         id: register
         run: |
           VERSION="${{ steps.version.outputs.version }}"
-          STAGE_PATH="@${{ secrets.SNOWFLAKE_DATABASE }}.${{ secrets.SNOWFLAKE_SCHEMA }}.app_stage"
+          STAGE_PATH="@${{ vars.SNOWFLAKE_DATABASE }}.${{ vars.SNOWFLAKE_SCHEMA }}.app_stage"
           echo "Registering version $VERSION from $STAGE_PATH..."
 
           # Try to add patch first (most common case) - if version doesn't exist, it will fail
           echo "Attempting to add patch for version $VERSION..."
-          ADD_PATCH_OUTPUT=$(snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; ALTER APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }} ADD PATCH FOR VERSION $VERSION USING '$STAGE_PATH';" --connection ${{ env.SNOWFLAKE_CONNECTION }} 2>&1) && ADD_PATCH_SUCCESS=true || ADD_PATCH_SUCCESS=false
+          ADD_PATCH_OUTPUT=$(snow sql -q "USE ROLE ${{ vars.SNOWFLAKE_DEPLOY_ROLE }}; ALTER APPLICATION PACKAGE ${{ vars.SNOWFLAKE_APP_PACKAGE }} ADD PATCH FOR VERSION $VERSION USING '$STAGE_PATH';" --connection ${{ env.SNOWFLAKE_CONNECTION }} 2>&1) && ADD_PATCH_SUCCESS=true || ADD_PATCH_SUCCESS=false
 
           echo "Add patch output: $ADD_PATCH_OUTPUT"
 
@@ -334,7 +404,7 @@ jobs:
             # Check if error is because version doesn't exist
             if echo "$ADD_PATCH_OUTPUT" | grep -qi "does not exist"; then
               echo "Version $VERSION does not exist, creating new version..."
-              snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; ALTER APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }} REGISTER VERSION $VERSION USING '$STAGE_PATH';" --connection ${{ env.SNOWFLAKE_CONNECTION }}
+              snow sql -q "USE ROLE ${{ vars.SNOWFLAKE_DEPLOY_ROLE }}; ALTER APPLICATION PACKAGE ${{ vars.SNOWFLAKE_APP_PACKAGE }} REGISTER VERSION $VERSION USING '$STAGE_PATH';" --connection ${{ env.SNOWFLAKE_CONNECTION }}
             else
               echo "Error adding patch: $ADD_PATCH_OUTPUT"
               exit 1
@@ -345,7 +415,7 @@ jobs:
           echo "Getting latest patch number..."
 
           # Use table format and parse with grep/awk for reliability
-          VERSIONS_TABLE=$(snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; SHOW VERSIONS IN APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }};" --connection ${{ env.SNOWFLAKE_CONNECTION }} 2>/dev/null || echo "")
+          VERSIONS_TABLE=$(snow sql -q "USE ROLE ${{ vars.SNOWFLAKE_DEPLOY_ROLE }}; SHOW VERSIONS IN APPLICATION PACKAGE ${{ vars.SNOWFLAKE_APP_PACKAGE }};" --connection ${{ env.SNOWFLAKE_CONNECTION }} 2>/dev/null || echo "")
           echo "Versions table output:"
           echo "$VERSIONS_TABLE"
 
@@ -355,7 +425,7 @@ jobs:
           # Validate patch is a number
           if [ -z "$NEW_PATCH" ] || ! [[ "$NEW_PATCH" =~ ^[0-9]+$ ]]; then
             echo "Warning: Could not parse patch from table, trying JSON format..."
-            VERSIONS_JSON=$(snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; SHOW VERSIONS IN APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }};" --connection ${{ env.SNOWFLAKE_CONNECTION }} -o json 2>/dev/null || echo "[]")
+            VERSIONS_JSON=$(snow sql -q "USE ROLE ${{ vars.SNOWFLAKE_DEPLOY_ROLE }}; SHOW VERSIONS IN APPLICATION PACKAGE ${{ vars.SNOWFLAKE_APP_PACKAGE }};" --connection ${{ env.SNOWFLAKE_CONNECTION }} -o json 2>/dev/null || echo "[]")
             echo "JSON output: $VERSIONS_JSON"
             NEW_PATCH=$(echo "$VERSIONS_JSON" | jq -r "[.[] | select(.version == \"$VERSION\") | .patch] | max // 0" 2>/dev/null || echo "0")
           fi
@@ -377,8 +447,8 @@ jobs:
 
           # Get current QA release 
           QA_ROW=$(snow sql -q "
-            USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }};
-            SHOW VERSIONS IN APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }};
+            USE ROLE ${{ vars.SNOWFLAKE_DEPLOY_ROLE }};
+            SHOW VERSIONS IN APPLICATION PACKAGE ${{ vars.SNOWFLAKE_APP_PACKAGE }};
           " --connection ${{ env.SNOWFLAKE_CONNECTION }} \
             | grep -i "| *QA *|" \
             | tail -1 || true)
@@ -411,10 +481,10 @@ jobs:
           echo "Updating QA release channel to version $VERSION patch $PATCH..."
 
           # First ensure version is in QA channel
-          snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; ALTER APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }} MODIFY RELEASE CHANNEL QA ADD VERSION $VERSION;" --connection ${{ env.SNOWFLAKE_CONNECTION }} 2>&1 || echo "Version may already be in QA channel (OK)"
+          snow sql -q "USE ROLE ${{ vars.SNOWFLAKE_DEPLOY_ROLE }}; ALTER APPLICATION PACKAGE ${{ vars.SNOWFLAKE_APP_PACKAGE }} MODIFY RELEASE CHANNEL QA ADD VERSION $VERSION;" --connection ${{ env.SNOWFLAKE_CONNECTION }} 2>&1 || echo "Version may already be in QA channel (OK)"
 
           # Set the release directive
-          snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; ALTER APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }} MODIFY RELEASE CHANNEL QA SET DEFAULT RELEASE DIRECTIVE VERSION=$VERSION PATCH=$PATCH;" --connection ${{ env.SNOWFLAKE_CONNECTION }}
+          snow sql -q "USE ROLE ${{ vars.SNOWFLAKE_DEPLOY_ROLE }}; ALTER APPLICATION PACKAGE ${{ vars.SNOWFLAKE_APP_PACKAGE }} MODIFY RELEASE CHANNEL QA SET DEFAULT RELEASE DIRECTIVE VERSION=$VERSION PATCH=$PATCH;" --connection ${{ env.SNOWFLAKE_CONNECTION }}
 
           echo "QA channel updated successfully"
 
@@ -436,23 +506,23 @@ jobs:
         with:
           private-key: ${{ secrets.SNOWFLAKE_PRIVATE_KEY_RAW }}
           account: ${{ secrets.SNOWFLAKE_ACCOUNT }}
-          user: ${{ secrets.SNOWFLAKE_DEPLOY_USER }}
-          role: ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}
-          warehouse: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
-          database: ${{ secrets.SNOWFLAKE_DATABASE }}
-          schema: ${{ secrets.SNOWFLAKE_SCHEMA }}
+          user: ${{ vars.SNOWFLAKE_DEPLOY_USER }}
+          role: ${{ vars.SNOWFLAKE_DEPLOY_ROLE }}
+          warehouse: ${{ vars.SNOWFLAKE_WAREHOUSE }}
+          database: ${{ vars.SNOWFLAKE_DATABASE }}
+          schema: ${{ vars.SNOWFLAKE_SCHEMA }}
           host: ${{ secrets.SNOWFLAKE_HOST }}
           login-registry: 'false'
 
       - name: Check application exists
         run: |
           set +e
-          echo "Checking for application ${{ secrets.SNOWFLAKE_APP_INSTANCE }}..."
+          echo "Checking for application ${{ vars.SNOWFLAKE_APP_INSTANCE }}..."
 
           # First set the role, then query applications separately
-          snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_ROLE }};" --connection ${{ env.SNOWFLAKE_CONNECTION }}
+          snow sql -q "USE ROLE ${{ vars.SNOWFLAKE_ROLE }};" --connection ${{ env.SNOWFLAKE_CONNECTION }}
 
-          APP_OUTPUT=$(snow sql -q "SHOW APPLICATIONS LIKE '${{ secrets.SNOWFLAKE_APP_INSTANCE }}';" \
+          APP_OUTPUT=$(snow sql -q "SHOW APPLICATIONS LIKE '${{ vars.SNOWFLAKE_APP_INSTANCE }}';" \
             --connection ${{ env.SNOWFLAKE_CONNECTION }} 2>&1)
 
           echo "Application query output:"
@@ -477,7 +547,7 @@ jobs:
           echo "Getting latest patch for version $VERSION..."
 
           # Use table format and parse with grep/awk for reliability
-          VERSIONS_TABLE=$(snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; SHOW VERSIONS IN APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }};" --connection ${{ env.SNOWFLAKE_CONNECTION }} 2>/dev/null || echo "")
+          VERSIONS_TABLE=$(snow sql -q "USE ROLE ${{ vars.SNOWFLAKE_DEPLOY_ROLE }}; SHOW VERSIONS IN APPLICATION PACKAGE ${{ vars.SNOWFLAKE_APP_PACKAGE }};" --connection ${{ env.SNOWFLAKE_CONNECTION }} 2>/dev/null || echo "")
           echo "Versions table output:"
           echo "$VERSIONS_TABLE"
 
@@ -488,7 +558,7 @@ jobs:
           # Validate patch is a number
           if [ -z "$PATCH" ] || ! [[ "$PATCH" =~ ^[0-9]+$ ]]; then
             echo "Warning: Could not parse patch number, trying JSON format..."
-            VERSIONS_JSON=$(snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}; SHOW VERSIONS IN APPLICATION PACKAGE ${{ secrets.SNOWFLAKE_APP_PACKAGE }};" --connection ${{ env.SNOWFLAKE_CONNECTION }} -o json 2>/dev/null || echo "[]")
+            VERSIONS_JSON=$(snow sql -q "USE ROLE ${{ vars.SNOWFLAKE_DEPLOY_ROLE }}; SHOW VERSIONS IN APPLICATION PACKAGE ${{ vars.SNOWFLAKE_APP_PACKAGE }};" --connection ${{ env.SNOWFLAKE_CONNECTION }} -o json 2>/dev/null || echo "[]")
             echo "JSON output: $VERSIONS_JSON"
             PATCH=$(echo "$VERSIONS_JSON" | jq -r "[.[] | select(.version == \"$VERSION\") | .patch] | max // 0" 2>/dev/null || echo "0")
           fi
@@ -499,15 +569,15 @@ jobs:
             exit 1
           fi
 
-          echo "Upgrading application ${{ secrets.SNOWFLAKE_APP_INSTANCE }} to version $VERSION patch $PATCH..."
-          snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_ROLE }}; ALTER APPLICATION ${{ secrets.SNOWFLAKE_APP_INSTANCE }} UPGRADE USING VERSION $VERSION PATCH $PATCH;" --connection ${{ env.SNOWFLAKE_CONNECTION }}
+          echo "Upgrading application ${{ vars.SNOWFLAKE_APP_INSTANCE }} to version $VERSION patch $PATCH..."
+          snow sql -q "USE ROLE ${{ vars.SNOWFLAKE_ROLE }}; ALTER APPLICATION ${{ vars.SNOWFLAKE_APP_INSTANCE }} UPGRADE USING VERSION $VERSION PATCH $PATCH;" --connection ${{ env.SNOWFLAKE_CONNECTION }}
           echo "Application upgraded successfully"
 
       - name: Restart service
         run: |
-          export SNOWFLAKE_ROLE="${{ secrets.SNOWFLAKE_ROLE }}"
-          export SNOWFLAKE_APP_INSTANCE="${{ secrets.SNOWFLAKE_APP_INSTANCE }}"
-          export SNOWFLAKE_COMPUTE_POOL="${{ secrets.SNOWFLAKE_COMPUTE_POOL }}"
+          export SNOWFLAKE_ROLE="${{ vars.SNOWFLAKE_ROLE }}"
+          export SNOWFLAKE_APP_INSTANCE="${{ vars.SNOWFLAKE_APP_INSTANCE }}"
+          export SNOWFLAKE_COMPUTE_POOL="${{ vars.SNOWFLAKE_COMPUTE_POOL }}"
           export SNOWFLAKE_CONNECTION="${{ env.SNOWFLAKE_CONNECTION }}"
           chmod +x scripts/manage-service.sh
           ./scripts/manage-service.sh
@@ -530,18 +600,18 @@ jobs:
         with:
           private-key: ${{ secrets.SNOWFLAKE_PRIVATE_KEY_RAW }}
           account: ${{ secrets.SNOWFLAKE_ACCOUNT }}
-          user: ${{ secrets.SNOWFLAKE_DEPLOY_USER }}
-          role: ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}
-          warehouse: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
-          database: ${{ secrets.SNOWFLAKE_DATABASE }}
-          schema: ${{ secrets.SNOWFLAKE_SCHEMA }}
+          user: ${{ vars.SNOWFLAKE_DEPLOY_USER }}
+          role: ${{ vars.SNOWFLAKE_DEPLOY_ROLE }}
+          warehouse: ${{ vars.SNOWFLAKE_WAREHOUSE }}
+          database: ${{ vars.SNOWFLAKE_DATABASE }}
+          schema: ${{ vars.SNOWFLAKE_SCHEMA }}
           host: ${{ secrets.SNOWFLAKE_HOST }}
           login-registry: 'false'
 
       - name: Wait for service to be ready
         run: |
-          export SNOWFLAKE_ROLE="${{ secrets.SNOWFLAKE_ROLE }}"
-          export SNOWFLAKE_APP_INSTANCE="${{ secrets.SNOWFLAKE_APP_INSTANCE }}"
+          export SNOWFLAKE_ROLE="${{ vars.SNOWFLAKE_ROLE }}"
+          export SNOWFLAKE_APP_INSTANCE="${{ vars.SNOWFLAKE_APP_INSTANCE }}"
           export SNOWFLAKE_CONNECTION="${{ env.SNOWFLAKE_CONNECTION }}"
           export MAX_ATTEMPTS=20
           chmod +x scripts/wait-for-service.sh
@@ -554,7 +624,7 @@ jobs:
           echo "Fetching application URL..."
 
           # Get raw output and debug
-          URL_OUTPUT=$(snow sql -q "USE ROLE ${{ secrets.SNOWFLAKE_ROLE }}; CALL ${{ secrets.SNOWFLAKE_APP_INSTANCE }}.app_public.app_url();" \
+          URL_OUTPUT=$(snow sql -q "USE ROLE ${{ vars.SNOWFLAKE_ROLE }}; CALL ${{ vars.SNOWFLAKE_APP_INSTANCE }}.app_public.app_url();" \
             --connection ${{ env.SNOWFLAKE_CONNECTION }} 2>&1)
 
           echo "Raw output:"
@@ -586,13 +656,13 @@ jobs:
           echo "  Branch:     ${{ github.ref_name }}"
           echo ""
           echo "Snowflake App:"
-          echo "  Package:    ${{ secrets.SNOWFLAKE_APP_PACKAGE }}"
-          echo "  Instance:   ${{ secrets.SNOWFLAKE_APP_INSTANCE }}"
+          echo "  Package:    ${{ vars.SNOWFLAKE_APP_PACKAGE }}"
+          echo "  Instance:   ${{ vars.SNOWFLAKE_APP_INSTANCE }}"
           echo ""
           echo "Infrastructure:"
-          echo "  Database:   ${{ secrets.SNOWFLAKE_DATABASE }}"
-          echo "  Schema:     ${{ secrets.SNOWFLAKE_SCHEMA }}"
-          echo "  Pool:       ${{ secrets.SNOWFLAKE_COMPUTE_POOL }}"
+          echo "  Database:   ${{ vars.SNOWFLAKE_DATABASE }}"
+          echo "  Schema:     ${{ vars.SNOWFLAKE_SCHEMA }}"
+          echo "  Pool:       ${{ vars.SNOWFLAKE_COMPUTE_POOL }}"
           echo ""
           echo "Image Tag:    ${SHORT_SHA}"
           echo ""

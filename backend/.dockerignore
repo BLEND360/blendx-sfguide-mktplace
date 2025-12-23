@@ -27,6 +27,11 @@ env/
 .coverage
 htmlcov/
 .tox/
+tests/
+
+# Alembic (migrations are converted to SQL and injected in setup.sql)
+alembic/
+alembic.ini
 
 # Node (if any)
 node_modules/
@@ -49,8 +54,9 @@ docker-compose.yml
 # Documentation
 docs/
 
-# uv cache
+# uv cache and lock file (will be regenerated)
 .uv/
+uv.lock
 
 # Logs
 *.log

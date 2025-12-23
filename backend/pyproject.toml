@@ -1,0 +1,48 @@
+[project]
+name = "blendx-backend"
+version = "0.1.0"
+description = "BlendX Marketplace Backend"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "snowflake-connector-python",
+    "snowflake-snowpark-python",
+    "pandas",
+    "numpy",
+    "fastapi",
+    "uvicorn[standard]",
+    "requests",
+    "litellm",
+    "sqlalchemy",
+    "snowflake-sqlalchemy",
+    "alembic",
+    "pydantic",
+    "pydantic-settings",
+    "crewai-tools>=0.0.1",
+    "crewai>=0.28.0",
+    "oscrypto @ git+https://github.com/wbond/oscrypto.git@d5f3437ed24257895ae1edd9e503cfb352e635a8",
+    "gunicorn",
+    "snowflake",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-cov",
+    "black",
+    "isort",
+    "mypy",
+]
+
+[tool.black]
+line-length = 88
+target-version = ["py310"]
+
+[tool.isort]
+profile = "black"
+line_length = 88
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_functions = ["test_*"]

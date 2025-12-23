@@ -1,9 +1,24 @@
 repos:
-  - repo: local
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
     hooks:
-      - id: check-migrations-sql
-        name: Check migrations.sql is updated
-        entry: scripts/hooks/check-migrations.sh
-        language: script
-        files: ^(backend/app/database/models/.*\.py|backend/alembic/versions/.*\.py)$
-        pass_filenames: false
+      - id: trailing-whitespace
+        exclude: '\.md$'
+      - id: check-yaml
+        args: [--unsafe]
+      - id: name-tests-test
+        args: [--pytest-test-first]
+        files: ^backend/tests/
+
+  - repo: https://github.com/psf/black
+    rev: 24.3.0
+    hooks:
+      - id: black
+        files: ^backend/
+
+  - repo: https://github.com/pycqa/isort
+    rev: 5.13.2
+    hooks:
+      - id: isort
+        files: ^backend/
+        args: [--profile, black]

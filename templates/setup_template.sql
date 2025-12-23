@@ -107,15 +107,21 @@ $$;
 
 GRANT USAGE ON PROCEDURE app_data.verify_migrations() TO APPLICATION ROLE app_admin;
 
-CREATE OR REPLACE PROCEDURE app_public.start_app(poolname VARCHAR)
+CREATE OR REPLACE PROCEDURE app_public.start_app(poolname VARCHAR, env_prefix VARCHAR DEFAULT '')
     RETURNS string
     LANGUAGE sql
     AS $$
 DECLARE
     migration_status VARCHAR;
     migration_verification VARCHAR;
+    app_warehouse VARCHAR;
+    eai_name VARCHAR;
+    network_rule_name VARCHAR;
 BEGIN
-        LET app_warehouse VARCHAR DEFAULT 'BLENDX_APP_WH';
+        -- Build resource names with optional environment prefix
+        app_warehouse := CASE WHEN :env_prefix = '' THEN 'BLENDX_APP_WH' ELSE :env_prefix || '_BLENDX_APP_WH' END;
+        eai_name := CASE WHEN :env_prefix = '' THEN 'blendx_serper_eai' ELSE :env_prefix || '_blendx_serper_eai' END;
+        network_rule_name := CASE WHEN :env_prefix = '' THEN 'blendx_serper_network_rule' ELSE :env_prefix || '_blendx_serper_network_rule' END;
 
         -- Verify all migrations are applied (migrations are idempotent via setup.sql DDL)
         CALL app_data.verify_migrations() INTO :migration_verification;
@@ -133,29 +139,26 @@ BEGIN
             ' MIN_NODES = 1 MAX_NODES = 3 INSTANCE_FAMILY = CPU_X64_M AUTO_RESUME = TRUE AUTO_SUSPEND_SECS = 300';
 
         -- Create network rule for Serper API access (prefixed to avoid conflicts)
-        CREATE NETWORK RULE IF NOT EXISTS app_public.blendx_serper_network_rule
-            TYPE = HOST_PORT
-            VALUE_LIST = ('google.serper.dev')
-            MODE = EGRESS;
+        EXECUTE IMMEDIATE 'CREATE NETWORK RULE IF NOT EXISTS app_public.' || network_rule_name ||
+            ' TYPE = HOST_PORT VALUE_LIST = (''google.serper.dev'') MODE = EGRESS';
 
         -- Create external access integration for Serper API (prefixed to avoid conflicts)
-        CREATE EXTERNAL ACCESS INTEGRATION IF NOT EXISTS blendx_serper_eai
-            ALLOWED_NETWORK_RULES = (app_public.blendx_serper_network_rule)
-            ENABLED = TRUE;
+        EXECUTE IMMEDIATE 'CREATE EXTERNAL ACCESS INTEGRATION IF NOT EXISTS ' || eai_name ||
+            ' ALLOWED_NETWORK_RULES = (app_public.' || network_rule_name || ') ENABLED = TRUE';
 
         -- Create the service (prefixed to avoid conflicts)
         EXECUTE IMMEDIATE 'CREATE SERVICE app_public.blendx_st_spcs IN COMPUTE POOL ' || poolname ||
             ' FROM SPECIFICATION_FILE=''/fullstack.yaml'' QUERY_WAREHOUSE=' || app_warehouse ||
-            ' EXTERNAL_ACCESS_INTEGRATIONS = (blendx_serper_eai)';
+            ' EXTERNAL_ACCESS_INTEGRATIONS = (' || eai_name || ')';
 
         GRANT USAGE ON SERVICE app_public.blendx_st_spcs TO APPLICATION ROLE app_user;
         GRANT SERVICE ROLE app_public.blendx_st_spcs!ALL_ENDPOINTS_USAGE TO APPLICATION ROLE app_user;
 
-        RETURN migration_verification || ' | ' || migration_status || '. Service started with warehouse ' || app_warehouse || '. Check status, and when ready, get URL';
+        RETURN migration_verification || ' | ' || migration_status || '. Service started with warehouse ' || app_warehouse || ' and EAI ' || eai_name || '. Check status, and when ready, get URL';
 END;
 $$;
 
-GRANT USAGE ON PROCEDURE app_public.start_app(VARCHAR) TO APPLICATION ROLE app_admin;
+GRANT USAGE ON PROCEDURE app_public.start_app(VARCHAR, VARCHAR) TO APPLICATION ROLE app_admin;
 
 CREATE OR REPLACE PROCEDURE app_public.stop_app()
     RETURNS string
