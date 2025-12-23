@@ -64,7 +64,7 @@ jobs:
           ALEMBIC_DIR="backend/alembic/versions"
           ERRORS=0
 
-          # Get all alembic migration revision IDs (from filenames like abc123_description.py)
+          # Get all alembic migration revision IDs from the Python files
           for alembic_file in "$ALEMBIC_DIR"/*.py; do
             if [ -f "$alembic_file" ]; then
               filename=$(basename "$alembic_file")
@@ -74,19 +74,30 @@ jobs:
                 continue
               fi
 
-              # Extract revision ID (first part before underscore)
-              revision_id=$(echo "$filename" | cut -d'_' -f1)
+              # Extract revision ID from inside the Python file (revision = '...' or revision: str = '...')
+              revision_id=$(grep -E "^revision\s*(:\s*str)?\s*=\s*['\"]" "$alembic_file" | sed -E "s/.*['\"]([^'\"]+)['\"].*/\1/")
 
-              # Check if corresponding SQL file exists
-              sql_file="$MIGRATIONS_DIR/${revision_id}.sql"
+              if [ -z "$revision_id" ]; then
+                echo "::warning::Could not extract revision ID from: $filename"
+                continue
+              fi
 
-              if [ ! -f "$sql_file" ]; then
-                echo "::error::Missing SQL file for migration: $filename"
-                echo "  Expected: $sql_file"
+              # Check if any SQL file contains this revision ID (in the migration header or version insert)
+              found=false
+              for sql_file in "$MIGRATIONS_DIR"/*.sql; do
+                if [ -f "$sql_file" ]; then
+                  if grep -q "Migration: $revision_id" "$sql_file" || grep -q "version_num = '$revision_id'" "$sql_file"; then
+                    echo "OK: $filename (revision: $revision_id) -> $(basename "$sql_file")"
+                    found=true
+                    break
+                  fi
+                fi
+              done
+
+              if [ "$found" = false ]; then
+                echo "::error::Missing SQL file for migration: $filename (revision: $revision_id)"
                 echo "  Run: python scripts/generate_migrations_sql.py"
                 ERRORS=$((ERRORS + 1))
-              else
-                echo "OK: $filename -> $sql_file"
               fi
             fi
           done
