@@ -102,8 +102,6 @@ CREATE TABLE IF NOT EXISTS app_data.chat_messages (
     PRIMARY KEY (id)
 );
 
-CREATE INDEX IF NOT EXISTS ix_chat_messages_chat_id ON app_data.chat_messages (chat_id);
-
 -- Mark migration as applied
 INSERT INTO app_data.alembic_version (version_num)
 SELECT '001_initial' WHERE NOT EXISTS (
