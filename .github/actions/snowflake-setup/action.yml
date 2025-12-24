@@ -79,6 +79,10 @@ runs:
           --private-key-file ${{ runner.temp }}/snowflake_jwt_key.pem \
           --no-interactive
 
+    - name: Test Snowflake connection
+      shell: bash
+      run: snow connection test --connection ${{ inputs.connection-name }}
+
     - name: Login to Snowflake Docker registry
       if: ${{ inputs.login-registry == 'true' }}
       shell: bash

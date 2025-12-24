@@ -5,6 +5,7 @@ output/**
 __pycache__/
 keys/
 */.venv/*
+.connection_test
 # Local secrets directory (mirrors SPCS /secrets structure)
 backend/secrets/
 *venv

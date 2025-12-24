@@ -12,80 +12,11 @@
 set -e  # Exit on error
 
 # ============================================
-# Script Setup
+# Load Shared Configuration
 # ============================================
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
-
-# Colors for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-CYAN='\033[0;36m'
-NC='\033[0m' # No Color
-
-# ============================================
-# Configuration - UPDATE THESE VALUES
-# ============================================
-
-SNOW_CONNECTION=${SNOW_CONNECTION:-"mkt_blendx_demo"}
-
-# CI/CD User and Role
-CICD_USER=${CICD_USER:-"MK_BLENDX_DEPLOY_USER"}
-CICD_ROLE=${CICD_ROLE:-"MK_BLENDX_DEPLOY_ROLE"}
-
-# Database objects
-DATABASE_NAME=${DATABASE_NAME:-"BLENDX_APP_DB"}
-SCHEMA_NAME=${SCHEMA_NAME:-"BLENDX_SCHEMA"}
-STAGE_NAME=${STAGE_NAME:-"APP_STAGE"}
-IMAGE_REPO_NAME=${IMAGE_REPO_NAME:-"img_repo"}
-WAREHOUSE_NAME=${WAREHOUSE_NAME:-"BLENDX_APP_WH"}
-
-# Application Package (optional - pipeline can create this)
-APP_PACKAGE_NAME=${APP_PACKAGE_NAME:-"MK_BLENDX_APP_PKG"}
-
-# Consumer role (for app installation permissions)
-APP_CONSUMER_ROLE=${APP_CONSUMER_ROLE:-"BLENDX_APP_ROLE"}
-
-# Path to public key file
-PUBLIC_KEY_FILE=${PUBLIC_KEY_FILE:-"$PROJECT_ROOT/keys/pipeline/snowflake_key.pub"}
-
-# ============================================
-# Helper Functions
-# ============================================
-
-log_step() {
-    echo ""
-    echo -e "${CYAN}========================================${NC}"
-    echo -e "${CYAN}$1${NC}"
-    echo -e "${CYAN}========================================${NC}"
-}
-
-log_info() {
-    echo -e "${GREEN}✓${NC} $1"
-}
-
-log_warning() {
-    echo -e "${YELLOW}⚠${NC} $1"
-}
-
-log_error() {
-    echo -e "${RED}✗${NC} $1"
-}
-
-run_sql() {
-    local description=$1
-    local sql=$2
-    echo -e "${BLUE}▶${NC} $description"
-    snow sql -q "$sql" --connection ${SNOW_CONNECTION}
-}
-
-run_sql_silent() {
-    local sql=$1
-    snow sql -q "$sql" --connection ${SNOW_CONNECTION} 2>/dev/null || true
-}
+source "$SCRIPT_DIR/config.sh"
 
 # ============================================
 # Pre-flight Checks
@@ -303,6 +234,26 @@ run_sql "Showing grants to CI/CD role" \
     "SHOW GRANTS TO ROLE ${CICD_ROLE};"
 
 # ============================================
+# Step 10: Get Image Repository URL
+# ============================================
+
+log_step "Step 10: Getting Configuration Info"
+
+get_snowflake_info
+
+if [ -n "$IMAGE_REPO_URL" ] && [[ "$IMAGE_REPO_URL" != "<"* ]]; then
+    log_info "Image repository URL: $IMAGE_REPO_URL"
+else
+    log_warning "Could not retrieve image repository URL automatically"
+fi
+
+if [ -n "$SNOWFLAKE_ACCOUNT_INFO" ] && [[ "$SNOWFLAKE_ACCOUNT_INFO" != "<"* ]]; then
+    log_info "Account identifier: $SNOWFLAKE_ACCOUNT_INFO"
+else
+    log_warning "Could not retrieve account info automatically"
+fi
+
+# ============================================
 # Completion Message
 # ============================================
 
@@ -310,32 +261,12 @@ echo ""
 echo "=========================================="
 echo -e "${GREEN}Provider Setup Complete!${NC}"
 echo "=========================================="
+
+print_github_config
+
 echo ""
-echo "GitHub Secrets to configure:"
-echo ""
-echo "  SNOWFLAKE_ACCOUNT: <your-account-identifier>"
-echo "  SNOWFLAKE_HOST: <your-account>.snowflakecomputing.com"
-echo "  SNOWFLAKE_PRIVATE_KEY_RAW: <content of keys/pipeline/snowflake_key.p8>"
-echo ""
-echo "GitHub Variables to configure:"
-echo ""
-echo "  SNOWFLAKE_CONNECTION: ${SNOW_CONNECTION}"
-echo "  SNOWFLAKE_DEPLOY_USER: ${CICD_USER}"
-echo "  SNOWFLAKE_DEPLOY_ROLE: ${CICD_ROLE}"
-echo "  SNOWFLAKE_WAREHOUSE: ${WAREHOUSE_NAME}"
-echo "  SNOWFLAKE_DATABASE: ${DATABASE_NAME}"
-echo "  SNOWFLAKE_SCHEMA: ${SCHEMA_NAME}"
-echo "  SNOWFLAKE_REPO: <your-image-repo-url>"
-echo "  SNOWFLAKE_APP_PACKAGE: ${APP_PACKAGE_NAME}"
-echo "  SNOWFLAKE_APP_INSTANCE: BLENDX_APP_INSTANCE"
-echo "  SNOWFLAKE_COMPUTE_POOL: <your-compute-pool>"
-echo "  SNOWFLAKE_ROLE: ${APP_CONSUMER_ROLE}"
-echo ""
-echo "To get the private key content for GitHub secret:"
-echo "  cat $PROJECT_ROOT/keys/pipeline/snowflake_key.p8"
-echo ""
-echo "Next steps:"
-echo "  1. Configure the GitHub secrets in your repository"
+echo -e "${YELLOW}Next steps:${NC}"
+echo "  1. Configure the GitHub secrets and variables in your repository"
 echo "  2. Run the 'Setup Package' workflow (manual) to create the app package and first version"
 echo "  3. Run ./setup/create-application.sh --all-envs to create the application instances"
 echo "  4. For subsequent updates, the QA/Stable pipelines will handle upgrades automatically"
