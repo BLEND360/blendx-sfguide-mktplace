@@ -109,15 +109,22 @@ run_sql_silent() {
 # Get Snowflake Account Info
 # ============================================
 get_snowflake_info() {
-    # Get image repository URL
-    IMAGE_REPO_URL=$(snow sql -q "SELECT repository_url FROM (SHOW IMAGE REPOSITORIES IN SCHEMA ${DATABASE_NAME}.${SCHEMA_NAME}) WHERE \"name\" = '${IMAGE_REPO_NAME}';" --connection ${SNOW_CONNECTION} 2>/dev/null | grep -o '[^ ]*registry.snowflakecomputing.com[^ ]*' | head -1) || true
+    # Get image repository URL - use SHOW and grep for the URL
+    local show_output
+    show_output=$(snow sql -q "SHOW IMAGE REPOSITORIES IN SCHEMA ${DATABASE_NAME}.${SCHEMA_NAME};" --connection ${SNOW_CONNECTION} 2>/dev/null) || true
+
+    # Extract URL that contains registry.snowflakecomputing.com
+    IMAGE_REPO_URL=$(echo "$show_output" | grep -oE '[a-z0-9_-]+\.registry\.snowflakecomputing\.com/[^[:space:]|]+' | head -1 | tr -d '|' | tr -d ' ') || true
 
     if [ -z "$IMAGE_REPO_URL" ]; then
         IMAGE_REPO_URL="<run: SHOW IMAGE REPOSITORIES IN SCHEMA ${DATABASE_NAME}.${SCHEMA_NAME}>"
     fi
 
     # Get Snowflake account info
-    SNOWFLAKE_ACCOUNT_INFO=$(snow sql -q "SELECT LOWER(CURRENT_ORGANIZATION_NAME() || '-' || CURRENT_ACCOUNT()) as account_id;" --connection ${SNOW_CONNECTION} 2>/dev/null | grep -E '^[a-z0-9_]+-[a-z0-9_]+$' | head -1) || true
+    local account_output
+    account_output=$(snow sql -q "SELECT LOWER(CURRENT_ORGANIZATION_NAME() || '-' || CURRENT_ACCOUNT()) as account_id;" --connection ${SNOW_CONNECTION} 2>/dev/null) || true
+
+    SNOWFLAKE_ACCOUNT_INFO=$(echo "$account_output" | grep -oE '^[a-z0-9_]+-[a-z0-9_]+$' | head -1) || true
 
     if [ -n "$SNOWFLAKE_ACCOUNT_INFO" ]; then
         SNOWFLAKE_HOST="${SNOWFLAKE_ACCOUNT_INFO}.snowflakecomputing.com"
@@ -132,13 +139,13 @@ get_snowflake_info() {
 # ============================================
 print_github_config() {
     echo ""
-    echo -e "${YELLOW}GitHub Secrets to configure:${NC}"
+    echo -e "${YELLOW}GitHub Secrets (Repository level):${NC}"
     echo ""
     echo "  SNOWFLAKE_ACCOUNT: ${SNOWFLAKE_ACCOUNT_INFO}"
     echo "  SNOWFLAKE_HOST: ${SNOWFLAKE_HOST}"
     echo "  SNOWFLAKE_PRIVATE_KEY_RAW: <content of ${PRIVATE_KEY_FILE}>"
     echo ""
-    echo -e "${YELLOW}GitHub Variables to configure:${NC}"
+    echo -e "${YELLOW}GitHub Variables (Repository level - shared):${NC}"
     echo ""
     echo "  SNOWFLAKE_CONNECTION: ${SNOW_CONNECTION}"
     echo "  SNOWFLAKE_DEPLOY_USER: ${CICD_USER}"
@@ -148,9 +155,17 @@ print_github_config() {
     echo "  SNOWFLAKE_SCHEMA: ${SCHEMA_NAME}"
     echo "  SNOWFLAKE_REPO: ${IMAGE_REPO_URL}"
     echo "  SNOWFLAKE_APP_PACKAGE: ${APP_PACKAGE_NAME}"
-    echo "  SNOWFLAKE_APP_INSTANCE: ${APP_INSTANCE_BASE}"
-    echo "  SNOWFLAKE_COMPUTE_POOL: ${COMPUTE_POOL_NAME}"
     echo "  SNOWFLAKE_ROLE: ${APP_CONSUMER_ROLE}"
+    echo ""
+    echo -e "${YELLOW}GitHub Variables (Environment: qa):${NC}"
+    echo ""
+    echo "  SNOWFLAKE_APP_INSTANCE: ${APP_INSTANCE_BASE}_QA"
+    echo "  SNOWFLAKE_COMPUTE_POOL: ${COMPUTE_POOL_NAME}_QA"
+    echo ""
+    echo -e "${YELLOW}GitHub Variables (Environment: stable):${NC}"
+    echo ""
+    echo "  SNOWFLAKE_APP_INSTANCE: ${APP_INSTANCE_BASE}_STABLE"
+    echo "  SNOWFLAKE_COMPUTE_POOL: ${COMPUTE_POOL_NAME}_STABLE"
     echo ""
     echo "To get the private key content for GitHub secret:"
     echo "  cat ${PRIVATE_KEY_FILE}"
