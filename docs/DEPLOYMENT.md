@@ -162,7 +162,17 @@ In GitHub Actions, manually run the **"Setup Package"** workflow. This is a one-
 - Registers the first version (V1)
 - Creates the QA release channel
 
-> **Note**: This workflow should only be run once for initial setup. After this, use the regular QA/Stable pipelines.
+> **⚠️ Important: Setup Package vs Deploy QA**
+>
+> | Scenario | Workflow to Use |
+> |----------|-----------------|
+> | **First time** - Package doesn't exist | Run **Setup Package** (manual trigger) |
+> | **Updates** - Package already exists | Merge to `qa` branch → **Deploy QA** runs automatically |
+>
+> **Setup Package** uses `REGISTER VERSION` which fails if the version already exists.
+> **Deploy QA** uses `ADD PATCH FOR VERSION` which creates incremental patches.
+>
+> If you accidentally run Setup Package when the package already exists, the workflow will fail at the "Register first version" step. In that case, just use Deploy QA instead by merging your changes to the `qa` branch.
 
 ### Step 5: Create Application Instances
 
@@ -188,6 +198,43 @@ You can also create instances individually:
 ```
 
 > **Note**: This script requires ACCOUNTADMIN role for granting account-level permissions to the applications.
+
+### Step 6: Activate and Configure the Application
+
+After creating the application instances, you need to activate and configure them through the Snowflake interface:
+
+1. **Open Snowflake UI**: Go to **Data Products > Apps > Installed Apps**
+2. **Select the application**: Click on `BLENDX_APP_INSTANCE_QA` (or the corresponding instance)
+3. **Activate the app and grant permissions**: The app will request the necessary permissions. Click **Grant** for each required permission
+4. **Configure the secret** (if required by the app):
+   - Switch to role ACCOUNTADMIN
+   - Go to the **Connections** tab
+   - Press Configure and create or select an existing secret for API credentials
+   - The secret should contain the necessary authentication tokens
+![](./images/config_secret.png)
+5. **Activate the app**: Click the **Activate** button to start the application services
+6. **Verify activation**:
+   - Wait for the status to show "Active"
+   - Check that the service endpoint is accessible
+7. **Start the application**: Once the app is active, execute the start procedure with the environment prefix:
+   ```sql
+   USE ROLE BLENDX_APP_ROLE;
+   CALL BLENDX_APP_INSTANCE_QA.APP_PUBLIC.START_APP('QA');
+   ```
+   For the STABLE environment:
+   ```sql
+   CALL BLENDX_APP_INSTANCE_STABLE.APP_PUBLIC.START_APP('STABLE');
+   ```
+   The procedure automatically creates all resources with the environment prefix:
+   - Compute pool: `{PREFIX}_BLENDX_APP_COMPUTE_POOL`
+   - Warehouse: `{PREFIX}_BLENDX_APP_WH`
+   - External access integration: `{PREFIX}_blendx_serper_eai`
+
+Repeat these steps for each environment (QA, STABLE) as needed.
+
+> **Note**: The `production` environment does not have an application instance. It only promotes versions to the DEFAULT channel for marketplace listing.
+
+> **Note**: The first activation may take several minutes while Snowflake provisions the compute pool and starts the services.
 
 ## Pipelines Overview
 
@@ -221,6 +268,16 @@ Before building, the pipeline validates:
 6. Creates the Application Package if it doesn't exist
 7. Registers a new patch in the QA release channel
 8. Upgrades and restarts the application (if installed)
+
+> **📝 Note: Running Deploy QA before Application Instance exists**
+>
+> If you run Deploy QA before creating the Application Instance (Step 5 in Initial Setup), the pipeline will:
+> - ✅ Build and push images successfully
+> - ✅ Upload files to stage successfully
+> - ✅ Create the new patch successfully
+> - ❌ Fail at the "Upgrade Application" step (application doesn't exist)
+>
+> **This is expected behavior.** The patch is still created and available. After the pipeline fails, run `./setup/create-application.sh --all-envs` to create the application instances. Subsequent Deploy QA runs will work normally.
 
 ### Version Strategy
 

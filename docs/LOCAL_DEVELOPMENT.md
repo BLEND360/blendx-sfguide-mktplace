@@ -17,26 +17,72 @@ Copy the example environment file and configure it with your credentials:
 ```bash
 cp .env.example .env
 ```
-
-Edit `.env` and update the following variables:
-
-
-**Note**: We use `DEV_WH` warehouse and `naspcs_role` for local development to keep it separate from the production consumer setup (`APP_WH` and `nac_test`).
+Edit `.env` and set the corresponding variables.
 
 ### 2. Setup Snowflake Database
 
 Before running the application, ensure your Snowflake database is set up with the required tables.
 
-Run the local setup script:
+#### Generate the setup script
+
+First, generate the setup SQL files with your configuration:
 
 ```bash
-snow sql -f scripts/sql/local_setup.sql --connection your_connection_name
+python scripts/generate_local_setup.py \
+    --database BLENDX_APP_DEV_DB \
+    --schema APP_DATA \
+    --role BLENDX_APP_DEV_ROLE \
+    --user BLENDX_X_DEV_USER \
+    --warehouse BLENDX_APP_DEV_WH
+```
+
+This generates two files:
+- `local_setup.sql` - Full setup (database, role, grants, tables)
+- `local_migrations.sql` - Only migrations (for updating existing DB)
+
+#### JWT Authentication (auto-configured)
+
+If `keys/rsa_key.pub` exists, the script will automatically:
+- Create a service user with the same name as `--user`
+- Configure JWT authentication with the public key
+
+To generate RSA keys (if you don't have them):
+
+```bash
+openssl genrsa 2048 | openssl pkcs8 -topk8 -inform PEM -out keys/rsa_key.p8 -nocrypt
+openssl rsa -in keys/rsa_key.p8 -pubout -out keys/rsa_key.pub
+```
+
+To skip service user creation, use `--no-service-user`.
+
+#### Run the setup
+
+```bash
+snow sql -f local_setup.sql --connection your_connection_name
 ```
 
 This will create:
-- Database and schema (`spcs_app_test.app_data`)
-- Required tables (`crew_execution_results`, `crew_executions`, `workflows`)
-- Necessary grants
+- Database and schema
+- Role with appropriate grants (including Snowflake Cortex)
+- All required tables (from Alembic migrations)
+- Optional service user with JWT auth
+
+#### Updating an existing database
+
+When new migrations are added, regenerate and run only the migrations:
+
+```bash
+# Regenerate files (to get latest migrations)
+python scripts/generate_local_setup.py \
+    --database MY_DEV_DB \
+    --schema APP_DATA \
+    --role MY_DEV_ROLE \
+    --user MY_USERNAME \
+    --warehouse MY_DEV_WH
+
+# Apply only migrations
+snow sql -f local_migrations.sql --connection your_connection_name
+```
 
 ## Running the Application
 
@@ -202,9 +248,16 @@ If ports 8000, 8080, or 8081 are already in use:
 
 ### Database tables don't exist
 
-Run the setup script:
+Generate and run the setup script:
 ```bash
-snow sql -f scripts/sql/local_setup.sql --connection your_connection_name
+python scripts/generate_local_setup.py \
+    --database MY_DEV_DB \
+    --schema APP_DATA \
+    --role MY_DEV_ROLE \
+    --user MY_USERNAME \
+    --warehouse MY_DEV_WH
+
+snow sql -f local_setup.sql --connection your_connection_name
 ```
 
 ## Architecture
