@@ -107,13 +107,13 @@ def upgrade() -> None:
         sa.Column('updated_at', sa.DateTime(), server_default=sa.text('CURRENT_TIMESTAMP()')),
     )
 
-    # Create index on chat_messages.chat_id for faster lookups
-    op.create_index('ix_chat_messages_chat_id', 'chat_messages', ['chat_id'])
+    # Note: Secondary indexes are not supported on standard Snowflake tables
+    # (only on Hybrid Tables). Snowflake uses micro-partitioning for query optimization.
 
 
 def downgrade() -> None:
     # Drop tables in reverse order due to foreign key dependencies
-    op.drop_index('ix_chat_messages_chat_id', 'chat_messages')
+    # Note: Index was removed (not supported on standard Snowflake tables)
     op.drop_table('chat_messages')
     op.drop_table('workflows')
     op.drop_table('agent_executions')
