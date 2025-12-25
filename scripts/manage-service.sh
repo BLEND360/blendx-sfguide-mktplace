@@ -3,7 +3,7 @@
 # Configuration - can be overridden via environment variables
 ROLE="${SNOWFLAKE_ROLE:-BLENDX_APP_ROLE}"
 APP_INSTANCE="${SNOWFLAKE_APP_INSTANCE:-BLENDX_APP_INSTANCE}"
-COMPUTE_POOL="${SNOWFLAKE_COMPUTE_POOL:-BLENDX_APP_COMPUTE_POOL}"
+ENV_PREFIX="${SNOWFLAKE_ENV_PREFIX:-}"
 CONNECTION="${SNOWFLAKE_CONNECTION:-mkt_blendx_demo}"
 
 echo "============================================"
@@ -11,13 +11,17 @@ echo "Managing SPCS Service"
 echo "============================================"
 echo "Role: $ROLE"
 echo "App Instance: $APP_INSTANCE"
-echo "Compute Pool: $COMPUTE_POOL"
+echo "Environment Prefix: ${ENV_PREFIX:-<none>}"
 echo ""
 
 # Function to start the app
 start_app() {
     echo "Starting app with start_app()..."
-    snow sql -q "USE ROLE $ROLE; CALL $APP_INSTANCE.app_public.start_app('$COMPUTE_POOL');" --connection $CONNECTION
+    if [ -n "$ENV_PREFIX" ]; then
+        snow sql -q "USE ROLE $ROLE; CALL $APP_INSTANCE.app_public.start_app('$ENV_PREFIX');" --connection $CONNECTION
+    else
+        snow sql -q "USE ROLE $ROLE; CALL $APP_INSTANCE.app_public.start_app();" --connection $CONNECTION
+    fi
 }
 
 # Check if service exists and its status

@@ -25,7 +25,8 @@ dependencies = [
     "snowflake",
 ]
 
-[project.optional-dependencies]
+
+[dependency-groups]
 dev = [
     "pytest",
     "pytest-cov",
@@ -42,14 +43,6 @@ target-version = ["py310"]
 profile = "black"
 line_length = 88
 
-[tool.uv]
-dev-dependencies = [
-    "pytest",
-    "pytest-cov",
-    "black",
-    "isort",
-    "mypy",
-]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

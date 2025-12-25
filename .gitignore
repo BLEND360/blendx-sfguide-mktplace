@@ -16,6 +16,11 @@ app/src/setup.sql
 app/src/manifest.yml
 app/src/fullstack.yaml
 
+# Generated during build
+backend/requirements.txt
+local_setup.sql
+local_migrations.sql
+
 # generated docs
 docs/BlendX_Documentation.html
 docs/BlendX_Documentation.pdf

@@ -107,7 +107,7 @@ $$;
 
 GRANT USAGE ON PROCEDURE app_data.verify_migrations() TO APPLICATION ROLE app_admin;
 
-CREATE OR REPLACE PROCEDURE app_public.start_app(poolname VARCHAR, env_prefix VARCHAR DEFAULT '')
+CREATE OR REPLACE PROCEDURE app_public.start_app(env_prefix VARCHAR DEFAULT '')
     RETURNS string
     LANGUAGE sql
     AS $$
@@ -115,11 +115,13 @@ DECLARE
     migration_status VARCHAR;
     migration_verification VARCHAR;
     app_warehouse VARCHAR;
+    poolname VARCHAR;
     eai_name VARCHAR;
     network_rule_name VARCHAR;
 BEGIN
         -- Build resource names with optional environment prefix
         app_warehouse := CASE WHEN :env_prefix = '' THEN 'BLENDX_APP_WH' ELSE :env_prefix || '_BLENDX_APP_WH' END;
+        poolname := CASE WHEN :env_prefix = '' THEN 'BLENDX_APP_COMPUTE_POOL' ELSE :env_prefix || '_BLENDX_APP_COMPUTE_POOL' END;
         eai_name := CASE WHEN :env_prefix = '' THEN 'blendx_serper_eai' ELSE :env_prefix || '_blendx_serper_eai' END;
         network_rule_name := CASE WHEN :env_prefix = '' THEN 'blendx_serper_network_rule' ELSE :env_prefix || '_blendx_serper_network_rule' END;
 
@@ -154,11 +156,11 @@ BEGIN
         GRANT USAGE ON SERVICE app_public.blendx_st_spcs TO APPLICATION ROLE app_user;
         GRANT SERVICE ROLE app_public.blendx_st_spcs!ALL_ENDPOINTS_USAGE TO APPLICATION ROLE app_user;
 
-        RETURN migration_verification || ' | ' || migration_status || '. Service started with warehouse ' || app_warehouse || ' and EAI ' || eai_name || '. Check status, and when ready, get URL';
+        RETURN migration_verification || ' | ' || migration_status || '. Service started with pool ' || poolname || ', warehouse ' || app_warehouse || ' and EAI ' || eai_name || '. Check status, and when ready, get URL';
 END;
 $$;
 
-GRANT USAGE ON PROCEDURE app_public.start_app(VARCHAR, VARCHAR) TO APPLICATION ROLE app_admin;
+GRANT USAGE ON PROCEDURE app_public.start_app(VARCHAR) TO APPLICATION ROLE app_admin;
 
 CREATE OR REPLACE PROCEDURE app_public.stop_app()
     RETURNS string

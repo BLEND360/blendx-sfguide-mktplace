@@ -119,17 +119,18 @@ jobs:
     runs-on: ubuntu-latest
     environment: qa
     outputs:
-      image-tag: ${{ steps.meta.outputs.tag }}
+      image-tag: ${{ steps.build.outputs.image-tag }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Setup Snowflake
-        uses: ./.github/actions/snowflake-setup
+      - name: Build and push backend image
+        id: build
+        uses: ./.github/actions/docker-build
         with:
+          image-name: ${{ env.BACKEND_IMAGE }}
+          context: ./backend
+          snowflake-repo: ${{ vars.SNOWFLAKE_REPO }}
           private-key: ${{ secrets.SNOWFLAKE_PRIVATE_KEY_RAW }}
           account: ${{ secrets.SNOWFLAKE_ACCOUNT }}
           user: ${{ vars.SNOWFLAKE_DEPLOY_USER }}
@@ -138,40 +139,25 @@ jobs:
           database: ${{ vars.SNOWFLAKE_DATABASE }}
           schema: ${{ vars.SNOWFLAKE_SCHEMA }}
           host: ${{ secrets.SNOWFLAKE_HOST }}
-
-      - name: Generate image metadata
-        id: meta
-        run: |
-          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
-          echo "short_sha=$SHORT_SHA" >> $GITHUB_OUTPUT
-          echo "tag=${{ vars.SNOWFLAKE_REPO }}/${{ env.BACKEND_IMAGE }}:$SHORT_SHA" >> $GITHUB_OUTPUT
-
-      - name: Build and push backend image
-        uses: docker/build-push-action@v5
-        with:
-          context: ./backend
-          platforms: linux/amd64
-          tags: ${{ steps.meta.outputs.tag }}
-          push: true
-          cache-from: type=gha,scope=backend
-          cache-to: type=gha,mode=max,scope=backend
+          github-sha: ${{ github.sha }}
 
   build-frontend:
     needs: [validate]
     runs-on: ubuntu-latest
     environment: qa
     outputs:
-      image-tag: ${{ steps.meta.outputs.tag }}
+      image-tag: ${{ steps.build.outputs.image-tag }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Setup Snowflake
-        uses: ./.github/actions/snowflake-setup
+      - name: Build and push frontend image
+        id: build
+        uses: ./.github/actions/docker-build
         with:
+          image-name: ${{ env.FRONTEND_IMAGE }}
+          context: ./frontend
+          snowflake-repo: ${{ vars.SNOWFLAKE_REPO }}
           private-key: ${{ secrets.SNOWFLAKE_PRIVATE_KEY_RAW }}
           account: ${{ secrets.SNOWFLAKE_ACCOUNT }}
           user: ${{ vars.SNOWFLAKE_DEPLOY_USER }}
@@ -180,40 +166,25 @@ jobs:
           database: ${{ vars.SNOWFLAKE_DATABASE }}
           schema: ${{ vars.SNOWFLAKE_SCHEMA }}
           host: ${{ secrets.SNOWFLAKE_HOST }}
-
-      - name: Generate image metadata
-        id: meta
-        run: |
-          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
-          echo "short_sha=$SHORT_SHA" >> $GITHUB_OUTPUT
-          echo "tag=${{ vars.SNOWFLAKE_REPO }}/${{ env.FRONTEND_IMAGE }}:$SHORT_SHA" >> $GITHUB_OUTPUT
-
-      - name: Build and push frontend image
-        uses: docker/build-push-action@v5
-        with:
-          context: ./frontend
-          platforms: linux/amd64
-          tags: ${{ steps.meta.outputs.tag }}
-          push: true
-          cache-from: type=gha,scope=frontend
-          cache-to: type=gha,mode=max,scope=frontend
+          github-sha: ${{ github.sha }}
 
   build-router:
     needs: [validate]
     runs-on: ubuntu-latest
     environment: qa
     outputs:
-      image-tag: ${{ steps.meta.outputs.tag }}
+      image-tag: ${{ steps.build.outputs.image-tag }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Setup Snowflake
-        uses: ./.github/actions/snowflake-setup
+      - name: Build and push router image
+        id: build
+        uses: ./.github/actions/docker-build
         with:
+          image-name: ${{ env.ROUTER_IMAGE }}
+          context: ./router
+          snowflake-repo: ${{ vars.SNOWFLAKE_REPO }}
           private-key: ${{ secrets.SNOWFLAKE_PRIVATE_KEY_RAW }}
           account: ${{ secrets.SNOWFLAKE_ACCOUNT }}
           user: ${{ vars.SNOWFLAKE_DEPLOY_USER }}
@@ -222,23 +193,7 @@ jobs:
           database: ${{ vars.SNOWFLAKE_DATABASE }}
           schema: ${{ vars.SNOWFLAKE_SCHEMA }}
           host: ${{ secrets.SNOWFLAKE_HOST }}
-
-      - name: Generate image metadata
-        id: meta
-        run: |
-          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
-          echo "short_sha=$SHORT_SHA" >> $GITHUB_OUTPUT
-          echo "tag=${{ vars.SNOWFLAKE_REPO }}/${{ env.ROUTER_IMAGE }}:$SHORT_SHA" >> $GITHUB_OUTPUT
-
-      - name: Build and push router image
-        uses: docker/build-push-action@v5
-        with:
-          context: ./router
-          platforms: linux/amd64
-          tags: ${{ steps.meta.outputs.tag }}
-          push: true
-          cache-from: type=gha,scope=router
-          cache-to: type=gha,mode=max,scope=router
+          github-sha: ${{ github.sha }}
 
   # ============================================
   # DEPLOY-PACKAGE: Create package and register first version
@@ -289,11 +244,7 @@ jobs:
 
       - name: Generate application files from templates
         run: |
-          IMG_REPO=$(echo "${{ vars.SNOWFLAKE_REPO }}" | awk -F'/' '{print $NF}')
           python3 scripts/generate-app-files.py \
-            --database "${{ vars.SNOWFLAKE_DATABASE }}" \
-            --schema "${{ vars.SNOWFLAKE_SCHEMA }}" \
-            --img-repo "${IMG_REPO}" \
             --image-tag "${{ steps.version.outputs.short_sha }}"
 
       - name: Upload application files to Snowflake stage

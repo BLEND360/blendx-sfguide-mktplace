@@ -132,9 +132,6 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE app_data.{table} TO APPLICATION RO
 
 def main():
     parser = argparse.ArgumentParser(description='Generate application files from templates')
-    parser.add_argument('--database', required=True, help='Snowflake database')
-    parser.add_argument('--schema', required=True, help='Snowflake schema')
-    parser.add_argument('--img-repo', required=True, help='Image repository name')
     parser.add_argument('--image-tag', required=True, help='Docker image tag (SHA)')
     parser.add_argument('--output-dir', default='app/src', help='Output directory')
     parser.add_argument('--dry-run', action='store_true', help='Show what would be generated without writing files')
@@ -146,19 +143,13 @@ def main():
     if not args.dry_run:
         output_dir.mkdir(parents=True, exist_ok=True)
 
-    # Common replacements
+    # Common replacements (database, schema, and image repo are now hardcoded in templates)
     replacements = {
-        'SNOWFLAKE_DATABASE': args.database,
-        'SNOWFLAKE_SCHEMA': args.schema,
-        'SNOWFLAKE_IMG_REPO': args.img_repo,
         'IMAGE_TAG': args.image_tag,
     }
 
     mode = "[DRY-RUN] " if args.dry_run else ""
     print(f"{mode}Generating files with:")
-    print(f"  Database:  {args.database}")
-    print(f"  Schema:    {args.schema}")
-    print(f"  Img Repo:  {args.img_repo}")
     print(f"  Image Tag: {args.image_tag}")
     print()
 

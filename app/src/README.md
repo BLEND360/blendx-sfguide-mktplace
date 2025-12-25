@@ -78,7 +78,8 @@ Click on the reference and select the secret you created in the previous step.
 After activation, start the service by calling:
 
 ```sql
-CALL <app_name>.app_public.start_app('<pool_name>');
+-- For marketplace consumers (no prefix needed)
+CALL <app_name>.app_public.start_app();
 ```
 
 Check the service status:
@@ -116,11 +117,10 @@ Once the application is running, open the URL returned by `app_url()` to access 
 ```sql
 -- Replace placeholders with your actual values:
 -- <app_name>: Your application instance name
--- <pool_name>: Your compute pool name
 -- <your_role>: Your Snowflake role
 
 -- Start application
-CALL <app_name>.app_public.start_app('<pool_name>');
+CALL <app_name>.app_public.start_app();
 
 -- Get application URL
 CALL <app_name>.app_public.app_url();
