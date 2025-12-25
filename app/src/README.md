@@ -78,8 +78,10 @@ Click on the reference and select the secret you created in the previous step.
 After activation, start the service by calling:
 
 ```sql
--- For marketplace consumers (no prefix needed)
+-- For marketplace consumers 
 CALL <app_name>.app_public.start_application();
+--or setting warehouse size with MEDIUM (by default X-SMALL)
+CALL <app_name>.app_public.start_application('MEDIUM');
 ```
 
 Check the service status:
