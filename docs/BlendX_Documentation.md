@@ -336,8 +336,8 @@ If configured, the application may connect to:
 CALL <app_name>.app_public.start_app();
 
 -- For development environments with prefix
-CALL <app_name>.app_public.start_app('<env_prefix>');
--- Example: CALL my_app.app_public.start_app('QA');
+CALL <app_name>.app_public.start_app_with_prefix('<env_prefix>');
+-- Example: CALL my_app.app_public.start_app_with_prefix('QA');
 ```
 
 ### Stop Application

@@ -18,7 +18,7 @@ echo ""
 start_app() {
     echo "Starting app with start_app()..."
     if [ -n "$ENV_PREFIX" ]; then
-        snow sql -q "USE ROLE $ROLE; CALL $APP_INSTANCE.app_public.start_app('$ENV_PREFIX');" --connection $CONNECTION
+        snow sql -q "USE ROLE $ROLE; CALL $APP_INSTANCE.app_public.start_app_with_prefix('$ENV_PREFIX');" --connection $CONNECTION
     else
         snow sql -q "USE ROLE $ROLE; CALL $APP_INSTANCE.app_public.start_app();" --connection $CONNECTION
     fi

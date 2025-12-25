@@ -69,16 +69,22 @@ def generate_service_user_sql(
     public_key: str
 ) -> str:
     """Generate SQL for creating service user with JWT auth."""
-    return f"""CREATE USER IF NOT EXISTS {service_user}
+    return f"""-- Create service user for JWT authentication (used by backend)
+CREATE USER IF NOT EXISTS {service_user}
     TYPE = SERVICE
     DEFAULT_WAREHOUSE = '{warehouse}'
     DEFAULT_ROLE = '{role}'
-    COMMENT = 'Service user for local BlendX development';
+    COMMENT = 'Service user for local BlendX development with JWT auth';
 
--- Set the RSA public key
+-- Set the RSA public key for JWT authentication
 ALTER USER {service_user} SET RSA_PUBLIC_KEY='{public_key}';
 
-GRANT ROLE {role} TO USER {service_user};"""
+-- Grant the development role to the service user
+GRANT ROLE {role} TO USER {service_user};
+
+-- Note: Configure your .env file with:
+--   SNOWFLAKE_USER={service_user}
+--   SNOWFLAKE_PRIVATE_KEY_PATH=keys/rsa_key.p8"""
 
 
 def replace_placeholders(content: str, replacements: dict) -> str:
@@ -207,19 +213,26 @@ def main():
 
     args = parser.parse_args()
 
-    # Auto-detect public key file if not specified
+    # Auto-detect public key file - always check keys/rsa_key.pub unless explicitly disabled
     public_key_file = args.public_key_file
     if not public_key_file and not args.no_service_user:
         default_key_path = Path('keys/rsa_key.pub')
         if default_key_path.exists():
             public_key_file = str(default_key_path)
             print(f"Auto-detected public key: {public_key_file}")
+        else:
+            print("Note: No keys/rsa_key.pub found. Service user will not be created.")
+            print("      Generate keys with: openssl genrsa 2048 | openssl pkcs8 -topk8 -inform PEM -out keys/rsa_key.p8 -nocrypt")
+            print("                          openssl rsa -in keys/rsa_key.p8 -pubout -out keys/rsa_key.pub")
 
-    # Auto-generate service user name if key exists but no service user specified
+    # Auto-generate service user name: derive from role name (e.g., BLENDX_APP_DEV_ROLE -> BLENDX_APP_DEV_USER)
     service_user = args.service_user
     if public_key_file and not service_user and not args.no_service_user:
-        # Use the provided user name as service user
-        service_user = args.user
+        # Derive service user name from role (replace _ROLE suffix with _USER)
+        if args.role.endswith('_ROLE'):
+            service_user = args.role.replace('_ROLE', '_USER')
+        else:
+            service_user = f"{args.role}_USER"
 
     mode = "[DRY-RUN] " if args.dry_run else ""
     print(f"{mode}Generating local setup files with:")

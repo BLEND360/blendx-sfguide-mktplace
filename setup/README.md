@@ -31,7 +31,7 @@ openssl rsa -in keys/pipeline/snowflake_key.p8 -pubout -out keys/pipeline/snowfl
 # 6. Activate and configure the app in Snowflake UI
 
 # 7. Start the application
-CALL BLENDX_APP_INSTANCE_QA.APP_PUBLIC.START_APP('QA');
+CALL BLENDX_APP_INSTANCE_QA.APP_PUBLIC.START_APP_WITH_PREFIX('QA');
 ```
 
 ## Full Documentation
@@ -44,7 +44,7 @@ For complete setup instructions, configuration details, and CI/CD pipeline infor
 
 ```sql
 -- Start the application
-CALL BLENDX_APP_INSTANCE_QA.APP_PUBLIC.START_APP('QA');
+CALL BLENDX_APP_INSTANCE_QA.APP_PUBLIC.START_APP_WITH_PREFIX('QA');
 
 -- Get application URL
 CALL BLENDX_APP_INSTANCE_QA.APP_PUBLIC.APP_URL();
