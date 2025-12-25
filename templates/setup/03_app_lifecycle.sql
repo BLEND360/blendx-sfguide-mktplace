@@ -51,9 +51,9 @@ BEGIN
         EXECUTE IMMEDIATE 'CREATE COMPUTE POOL IF NOT EXISTS ' || poolname ||
             ' MIN_NODES = ' || pool_min || ' MAX_NODES = ' || pool_max || ' INSTANCE_FAMILY = CPU_X64_M AUTO_RESUME = TRUE AUTO_SUSPEND_SECS = 300';
 
-        -- Create network rule for Serper API access (prefixed to avoid conflicts)
+        -- Create network rule for Serper API and tiktoken access (prefixed to avoid conflicts)
         EXECUTE IMMEDIATE 'CREATE NETWORK RULE IF NOT EXISTS app_public.' || network_rule_name ||
-            ' TYPE = HOST_PORT VALUE_LIST = (''google.serper.dev'') MODE = EGRESS';
+            ' TYPE = HOST_PORT VALUE_LIST = (''google.serper.dev'', ''openaipublic.blob.core.windows.net'') MODE = EGRESS';
 
         -- Create external access integration for Serper API (prefixed to avoid conflicts)
         EXECUTE IMMEDIATE 'CREATE EXTERNAL ACCESS INTEGRATION IF NOT EXISTS ' || eai_name ||
