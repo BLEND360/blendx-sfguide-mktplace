@@ -82,44 +82,6 @@
             </v-btn>
 
 
-            <v-divider class="my-3"></v-divider>
-
-            <v-btn
-              color="accent"
-              block
-              class="mb-2 dark-text"
-              @click="startCrew"
-              :loading="loading"
-              :disabled="anyTestLoading"
-            >
-              <v-icon left>mdi-play</v-icon>
-              RUN TEST CREW
-            </v-btn>
-
-            <v-btn
-              color="accent"
-              block
-              class="mb-2 dark-text"
-              @click="startExternalToolCrew"
-              :loading="loadingExternal"
-              :disabled="anyTestLoading"
-            >
-              <v-icon left>mdi-tools</v-icon>
-              RUN TEST CREW EXTERNAL TOOL
-            </v-btn>
-
-            <v-btn
-              color="accent"
-              block
-              class="mb-2 dark-text"
-              @click="listCrews"
-              :loading="listingCrews"
-              :disabled="anyTestLoading"
-              dark
-            >
-              <v-icon left>mdi-format-list-bulleted</v-icon>
-              LIST TEST EXECUTIONS
-            </v-btn>
           </v-card-text>
 
           <!-- Test Results Section -->
@@ -129,36 +91,6 @@
               <v-card-subtitle class="pb-1">Test Result:</v-card-subtitle>
               <v-card-text class="pt-0">
                 <pre class="response-text small-text">{{ testResponse }}</pre>
-              </v-card-text>
-            </v-card>
-          </v-card-text>
-
-          <!-- Execution Results Table -->
-          <v-card-text v-if="crewExecutions" class="pa-3 pt-0">
-            <v-divider class="mb-3"></v-divider>
-            <v-card outlined dark class="crew-table-card">
-              <v-card-subtitle class="pb-1 white--text">Execution Results:</v-card-subtitle>
-              <v-card-text class="pt-0">
-                <v-simple-table dense dark class="crew-table">
-                  <template v-slot:default>
-                    <thead>
-                      <tr>
-                        <th class="white--text">ID</th>
-                        <th class="white--text">Status</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr v-for="exec in crewExecutions" :key="exec.execution_id">
-                        <td class="text-monospace white--text">{{ exec.execution_id.substring(0, 8) }}...</td>
-                        <td>
-                          <v-chip x-small :color="getStatusColor(exec.status)" dark>
-                            {{ exec.status }}
-                          </v-chip>
-                        </td>
-                      </tr>
-                    </tbody>
-                  </template>
-                </v-simple-table>
               </v-card-text>
             </v-card>
           </v-card-text>
@@ -536,16 +468,6 @@
             <li><strong>TEST LITELLM:</strong> Tests the LiteLLM integration</li>
             <li><strong>TEST SECRETS:</strong> Verifies that secrets (like API keys) are configured</li>
             <li><strong>TEST SERPER:</strong> Tests the Serper search API integration</li>
-          </ul>
-
-          <v-divider class="my-4"></v-divider>
-
-          <h3 class="mb-3">Crew Execution</h3>
-          <p class="mb-2">Run pre-configured AI agent crews:</p>
-          <ul class="mb-4">
-            <li><strong>RUN TEST CREW:</strong> Executes the default CrewAI workflow</li>
-            <li><strong>RUN TEST EXTERNAL TOOL:</strong> Executes a crew with external tools (like Serper)</li>
-            <li><strong>LIST TEST EXECUTIONS:</strong> Shows recent crew execution history and their status</li>
           </ul>
 
           <v-divider class="my-4"></v-divider>
@@ -1173,27 +1095,6 @@ flowchart LR
     testingSerper: false,
     testingEaiEnv: false,
 
-    // Crew states
-    loading: false,
-    loadingExternal: false,
-    listingCrews: false,
-    crewExecutions: null,
-
-    // Crew execution tracking
-    executionId: null,
-    status: null,
-    statusMessage: 'Starting crew execution...',
-    pollingInterval: null,
-    pollingAttempts: 0,
-    maxPollingAttempts: 120,
-
-    // External crew tracking
-    executionIdExternal: null,
-    statusExternal: null,
-    statusMessageExternal: 'Starting external tool crew execution...',
-    pollingIntervalExternal: null,
-    pollingAttemptsExternal: 0,
-
     // NL Generator polling
     nlPollingInterval: null,
     nlPollingAttempts: 0,
@@ -1243,8 +1144,7 @@ flowchart LR
     // Only disable test buttons when another test is running (not during workflow generation)
     anyTestLoading() {
       return this.testingCortex || this.testingLitellm || this.testingSecrets ||
-             this.testingSerper || this.testingEaiEnv || this.loading || this.loadingExternal ||
-             this.listingCrews || this.loadingHistory
+             this.testingSerper || this.testingEaiEnv || this.loadingHistory
     }
   },
 
@@ -1527,163 +1427,6 @@ flowchart LR
         this.error = "Error testing Serper: " + (error.response?.data?.detail || error.message)
       } finally {
         this.testingSerper = false
-      }
-    },
-
-    // Crew methods
-    async startCrew() {
-      this.loading = true
-      this.error = null
-      this.testResponse = null
-      this.pollingAttempts = 0
-
-      const baseUrl = process.env.VUE_APP_API_URL
-
-      try {
-        const startResponse = await axios.post(baseUrl + "/crew/start")
-        this.executionId = startResponse.data.execution_id
-        this.status = startResponse.data.status
-        this.testResponse = `Crew started: ${this.executionId.substring(0, 8)}...`
-        this.startPolling()
-      } catch (error) {
-        this.error = "Error starting crew: " + (error.response?.data?.detail || error.message)
-        this.loading = false
-      }
-    },
-
-    startPolling() {
-      this.pollingInterval = setInterval(async () => {
-        await this.checkStatus()
-      }, 5000)
-    },
-
-    stopPolling() {
-      if (this.pollingInterval) {
-        clearInterval(this.pollingInterval)
-        this.pollingInterval = null
-      }
-    },
-
-    async checkStatus() {
-      this.pollingAttempts++
-
-      if (this.pollingAttempts > this.maxPollingAttempts) {
-        this.stopPolling()
-        this.error = "Polling timeout"
-        this.loading = false
-        return
-      }
-
-      const baseUrl = process.env.VUE_APP_API_URL
-
-      try {
-        const statusResponse = await axios.get(baseUrl + `/crew/status/${this.executionId}`)
-        const data = statusResponse.data
-
-        if (data.status === 'COMPLETED') {
-          this.stopPolling()
-          this.testResponse = `Crew completed!\n${data.result?.raw || JSON.stringify(data.result, null, 2)}`
-          this.loading = false
-        } else if (data.status === 'ERROR') {
-          this.stopPolling()
-          this.error = data.error || 'Unknown error'
-          this.loading = false
-        } else {
-          this.testResponse = `Crew processing... (${this.pollingAttempts * 5}s)`
-        }
-      } catch (error) {
-        this.stopPolling()
-        this.error = "Error checking status: " + (error.response?.data?.detail || error.message)
-        this.loading = false
-      }
-    },
-
-    async startExternalToolCrew() {
-      this.loadingExternal = true
-      this.error = null
-      this.testResponse = null
-      this.pollingAttemptsExternal = 0
-
-      const baseUrl = process.env.VUE_APP_API_URL
-
-      try {
-        const startResponse = await axios.post(baseUrl + "/crew/start-external-tool")
-        this.executionIdExternal = startResponse.data.execution_id
-        this.statusExternal = startResponse.data.status
-        this.testResponse = `External crew started: ${this.executionIdExternal.substring(0, 8)}...`
-        this.startPollingExternal()
-      } catch (error) {
-        this.error = "Error starting external crew: " + (error.response?.data?.detail || error.message)
-        this.loadingExternal = false
-      }
-    },
-
-    startPollingExternal() {
-      this.pollingIntervalExternal = setInterval(async () => {
-        await this.checkStatusExternal()
-      }, 5000)
-    },
-
-    stopPollingExternal() {
-      if (this.pollingIntervalExternal) {
-        clearInterval(this.pollingIntervalExternal)
-        this.pollingIntervalExternal = null
-      }
-    },
-
-    async checkStatusExternal() {
-      this.pollingAttemptsExternal++
-
-      if (this.pollingAttemptsExternal > this.maxPollingAttempts) {
-        this.stopPollingExternal()
-        this.error = "Polling timeout"
-        this.loadingExternal = false
-        return
-      }
-
-      const baseUrl = process.env.VUE_APP_API_URL
-
-      try {
-        const statusResponse = await axios.get(baseUrl + `/crew/status/${this.executionIdExternal}`)
-        const data = statusResponse.data
-
-        if (data.status === 'COMPLETED') {
-          this.stopPollingExternal()
-          this.testResponse = `External crew completed!\n${data.result?.raw || JSON.stringify(data.result, null, 2)}`
-          this.loadingExternal = false
-        } else if (data.status === 'ERROR') {
-          this.stopPollingExternal()
-          this.error = data.error || 'Unknown error'
-          this.loadingExternal = false
-        } else {
-          this.testResponse = `External crew processing... (${this.pollingAttemptsExternal * 5}s)`
-        }
-      } catch (error) {
-        this.stopPollingExternal()
-        this.error = "Error checking status: " + (error.response?.data?.detail || error.message)
-        this.loadingExternal = false
-      }
-    },
-
-    async listCrews() {
-      this.listingCrews = true
-      this.error = null
-      this.testResponse = null
-      this.crewExecutions = null
-
-      const baseUrl = process.env.VUE_APP_API_URL
-
-      try {
-        const response = await axios.get(baseUrl + "/crew/executions?limit=10&is_test=true")
-        if (response.data.executions) {
-          this.crewExecutions = response.data.executions
-        } else {
-          this.error = "No executions found"
-        }
-      } catch (error) {
-        this.error = "Error listing crews: " + (error.response?.data?.detail || error.message)
-      } finally {
-        this.listingCrews = false
       }
     },
 
@@ -2123,8 +1866,6 @@ flowchart LR
   },
 
   beforeDestroy() {
-    this.stopPolling()
-    this.stopPollingExternal()
     this.stopNLPolling()
     this.stopEphemeralPolling()
   }
