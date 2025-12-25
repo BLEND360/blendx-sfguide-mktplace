@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.database.db import get_db
 from app.handlers.lite_llm_handler import get_llm
-from app.utils.spcs_helper import get_serper_api_key, get_secret, get_effective_warehouse, _LOCAL_SECRETS_DIR
+from app.utils.spcs_helper import get_serper_api_key, _LOCAL_SECRETS_DIR
 
 router = APIRouter(tags=["Health"])
 logger = logging.getLogger(__name__)
@@ -48,189 +48,29 @@ async def health():
     return health_info
 
 @router.get("/test-cortex")
-async def test_cortex_default(db: Session = Depends(get_db)):
+async def test_cortex(db: Session = Depends(get_db)):
     """
-    Test 1: Cortex SIN USE WAREHOUSE - usa el warehouse por defecto de la conexión.
+    Test Cortex LLM connection.
     """
-    logger.info("Testing Cortex (sin USE WAREHOUSE)")
+    logger.info("Testing Cortex")
 
     try:
         test_prompt = "Say 'Hello, Cortex is working!' in exactly those words."
         query = text("SELECT SNOWFLAKE.CORTEX.COMPLETE('claude-3-5-sonnet', :prompt) as response")
 
-        logger.info("Executing Cortex SQL query WITHOUT USE WAREHOUSE")
         result = db.execute(query, {"prompt": test_prompt}).fetchone()
 
         if result and result[0]:
             return {
                 "status": "success",
-                "message": "Cortex funciona SIN USE WAREHOUSE (usa warehouse por defecto)",
+                "message": "Cortex is working",
                 "response": result[0],
-                "method": "direct_query",
             }
         else:
             return {"status": "error", "message": "Empty response", "response": None}
 
     except Exception as e:
-        logger.error(f"❌ Cortex test failed: {str(e)}", exc_info=True)
-        return {
-            "status": "error",
-            "message": f"Failed: {str(e)}",
-            "error_type": type(e).__name__,
-        }
-
-
-@router.get("/test-cortex-with-warehouse")
-async def test_cortex_with_warehouse(db: Session = Depends(get_db)):
-    """
-    Test 2: Cortex CON USE WAREHOUSE ejecutado por separado.
-    """
-    logger.info("Testing Cortex (con USE WAREHOUSE separado)")
-
-    try:
-        warehouse = get_effective_warehouse()
-        if not warehouse:
-            return {"status": "error", "message": "No warehouse configured"}
-
-        # Ejecutar USE WAREHOUSE primero (statement separado)
-        logger.info(f"Executing USE WAREHOUSE {warehouse}")
-        db.execute(text(f"USE WAREHOUSE {warehouse}"))
-
-        # Luego ejecutar Cortex
-        test_prompt = "Say 'Hello, Cortex is working!' in exactly those words."
-        query = text("SELECT SNOWFLAKE.CORTEX.COMPLETE('claude-3-5-sonnet', :prompt) as response")
-
-        logger.info("Executing Cortex SQL query after USE WAREHOUSE")
-        result = db.execute(query, {"prompt": test_prompt}).fetchone()
-
-        if result and result[0]:
-            return {
-                "status": "success",
-                "message": f"Cortex funciona CON USE WAREHOUSE {warehouse}",
-                "response": result[0],
-                "warehouse_used": warehouse,
-                "method": "use_warehouse_then_query",
-            }
-        else:
-            return {"status": "error", "message": "Empty response", "response": None}
-
-    except Exception as e:
-        logger.error(f"❌ Cortex test failed: {str(e)}", exc_info=True)
-        return {
-            "status": "error",
-            "message": f"Failed: {str(e)}",
-            "error_type": type(e).__name__,
-        }
-
-
-@router.get("/test-cortex-check-warehouse")
-async def test_cortex_check_warehouse(db: Session = Depends(get_db)):
-    """
-    Test 3: Verificar qué warehouse está activo en la sesión actual.
-    """
-    logger.info("Checking current warehouse")
-
-    try:
-        # Verificar warehouse actual
-        result = db.execute(text("SELECT CURRENT_WAREHOUSE()")).fetchone()
-        current_warehouse = result[0] if result else None
-
-        # Verificar rol actual
-        result_role = db.execute(text("SELECT CURRENT_ROLE()")).fetchone()
-        current_role = result_role[0] if result_role else None
-
-        # Verificar usuario
-        result_user = db.execute(text("SELECT CURRENT_USER()")).fetchone()
-        current_user = result_user[0] if result_user else None
-
-        # Verificar database
-        result_db = db.execute(text("SELECT CURRENT_DATABASE()")).fetchone()
-        current_db = result_db[0] if result_db else None
-
-        # Warehouse configurado en env
-        configured_warehouse = get_effective_warehouse()
-
-        return {
-            "status": "success",
-            "current_warehouse": current_warehouse,
-            "current_role": current_role,
-            "current_user": current_user,
-            "current_database": current_db,
-            "configured_warehouse_env": configured_warehouse,
-            "warehouse_matches": current_warehouse == configured_warehouse if current_warehouse else False,
-        }
-
-    except Exception as e:
-        logger.error(f"❌ Check warehouse failed: {str(e)}", exc_info=True)
-        return {
-            "status": "error",
-            "message": f"Failed: {str(e)}",
-            "error_type": type(e).__name__,
-        }
-
-
-@router.get("/test-cortex-simple-query")
-async def test_cortex_simple_query(db: Session = Depends(get_db)):
-    """
-    Test 4: Query simple SIN Cortex para verificar que la conexión funciona.
-    """
-    logger.info("Testing simple query (no Cortex)")
-
-    try:
-        result = db.execute(text("SELECT 1 + 1 as test_result")).fetchone()
-
-        if result:
-            return {
-                "status": "success",
-                "message": "Conexión a Snowflake funciona",
-                "result": result[0],
-            }
-        else:
-            return {"status": "error", "message": "No result"}
-
-    except Exception as e:
-        logger.error(f"❌ Simple query failed: {str(e)}", exc_info=True)
-        return {
-            "status": "error",
-            "message": f"Failed: {str(e)}",
-            "error_type": type(e).__name__,
-        }
-
-
-@router.get("/test-cortex-list-models")
-async def test_cortex_list_models(db: Session = Depends(get_db)):
-    """
-    Test 5: Listar modelos disponibles en Cortex.
-    """
-    logger.info("Listing Cortex models")
-
-    try:
-        # Primero verificar warehouse
-        wh_result = db.execute(text("SELECT CURRENT_WAREHOUSE()")).fetchone()
-        current_wh = wh_result[0] if wh_result else None
-
-        # Si no hay warehouse, intentar setear uno
-        if not current_wh:
-            warehouse = get_effective_warehouse()
-            if warehouse:
-                db.execute(text(f"USE WAREHOUSE {warehouse}"))
-                current_wh = warehouse
-
-        # Intentar listar modelos (esto puede fallar si no hay permisos)
-        try:
-            result = db.execute(text("SHOW CORTEX MODELS")).fetchall()
-            models = [row[0] for row in result] if result else []
-        except Exception:
-            models = ["No se pudo listar modelos - puede que no haya permisos"]
-
-        return {
-            "status": "success",
-            "current_warehouse": current_wh,
-            "models": models,
-        }
-
-    except Exception as e:
-        logger.error(f"❌ List models failed: {str(e)}", exc_info=True)
+        logger.error(f"Cortex test failed: {str(e)}", exc_info=True)
         return {
             "status": "error",
             "message": f"Failed: {str(e)}",
