@@ -27,6 +27,12 @@ GRANT USAGE ON SCHEMA app_data TO APPLICATION ROLE app_user;
 -- =============================================================================
 
 -- =============================================================================
+-- TABLE PERMISSIONS
+-- =============================================================================
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA app_data TO APPLICATION ROLE app_admin;
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA app_data TO APPLICATION ROLE app_user;
+
+-- =============================================================================
 -- MIGRATION PROCEDURES
 -- =============================================================================
 
