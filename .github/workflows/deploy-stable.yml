@@ -75,64 +75,62 @@ jobs:
           host: ${{ secrets.SNOWFLAKE_HOST }}
           login-registry: 'false'
 
-      - name: Validate QA has versions
+      - name: Validate QA default release directive exists
         run: |
-          echo "Validating QA release channel has versions..."
+          echo "Validating QA default release directive exists..."
 
-          QA_ROW=$(snow sql -q "
+          QA_DEFAULT=$(snow sql -q "
             USE ROLE ${{ vars.SNOWFLAKE_DEPLOY_ROLE }};
-            SHOW VERSIONS IN APPLICATION PACKAGE ${{ vars.SNOWFLAKE_APP_PACKAGE }};
+            SHOW RELEASE DIRECTIVES
+            IN APPLICATION PACKAGE ${{ vars.SNOWFLAKE_APP_PACKAGE }};
           " --connection ${{ env.SNOWFLAKE_CONNECTION }} \
             | grep -i "| *QA *|" \
-            | tail -1 || true)
+            | grep -i "| *true *|" || true)
 
-          if [ -z "$QA_ROW" ]; then
-            echo "::error::No versions found in QA release channel. Deploy to QA first."
+          if [ -z "$QA_DEFAULT" ]; then
+            echo "::error::No default release directive found for QA. Promote a version to QA first."
             exit 1
           fi
 
-          echo "QA release channel has at least one version"
+          echo "QA default release directive found"
 
-      - name: Detect version and patch from QA channel
+      - name: Detect version and patch from QA default release directive
         id: detect_version
         run: |
-          echo "Detecting latest version from QA channel..."
+          echo "Detecting QA default release directive..."
 
-          VERSIONS_TABLE=$(snow sql -q "
+          DIRECTIVES=$(snow sql -q "
             USE ROLE ${{ vars.SNOWFLAKE_DEPLOY_ROLE }};
-            SHOW VERSIONS IN APPLICATION PACKAGE ${{ vars.SNOWFLAKE_APP_PACKAGE }};
-          " --connection ${{ env.SNOWFLAKE_CONNECTION }} 2>/dev/null || echo "")
+            SHOW RELEASE DIRECTIVES
+            IN APPLICATION PACKAGE ${{ vars.SNOWFLAKE_APP_PACKAGE }};
+          " --connection ${{ env.SNOWFLAKE_CONNECTION }})
 
-          echo "Versions table:"
-          echo "$VERSIONS_TABLE"
+          echo "Release directives:"
+          echo "$DIRECTIVES"
 
-          # Find the latest QA version (last row with QA in release_channel_name)
-          QA_ROW=$(echo "$VERSIONS_TABLE" | grep -i "| *QA *|" | tail -1)
+          QA_ROW=$(echo "$DIRECTIVES" \
+            | grep -i "| *QA *|" \
+            | grep -i "| *true *|")
 
           if [ -z "$QA_ROW" ]; then
-            echo "::error::No versions found in QA release channel."
+            echo "::error::Could not find QA default release directive."
             exit 1
           fi
 
-          # Parse version and patch from pipe-separated format
           VERSION=$(echo "$QA_ROW" | awk -F'|' '{gsub(/^[ \t]+|[ \t]+$/, "", $2); print $2}')
           PATCH=$(echo "$QA_ROW" | awk -F'|' '{gsub(/^[ \t]+|[ \t]+$/, "", $3); print $3}')
 
           if [ -z "$VERSION" ] || [ -z "$PATCH" ]; then
-            echo "::error::Could not parse version/patch from QA channel"
+            echo "::error::Failed to parse version/patch from QA default release directive."
             exit 1
           fi
 
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "patch=$PATCH" >> $GITHUB_OUTPUT
 
-          echo "=========================================="
-          echo "Promotion Configuration:"
+          echo "QA default directive:"
           echo "  Version: $VERSION"
-          echo "  Patch: $PATCH"
-          echo "  Source: QA"
-          echo "  Target: STABLE"
-          echo "=========================================="
+          echo "  Patch:   $PATCH"
 
       - name: Validate STABLE release monotonicity
         run: |

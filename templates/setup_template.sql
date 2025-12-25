@@ -120,10 +120,10 @@ DECLARE
     network_rule_name VARCHAR;
     wh_size VARCHAR;
 BEGIN
-        -- Build resource names with optional environment prefix
-        poolname := CASE WHEN :env_prefix = '' THEN 'BLENDX_APP_COMPUTE_POOL' ELSE :env_prefix || '_BLENDX_APP_COMPUTE_POOL' END;
-        eai_name := CASE WHEN :env_prefix = '' THEN 'blendx_serper_eai' ELSE :env_prefix || '_blendx_serper_eai' END;
-        network_rule_name := CASE WHEN :env_prefix = '' THEN 'blendx_serper_network_rule' ELSE :env_prefix || '_blendx_serper_network_rule' END;
+        -- Build resource names with optional environment prefix (all uppercase for consistency)
+        poolname := CASE WHEN :env_prefix = '' THEN 'BLENDX_APP_COMPUTE_POOL' ELSE UPPER(:env_prefix) || '_BLENDX_APP_COMPUTE_POOL' END;
+        eai_name := CASE WHEN :env_prefix = '' THEN 'BLENDX_SERPER_EAI' ELSE UPPER(:env_prefix) || '_BLENDX_SERPER_EAI' END;
+        network_rule_name := CASE WHEN :env_prefix = '' THEN 'BLENDX_SERPER_NETWORK_RULE' ELSE UPPER(:env_prefix) || '_BLENDX_SERPER_NETWORK_RULE' END;
 
         -- Default warehouse size to X-SMALL if not provided
         wh_size := CASE WHEN :warehouse_size = '' OR :warehouse_size IS NULL THEN 'X-SMALL' ELSE :warehouse_size END;

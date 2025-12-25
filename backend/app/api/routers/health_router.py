@@ -57,31 +57,11 @@ async def test_cortex(db: Session = Depends(get_db)):
     logger.info("Testing Cortex connection via SQL")
 
     try:
-        # Check current warehouse - in SPCS the QUERY_WAREHOUSE is already set
-        current_wh_result = db.execute(text("SELECT CURRENT_WAREHOUSE()")).fetchone()
-        current_warehouse = current_wh_result[0] if current_wh_result else None
-        logger.info(f"Current warehouse from session: {current_warehouse}")
-
-        # Only try to USE WAREHOUSE if none is active
-        if not current_warehouse:
-            warehouse = os.getenv("SNOWFLAKE_WAREHOUSE")
-            if warehouse:
-                logger.info(f"No active warehouse, setting: {warehouse}")
-                try:
-                    db.execute(text(f"USE WAREHOUSE {warehouse}"))
-                except Exception as wh_err:
-                    logger.warning(f"Could not set warehouse {warehouse}: {wh_err}")
-        else:
-            logger.info(f"Using existing warehouse: {current_warehouse}")
-
+        warehouse = os.getenv("SNOWFLAKE_WAREHOUSE", "BLENDX_APP_WH")
         test_prompt = "Say 'Hello, Cortex is working!' in exactly those words."
 
-        query = text("""
-            SELECT SNOWFLAKE.CORTEX.COMPLETE(
-                'claude-3-5-sonnet',
-                :prompt
-            ) as response
-        """)
+        logger.info(f"Using warehouse: {warehouse}")
+        query = text(f"USE WAREHOUSE {warehouse}; SELECT SNOWFLAKE.CORTEX.COMPLETE('claude-3-5-sonnet', :prompt) as response")
 
         logger.info(f"Executing Cortex SQL query with prompt: {test_prompt}")
         result = db.execute(query, {"prompt": test_prompt}).fetchone()
