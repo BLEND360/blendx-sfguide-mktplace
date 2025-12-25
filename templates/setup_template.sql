@@ -157,11 +157,10 @@ BEGIN
         EXECUTE IMMEDIATE 'CREATE EXTERNAL ACCESS INTEGRATION IF NOT EXISTS ' || eai_name ||
             ' ALLOWED_NETWORK_RULES = (app_public.' || network_rule_name || ') ENABLED = TRUE';
 
-        -- Create the service with warehouse name injected as environment variable
+        -- Create the service (warehouse is passed via QUERY_WAREHOUSE, backend detects it via CURRENT_WAREHOUSE())
         EXECUTE IMMEDIATE 'CREATE SERVICE app_public.blendx_st_spcs IN COMPUTE POOL ' || poolname ||
             ' FROM SPECIFICATION_FILE=''/fullstack.yaml'' QUERY_WAREHOUSE=' || wh_name ||
-            ' EXTERNAL_ACCESS_INTEGRATIONS = (' || eai_name || ')' ||
-            ' SERVICE_ENV = (SNOWFLAKE_WAREHOUSE = ''' || wh_name || ''')';
+            ' EXTERNAL_ACCESS_INTEGRATIONS = (' || eai_name || ')';
 
         GRANT USAGE ON SERVICE app_public.blendx_st_spcs TO APPLICATION ROLE app_user;
         GRANT SERVICE ROLE app_public.blendx_st_spcs!ALL_ENDPOINTS_USAGE TO APPLICATION ROLE app_user;

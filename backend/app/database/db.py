@@ -144,12 +144,18 @@ def create_snowflake_engine():
         # The token contains account and host information
         # Only pass account/host if they're explicitly set (for local testing)
         url_params = {
-            "warehouse": settings.snowflake_warehouse,
             "database": settings.snowflake_database,
             "schema": settings.snowflake_schema,
             "authenticator": "oauth",
             "token": oauth_token,
         }
+
+        # Only include warehouse if explicitly set
+        # If not set, SPCS will use the QUERY_WAREHOUSE from CREATE SERVICE
+        if settings.snowflake_warehouse and settings.snowflake_warehouse.strip():
+            url_params["warehouse"] = settings.snowflake_warehouse
+        else:
+            logger.info("SNOWFLAKE_WAREHOUSE not set, will use QUERY_WAREHOUSE from service definition")
 
         # Only include account/host if they're non-empty (for local OAuth testing)
         # Empty strings should not be passed to avoid DNS resolution errors
@@ -159,7 +165,7 @@ def create_snowflake_engine():
             url_params["host"] = settings.snowflake_host
 
         logger.info(f"Creating OAuth connection with params: {list(url_params.keys())}")
-        logger.info(f"Database: {url_params.get('database')}, Schema: {url_params.get('schema')}, Warehouse: {url_params.get('warehouse')}")
+        logger.info(f"Database: {url_params.get('database')}, Schema: {url_params.get('schema')}, Warehouse: {url_params.get('warehouse', 'from QUERY_WAREHOUSE')}")
 
         engine = create_engine(
             URL(**url_params),
