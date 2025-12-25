@@ -27,20 +27,14 @@ def setup_logging():
                 "formatter": "standard",
                 "level": settings.log_level,
             },
-            "file": {
-                "class": "logging.FileHandler",
-                "formatter": "standard",
-                "level": settings.log_level,
-                "filename": "app.log",
-            },
         },
         "root": {
-            "handlers": ["console", "file"],
+            "handlers": ["console"],
             "level": settings.log_level,
         },
         "loggers": {
             "app": {
-                "handlers": ["console", "file"],
+                "handlers": ["console"],
                 "level": settings.log_level,
                 "propagate": False,
             },

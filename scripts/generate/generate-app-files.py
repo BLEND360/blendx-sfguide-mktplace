@@ -67,14 +67,14 @@ def generate_setup_sql(
     if not Path(migrations_sql_path).exists():
         raise GenerationError(
             f"Migrations SQL file not found: {migrations_sql_path}\n"
-            "Run 'python scripts/generate_migrations_sql.py' first to generate it."
+            "Run 'python scripts/generate/generate_migrations_sql.py' first to generate it."
         )
 
     # Read migrations manifest for metadata
     if not Path(migrations_manifest_path).exists():
         raise GenerationError(
             f"Migrations manifest not found: {migrations_manifest_path}\n"
-            "Run 'python scripts/generate_migrations_sql.py' first to generate it."
+            "Run 'python scripts/generate/generate_migrations_sql.py' first to generate it."
         )
 
     with open(migrations_sql_path, 'r') as f:
@@ -174,7 +174,7 @@ def main():
         print("Generating migrations SQL from Alembic...")
         import subprocess
         result = subprocess.run(
-            ['python3', 'scripts/generate_migrations_sql.py'],
+            ['python3', 'scripts/generate/generate_migrations_sql.py'],
             capture_output=True,
             text=True
         )

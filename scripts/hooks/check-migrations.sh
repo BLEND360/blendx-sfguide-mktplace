@@ -23,7 +23,7 @@ echo "   Modified files:"
 git diff --cached --name-only | grep -E "^(backend/app/database/models/|backend/alembic/versions/).*\.py$" | sed 's/^/     - /'
 echo ""
 echo "   To update migrations SQL, run:"
-echo "     python scripts/generate_migrations_sql.py"
+echo "     python scripts/generate/generate_migrations_sql.py"
 echo ""
 echo "   Then stage the updated files:"
 echo "     git add scripts/sql/migrations.sql scripts/sql/migrations/ scripts/sql/migrations_manifest.json"

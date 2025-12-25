@@ -450,7 +450,7 @@ When you need to modify the database schema:
 3. **Review the generated file** in `backend/alembic/versions/` and adjust if needed
 4. **Regenerate SQL**:
    ```bash
-   python scripts/generate_migrations_sql.py
+   python scripts/generate/generate_migrations_sql.py
    ```
 5. **Commit** the model changes, migration file, AND generated SQL files
 
@@ -482,7 +482,7 @@ From the project root:
 
 | Command | Description |
 |---------|-------------|
-| `python scripts/generate_migrations_sql.py` | Regenerate SQL from Alembic migrations |
+| `python scripts/generate/generate_migrations_sql.py` | Regenerate SQL from Alembic migrations |
 
 ### Migration Files Reference
 
@@ -491,7 +491,7 @@ From the project root:
 | `backend/alembic/` | Alembic configuration directory |
 | `backend/alembic/versions/` | Migration scripts (Python) |
 | `backend/app/database/models/` | SQLAlchemy models (source of truth) |
-| `scripts/generate_migrations_sql.py` | Converts Alembic migrations to SQL |
+| `scripts/generate/generate_migrations_sql.py` | Converts Alembic migrations to SQL |
 | `scripts/sql/migrations/` | Individual SQL migration files |
 | `scripts/sql/migrations.sql` | Combined SQL (auto-generated) |
 | `scripts/sql/migrations_manifest.json` | Migration metadata |
@@ -515,7 +515,7 @@ This validation runs in the `validate` job of `deploy-qa.yml` and checks:
 
 If validation fails, run:
 ```bash
-python scripts/generate_migrations_sql.py
+python scripts/generate/generate_migrations_sql.py
 ```
 
 Then commit the generated SQL files before pushing again.

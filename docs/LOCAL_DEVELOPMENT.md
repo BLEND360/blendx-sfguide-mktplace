@@ -28,7 +28,7 @@ Before running the application, ensure your Snowflake database is set up with th
 First, generate the setup SQL files with your configuration:
 
 ```bash
-python scripts/generate_local_setup.py \
+python scripts/generate/generate_local_setup.py \
     --database BLENDX_APP_DEV_DB \
     --schema APP_DATA \
     --role BLENDX_APP_DEV_ROLE \
@@ -73,7 +73,7 @@ When new migrations are added, regenerate and run only the migrations:
 
 ```bash
 # Regenerate files (to get latest migrations)
-python scripts/generate_local_setup.py \
+python scripts/generate/generate_local_setup.py \
     --database MY_DEV_DB \
     --schema APP_DATA \
     --role MY_DEV_ROLE \
@@ -90,17 +90,17 @@ Before running with Docker Compose, you need to build the images. Use the build 
 
 ```bash
 # Build backend only (default)
-./scripts/build-local.sh
+./scripts/dev/build-local.sh
 
 # Build all images
-./scripts/build-local.sh --all
+./scripts/dev/build-local.sh --all
 
 # Build specific images
-./scripts/build-local.sh --frontend
-./scripts/build-local.sh --router
+./scripts/dev/build-local.sh --frontend
+./scripts/dev/build-local.sh --router
 
 # Build with custom tag
-./scripts/build-local.sh --all --tag v1.0
+./scripts/dev/build-local.sh --all --tag v1.0
 ```
 
 The script will:
@@ -128,52 +128,52 @@ docker-compose up -d
 For development without Docker, you can use the local development script:
 
 ```bash
-./scripts/run-local.sh
+./scripts/dev/run-local.sh
 ```
 
 #### Available Options:
 
 - `--skip-setup` - Skip dependency installation (useful if dependencies are already installed)
   ```bash
-  ./scripts/run-local.sh --skip-setup
+  ./scripts/dev/run-local.sh --skip-setup
   ```
 
 - `--backend-only` - Run only the backend server
   ```bash
-  ./scripts/run-local.sh --backend-only
+  ./scripts/dev/run-local.sh --backend-only
   ```
 
 - `--frontend-only` - Run only the frontend
   ```bash
-  ./scripts/run-local.sh --frontend-only
+  ./scripts/dev/run-local.sh --frontend-only
   ```
 
 - `--backend-port N` - Set a custom backend port (default: 8081)
   ```bash
-  ./scripts/run-local.sh --backend-port 3000
+  ./scripts/dev/run-local.sh --backend-port 3000
   ```
 
 - `--frontend-port N` - Set a custom frontend port (default: 8080)
   ```bash
-  ./scripts/run-local.sh --frontend-port 5000
+  ./scripts/dev/run-local.sh --frontend-port 5000
   ```
 
 - `-h, --help` - Show help message
   ```bash
-  ./scripts/run-local.sh --help
+  ./scripts/dev/run-local.sh --help
   ```
 
 #### Combining Options:
 
 ```bash
 # Run only backend on port 3000, skip setup
-./scripts/run-local.sh --backend-only --backend-port 3000 --skip-setup
+./scripts/dev/run-local.sh --backend-only --backend-port 3000 --skip-setup
 
 # Run both services with custom ports
-./scripts/run-local.sh --backend-port 9000 --frontend-port 3000
+./scripts/dev/run-local.sh --backend-port 9000 --frontend-port 3000
 
 # Run only frontend on custom port
-./scripts/run-local.sh --frontend-only --frontend-port 4000
+./scripts/dev/run-local.sh --frontend-only --frontend-port 4000
 ```
 
 **Note**: When using `run-local.sh`, the services will run directly on your machine without Docker. Make sure you have Python 3, Node.js, and npm installed.
@@ -273,7 +273,7 @@ If ports 8000, 8080, or 8081 are already in use:
 
 Generate and run the setup script:
 ```bash
-python scripts/generate_local_setup.py \
+python scripts/generate/generate_local_setup.py \
     --database MY_DEV_DB \
     --schema APP_DATA \
     --role MY_DEV_ROLE \

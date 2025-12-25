@@ -95,7 +95,7 @@ jobs:
 
               if [ "$found" = false ]; then
                 echo "::error::Missing SQL file for migration: $filename (revision: $revision_id)"
-                echo "  Run: python scripts/generate_migrations_sql.py"
+                echo "  Run: python scripts/generate/generate_migrations_sql.py"
                 ERRORS=$((ERRORS + 1))
               fi
             fi
@@ -104,7 +104,7 @@ jobs:
           if [ $ERRORS -gt 0 ]; then
             echo ""
             echo "::error::Found $ERRORS Alembic migrations without corresponding SQL files."
-            echo "Run 'python scripts/generate_migrations_sql.py' to generate the SQL files."
+            echo "Run 'python scripts/generate/generate_migrations_sql.py' to generate the SQL files."
             exit 1
           fi
 
@@ -314,7 +314,7 @@ jobs:
 
       - name: Generate application files from templates
         run: |
-          python3 scripts/generate-app-files.py \
+          python3 scripts/generate/generate-app-files.py \
             --image-tag "${{ steps.version.outputs.short_sha }}"
 
       - name: Upload application files to Snowflake stage
@@ -545,8 +545,8 @@ jobs:
           export SNOWFLAKE_COMPUTE_POOL="${{ vars.SNOWFLAKE_COMPUTE_POOL }}"
           export SNOWFLAKE_CONNECTION="${{ env.SNOWFLAKE_CONNECTION }}"
           export SNOWFLAKE_ENV_PREFIX="QA"
-          chmod +x scripts/manage-service.sh
-          ./scripts/manage-service.sh
+          chmod +x scripts/deploy/manage-service.sh
+          ./scripts/deploy/manage-service.sh
 
   # ============================================
   # VERIFY: Wait for service and get URL
@@ -580,8 +580,8 @@ jobs:
           export SNOWFLAKE_APP_INSTANCE="${{ vars.SNOWFLAKE_APP_INSTANCE }}"
           export SNOWFLAKE_CONNECTION="${{ env.SNOWFLAKE_CONNECTION }}"
           export MAX_ATTEMPTS=20
-          chmod +x scripts/wait-for-service.sh
-          ./scripts/wait-for-service.sh
+          chmod +x scripts/deploy/wait-for-service.sh
+          ./scripts/deploy/wait-for-service.sh
 
       - name: Get Application URL
         id: url
