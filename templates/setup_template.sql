@@ -179,7 +179,7 @@ $$;
 GRANT USAGE ON PROCEDURE app_public.start_app() TO APPLICATION ROLE app_admin;
 
 -- Public wrapper: start_app(env_prefix) - uses prefixed resource names
-CREATE OR REPLACE PROCEDURE app_public.start_app(env_prefix VARCHAR)
+CREATE OR REPLACE PROCEDURE app_public.start_app_with_prefix(env_prefix VARCHAR)
     RETURNS string
     LANGUAGE sql
     AS $$

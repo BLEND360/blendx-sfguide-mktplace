@@ -24,3 +24,7 @@ local_migrations.sql
 # generated docs
 docs/BlendX_Documentation.html
 docs/BlendX_Documentation.pdf
+
+# generated scripts
+local_setup.sql
+local_migrations.sql

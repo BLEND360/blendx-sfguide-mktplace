@@ -15,7 +15,7 @@ This guide explains how to run BlendX locally using Docker Compose.
 Copy the example environment file and configure it with your credentials:
 
 ```bash
-cp .env.example .env
+cp backend/.env.example backend/.env
 ```
 Edit `.env` and set the corresponding variables.
 
@@ -32,7 +32,7 @@ python scripts/generate_local_setup.py \
     --database BLENDX_APP_DEV_DB \
     --schema APP_DATA \
     --role BLENDX_APP_DEV_ROLE \
-    --user BLENDX_X_DEV_USER \
+    --user BLENDX_DEV_USER \
     --warehouse BLENDX_APP_DEV_WH
 ```
 

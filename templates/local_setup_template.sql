@@ -74,14 +74,15 @@ GRANT USAGE ON WAREHOUSE {{WAREHOUSE}} TO ROLE {{ROLE}};
 GRANT ROLE {{ROLE}} TO USER {{USER}};
 
 -- =============================================================================
--- STEP 3: CREATE SERVICE USER WITH JWT AUTH (Optional)
+-- STEP 3: CREATE SERVICE USER WITH JWT AUTH
 -- =============================================================================
--- Generate RSA keys if you don't have them:
+-- The backend uses JWT authentication with a service user.
+-- If keys/rsa_key.pub exists, a service user is automatically created.
+--
+-- To generate RSA keys (if not already present):
+--   mkdir -p keys
 --   openssl genrsa 2048 | openssl pkcs8 -topk8 -inform PEM -out keys/rsa_key.p8 -nocrypt
 --   openssl rsa -in keys/rsa_key.p8 -pubout -out keys/rsa_key.pub
---
--- Then run with --service-user and --public-key-file options:
---   python scripts/generate_local_setup.py ... --service-user MY_SVC_USER --public-key-file keys/rsa_key.pub
 -- =============================================================================
 
 {{SERVICE_USER_SQL}}

@@ -239,11 +239,11 @@ After creating the application instances, you need to activate and configure the
 7. **Start the application**: Once the app is active, execute the start procedure with the environment prefix:
    ```sql
    USE ROLE BLENDX_APP_ROLE;
-   CALL BLENDX_APP_INSTANCE_QA.APP_PUBLIC.START_APP('QA');
+   CALL BLENDX_APP_INSTANCE_QA.APP_PUBLIC.START_APP_WITH_PREFIX('QA');
    ```
    For the STABLE environment:
    ```sql
-   CALL BLENDX_APP_INSTANCE_STABLE.APP_PUBLIC.START_APP('STABLE');
+   CALL BLENDX_APP_INSTANCE_STABLE.APP_PUBLIC.START_APP_WITH_PREFIX('STABLE');
    ```
    The procedure automatically creates all resources with the environment prefix:
    - Compute pool: `{PREFIX}_BLENDX_APP_COMPUTE_POOL`
