@@ -2,7 +2,35 @@
 
 This guide explains how to set up and use the automatic CI/CD deployment pipeline for the BlendX Marketplace application.
 
+
 ## Branch Flow
+
+### Image Tagging Strategy
+
+Docker images are **built only once** in the `qa` pipeline and **never rebuilt** for `stable` or `main`.
+
+**Tagging rules:**
+
+- **Primary tag (immutable)**:  
+  - `sha-<git_commit_sha>`  
+  - Used as the real source of truth and always referenced by the application package.
+- **Environment alias tag**:  
+  - `qa`  
+  - Updated on every QA build to point to the latest QA-tested image.
+
+**What we intentionally do NOT do:**
+
+- ❌ No image builds on `develop`
+- ❌ No `stable` or `prod` image tags
+- ❌ No retagging on `stable → main` merges
+
+**Why this matters:**
+
+- Guarantees **artifact immutability** across QA → STABLE → PROD
+- Ensures production runs **the exact same image** validated in QA
+- Avoids ambiguity caused by environment-based tags drifting over time
+
+Promotion between environments is done exclusively via **Snowflake release channels**, not Docker tags.
 
 ```mermaid
 flowchart LR

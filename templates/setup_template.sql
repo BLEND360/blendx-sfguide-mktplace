@@ -139,6 +139,10 @@ BEGIN
             'AUTO_RESUME = TRUE ' ||
             'INITIALLY_SUSPENDED = TRUE';
 
+        -- Grant usage on warehouse to application roles so SPCS service can use it
+        GRANT USAGE ON WAREHOUSE BLENDX_APP_WH TO APPLICATION ROLE app_admin;
+        GRANT USAGE ON WAREHOUSE BLENDX_APP_WH TO APPLICATION ROLE app_user;
+
         -- Create compute pool if it doesn't exist
         EXECUTE IMMEDIATE 'CREATE COMPUTE POOL IF NOT EXISTS ' || poolname ||
             ' MIN_NODES = 1 MAX_NODES = 3 INSTANCE_FAMILY = CPU_X64_M AUTO_RESUME = TRUE AUTO_SUSPEND_SECS = 300';
