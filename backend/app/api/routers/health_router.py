@@ -57,6 +57,12 @@ async def test_cortex(db: Session = Depends(get_db)):
     logger.info("Testing Cortex connection via SQL")
 
     try:
+        # Ensure warehouse is active for the session
+        warehouse = os.getenv("SNOWFLAKE_WAREHOUSE")
+        if warehouse:
+            logger.info(f"Setting active warehouse: {warehouse}")
+            db.execute(text(f"USE WAREHOUSE {warehouse}"))
+
         test_prompt = "Say 'Hello, Cortex is working!' in exactly those words."
 
         query = text("""
