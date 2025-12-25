@@ -137,6 +137,9 @@ CALL <app_name>.app_public.get_service_logs('eap-frontend', 200);
 -- Stop application
 CALL <app_name>.app_public.stop_app();
 
+-- Destroy application (removes service completely)
+CALL <app_name>.app_public.destroy_app();
+
 -- View recent crew executions
 CALL <app_name>.app_public.get_recent_crew_executions(10);
 ```
