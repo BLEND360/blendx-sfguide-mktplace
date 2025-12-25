@@ -118,12 +118,14 @@ DECLARE
     poolname VARCHAR;
     eai_name VARCHAR;
     network_rule_name VARCHAR;
+    wh_name VARCHAR;
     wh_size VARCHAR;
 BEGIN
         -- Build resource names with optional environment prefix (all uppercase for consistency)
         poolname := CASE WHEN :env_prefix = '' THEN 'BLENDX_APP_COMPUTE_POOL' ELSE UPPER(:env_prefix) || '_BLENDX_APP_COMPUTE_POOL' END;
         eai_name := CASE WHEN :env_prefix = '' THEN 'BLENDX_SERPER_EAI' ELSE UPPER(:env_prefix) || '_BLENDX_SERPER_EAI' END;
         network_rule_name := CASE WHEN :env_prefix = '' THEN 'BLENDX_SERPER_NETWORK_RULE' ELSE UPPER(:env_prefix) || '_BLENDX_SERPER_NETWORK_RULE' END;
+        wh_name := CASE WHEN :env_prefix = '' THEN 'BLENDX_APP_WH' ELSE UPPER(:env_prefix) || '_BLENDX_APP_WH' END;
 
         -- Default warehouse size to X-SMALL if not provided
         wh_size := CASE WHEN :warehouse_size = '' OR :warehouse_size IS NULL THEN 'X-SMALL' ELSE :warehouse_size END;
@@ -132,16 +134,16 @@ BEGIN
         CALL app_data.verify_migrations() INTO :migration_verification;
         CALL app_data.get_migration_status() INTO :migration_status;
 
-        -- First, create the application warehouse (unique name to avoid conflicts)
-        EXECUTE IMMEDIATE 'CREATE WAREHOUSE IF NOT EXISTS BLENDX_APP_WH ' ||
-            'WAREHOUSE_SIZE = ''' || wh_size || ''' ' ||
+        -- First, create the application warehouse (unique name per app to avoid conflicts)
+        EXECUTE IMMEDIATE 'CREATE WAREHOUSE IF NOT EXISTS ' || wh_name ||
+            ' WAREHOUSE_SIZE = ''' || wh_size || ''' ' ||
             'AUTO_SUSPEND = 60 ' ||
             'AUTO_RESUME = TRUE ' ||
             'INITIALLY_SUSPENDED = TRUE';
 
         -- Grant usage on warehouse to application roles so SPCS service can use it
-        GRANT USAGE ON WAREHOUSE BLENDX_APP_WH TO APPLICATION ROLE app_admin;
-        GRANT USAGE ON WAREHOUSE BLENDX_APP_WH TO APPLICATION ROLE app_user;
+        EXECUTE IMMEDIATE 'GRANT USAGE ON WAREHOUSE ' || wh_name || ' TO APPLICATION ROLE app_admin';
+        EXECUTE IMMEDIATE 'GRANT USAGE ON WAREHOUSE ' || wh_name || ' TO APPLICATION ROLE app_user';
 
         -- Create compute pool if it doesn't exist
         EXECUTE IMMEDIATE 'CREATE COMPUTE POOL IF NOT EXISTS ' || poolname ||
@@ -155,15 +157,16 @@ BEGIN
         EXECUTE IMMEDIATE 'CREATE EXTERNAL ACCESS INTEGRATION IF NOT EXISTS ' || eai_name ||
             ' ALLOWED_NETWORK_RULES = (app_public.' || network_rule_name || ') ENABLED = TRUE';
 
-        -- Create the service (prefixed to avoid conflicts)
+        -- Create the service with warehouse name injected as environment variable
         EXECUTE IMMEDIATE 'CREATE SERVICE app_public.blendx_st_spcs IN COMPUTE POOL ' || poolname ||
-            ' FROM SPECIFICATION_FILE=''/fullstack.yaml'' QUERY_WAREHOUSE=BLENDX_APP_WH' ||
-            ' EXTERNAL_ACCESS_INTEGRATIONS = (' || eai_name || ')';
+            ' FROM SPECIFICATION_FILE=''/fullstack.yaml'' QUERY_WAREHOUSE=' || wh_name ||
+            ' EXTERNAL_ACCESS_INTEGRATIONS = (' || eai_name || ')' ||
+            ' SERVICE_ENV = (SNOWFLAKE_WAREHOUSE = ''' || wh_name || ''')';
 
         GRANT USAGE ON SERVICE app_public.blendx_st_spcs TO APPLICATION ROLE app_user;
         GRANT SERVICE ROLE app_public.blendx_st_spcs!ALL_ENDPOINTS_USAGE TO APPLICATION ROLE app_user;
 
-        RETURN migration_verification || ' | ' || migration_status || '. Service started with pool ' || poolname || ', warehouse BLENDX_APP_WH (' || wh_size || ')' || ' and EAI ' || eai_name || '. Check status, and when ready, get URL';
+        RETURN migration_verification || ' | ' || migration_status || '. Service started with pool ' || poolname || ', warehouse ' || wh_name || ' (' || wh_size || ')' || ' and EAI ' || eai_name || '. Check status, and when ready, get URL';
 END;
 $$;
 
@@ -266,17 +269,54 @@ END
 $$;
 GRANT USAGE ON PROCEDURE app_public.update_service() TO APPLICATION ROLE app_admin;
 
+-- Internal procedure with env_prefix parameter for destroy (use destroy_app wrapper instead)
+CREATE OR REPLACE PROCEDURE app_public.destroy_app_internal(env_prefix VARCHAR)
+    RETURNS string
+    LANGUAGE sql
+    AS
+$$
+DECLARE
+    wh_name VARCHAR;
+BEGIN
+    -- Build warehouse name with optional environment prefix (all uppercase for consistency)
+    wh_name := CASE WHEN :env_prefix = '' THEN 'BLENDX_APP_WH' ELSE UPPER(:env_prefix) || '_BLENDX_APP_WH' END;
+
+    DROP SERVICE IF EXISTS app_public.blendx_st_spcs;
+    EXECUTE IMMEDIATE 'DROP WAREHOUSE IF EXISTS ' || wh_name;
+    RETURN 'Service and warehouse ' || wh_name || ' destroyed';
+END
+$$;
+GRANT USAGE ON PROCEDURE app_public.destroy_app_internal(VARCHAR) TO APPLICATION ROLE app_admin;
+
+-- Public wrapper: destroy_app() - destroys service and default warehouse
 CREATE OR REPLACE PROCEDURE app_public.destroy_app()
     RETURNS string
     LANGUAGE sql
     AS
 $$
+DECLARE
+    result VARCHAR;
 BEGIN
-    DROP SERVICE IF EXISTS app_public.blendx_st_spcs;
-    RETURN 'Service destroyed';
+    CALL app_public.destroy_app_internal('') INTO :result;
+    RETURN result;
 END
 $$;
 GRANT USAGE ON PROCEDURE app_public.destroy_app() TO APPLICATION ROLE app_admin;
+
+-- Public wrapper: destroy_app_with_prefix(env_prefix) - destroys service and prefixed warehouse
+CREATE OR REPLACE PROCEDURE app_public.destroy_app_with_prefix(env_prefix VARCHAR)
+    RETURNS string
+    LANGUAGE sql
+    AS
+$$
+DECLARE
+    result VARCHAR;
+BEGIN
+    CALL app_public.destroy_app_internal(:env_prefix) INTO :result;
+    RETURN result;
+END
+$$;
+GRANT USAGE ON PROCEDURE app_public.destroy_app_with_prefix(VARCHAR) TO APPLICATION ROLE app_admin;
 
 CREATE OR REPLACE PROCEDURE app_public.app_url()
     RETURNS string

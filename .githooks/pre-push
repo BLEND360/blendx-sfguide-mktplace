@@ -1,0 +1,93 @@
+#!/bin/bash
+# Pre-push hook: Ensures qa and stable branches are only updated via merge commits
+# Install: git config core.hooksPath .githooks
+
+set -e
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m' # No Color
+
+while read local_ref local_sha remote_ref remote_sha; do
+    # Extract branch name from ref
+    branch=$(echo "$remote_ref" | sed 's|refs/heads/||')
+
+    # Only validate qa and stable branches
+    if [[ "$branch" != "qa" && "$branch" != "stable" ]]; then
+        continue
+    fi
+
+    # Determine the source branch
+    if [[ "$branch" == "qa" ]]; then
+        source_branch="develop"
+    elif [[ "$branch" == "stable" ]]; then
+        source_branch="qa"
+    fi
+
+    echo -e "${YELLOW}Validating push to '$branch'...${NC}"
+
+    # Skip if deleting branch
+    if [[ "$local_sha" == "0000000000000000000000000000000000000000" ]]; then
+        continue
+    fi
+
+    # Fetch latest from origin
+    git fetch origin "$source_branch" --quiet 2>/dev/null || true
+
+    # Check 1: Source branch HEAD must be ancestor of the branch being pushed
+    source_head=$(git rev-parse "origin/$source_branch" 2>/dev/null || echo "")
+
+    if [[ -z "$source_head" ]]; then
+        echo -e "${RED}Error: Could not find origin/$source_branch${NC}"
+        echo "Make sure to fetch the latest changes first."
+        exit 1
+    fi
+
+    if ! git merge-base --is-ancestor "$source_head" "$local_sha"; then
+        echo -e "${RED}Error: '$branch' is missing commits from '$source_branch'.${NC}"
+        echo ""
+        echo "You must merge '$source_branch' into '$branch' first:"
+        echo "  git checkout $branch"
+        echo "  git merge origin/$source_branch"
+        echo "  git push"
+        exit 1
+    fi
+
+    # Check 2: The HEAD commit must be a merge commit (has 2 parents)
+    # or the branch must have a recent merge from source
+    parent_count=$(git rev-list --parents -n 1 "$local_sha" | wc -w)
+    parent_count=$((parent_count - 1))  # Subtract 1 for the commit itself
+
+    if [[ "$parent_count" -lt 2 ]]; then
+        # Not a merge commit - check if there's a merge in the history since diverging from remote
+        if [[ "$remote_sha" != "0000000000000000000000000000000000000000" ]]; then
+            merge_commits=$(git log --merges --oneline "$remote_sha..$local_sha" 2>/dev/null | head -n 1)
+        else
+            merge_commits=$(git log --merges --oneline "$local_sha" -1 2>/dev/null)
+        fi
+
+        if [[ -z "$merge_commits" ]]; then
+            echo -e "${RED}Error: Push to '$branch' blocked.${NC}"
+            echo ""
+            echo "'$branch' must be updated via merge commit from '$source_branch'."
+            echo "Direct commits to '$branch' are not allowed."
+            echo ""
+            echo "To fix this:"
+            echo "  1. Make your changes on '$source_branch' first"
+            echo "  2. Then merge into '$branch':"
+            echo "     git checkout $source_branch"
+            echo "     git cherry-pick <your-commits>"
+            echo "     git push origin $source_branch"
+            echo "     git checkout $branch"
+            echo "     git merge origin/$source_branch"
+            echo "     git push"
+            exit 1
+        fi
+    fi
+
+    echo -e "${GREEN}✓ '$branch' is properly updated via merge from '$source_branch'${NC}"
+done
+
+exit 0
