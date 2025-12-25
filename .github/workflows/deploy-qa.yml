@@ -544,6 +544,7 @@ jobs:
           export SNOWFLAKE_APP_INSTANCE="${{ vars.SNOWFLAKE_APP_INSTANCE }}"
           export SNOWFLAKE_COMPUTE_POOL="${{ vars.SNOWFLAKE_COMPUTE_POOL }}"
           export SNOWFLAKE_CONNECTION="${{ env.SNOWFLAKE_CONNECTION }}"
+          export SNOWFLAKE_ENV_PREFIX="QA"
           chmod +x scripts/manage-service.sh
           ./scripts/manage-service.sh
 

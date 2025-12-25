@@ -107,7 +107,8 @@ $$;
 
 GRANT USAGE ON PROCEDURE app_data.verify_migrations() TO APPLICATION ROLE app_admin;
 
-CREATE OR REPLACE PROCEDURE app_public.start_app(env_prefix VARCHAR DEFAULT '')
+-- Internal procedure with env_prefix parameter (use start_app wrapper instead)
+CREATE OR REPLACE PROCEDURE app_public.start_app_internal(env_prefix VARCHAR)
     RETURNS string
     LANGUAGE sql
     AS $$
@@ -160,7 +161,37 @@ BEGIN
 END;
 $$;
 
-GRANT USAGE ON PROCEDURE app_public.start_app(VARCHAR DEFAULT '') TO APPLICATION ROLE app_admin;
+GRANT USAGE ON PROCEDURE app_public.start_app_internal(VARCHAR) TO APPLICATION ROLE app_admin;
+
+-- Public wrapper: start_app() - uses default resource names
+CREATE OR REPLACE PROCEDURE app_public.start_app()
+    RETURNS string
+    LANGUAGE sql
+    AS $$
+DECLARE
+    result VARCHAR;
+BEGIN
+    CALL app_public.start_app_internal('') INTO :result;
+    RETURN result;
+END;
+$$;
+
+GRANT USAGE ON PROCEDURE app_public.start_app() TO APPLICATION ROLE app_admin;
+
+-- Public wrapper: start_app(env_prefix) - uses prefixed resource names
+CREATE OR REPLACE PROCEDURE app_public.start_app(env_prefix VARCHAR)
+    RETURNS string
+    LANGUAGE sql
+    AS $$
+DECLARE
+    result VARCHAR;
+BEGIN
+    CALL app_public.start_app_internal(:env_prefix) INTO :result;
+    RETURN result;
+END;
+$$;
+
+GRANT USAGE ON PROCEDURE app_public.start_app(VARCHAR) TO APPLICATION ROLE app_admin;
 
 CREATE OR REPLACE PROCEDURE app_public.stop_app()
     RETURNS string
