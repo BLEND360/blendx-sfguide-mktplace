@@ -57,7 +57,14 @@ async def test_cortex(db: Session = Depends(get_db)):
     logger.info("Testing Cortex connection via SQL")
 
     try:
-        warehouse = os.getenv("SNOWFLAKE_WAREHOUSE", "BLENDX_APP_WH")
+        # Get warehouse from env var, or detect from current session (QUERY_WAREHOUSE)
+        warehouse = os.getenv("SNOWFLAKE_WAREHOUSE", "").strip()
+        if not warehouse:
+            # Get warehouse from current session (set by QUERY_WAREHOUSE in CREATE SERVICE)
+            result = db.execute(text("SELECT CURRENT_WAREHOUSE()")).fetchone()
+            warehouse = result[0] if result and result[0] else None
+            logger.info(f"Detected warehouse from session: {warehouse}")
+
         test_prompt = "Say 'Hello, Cortex is working!' in exactly those words."
 
         logger.info(f"Using warehouse: {warehouse}")
