@@ -84,6 +84,29 @@ python scripts/generate_local_setup.py \
 snow sql -f local_migrations.sql --connection your_connection_name
 ```
 
+## Building Docker Images Locally
+
+Before running with Docker Compose, you need to build the images. Use the build script:
+
+```bash
+# Build backend only (default)
+./scripts/build-local.sh
+
+# Build all images
+./scripts/build-local.sh --all
+
+# Build specific images
+./scripts/build-local.sh --frontend
+./scripts/build-local.sh --router
+
+# Build with custom tag
+./scripts/build-local.sh --all --tag v1.0
+```
+
+The script will:
+1. Generate `requirements.txt` from `pyproject.toml` (for backend)
+2. Build the Docker images with `linux/amd64` platform
+
 ## Running the Application
 
 ### Option 1: Using Docker Compose

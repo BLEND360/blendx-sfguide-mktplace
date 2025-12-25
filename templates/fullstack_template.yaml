@@ -1,11 +1,11 @@
 spec:
   containers:
     - name: eap-frontend
-      image: /{{SNOWFLAKE_DATABASE}}/{{SNOWFLAKE_SCHEMA}}/{{SNOWFLAKE_IMG_REPO}}/eap_frontend:{{IMAGE_TAG}}
+      image: /BLENDX_APP_DB/BLENDX_SCHEMA/images/eap_frontend:{{IMAGE_TAG}}
       env:
         VUE_APP_API_URL: /api
     - name: eap-backend
-      image: /{{SNOWFLAKE_DATABASE}}/{{SNOWFLAKE_SCHEMA}}/{{SNOWFLAKE_IMG_REPO}}/eap_backend:{{IMAGE_TAG}}
+      image: /BLENDX_APP_DB/BLENDX_SCHEMA/images/eap_backend:{{IMAGE_TAG}}
       env:
         ENVIRONMENT: PRODUCTION
         SNOWFLAKE_AUTHMETHOD: oauth
@@ -17,13 +17,18 @@ spec:
         WORKFLOWS_SCHEMA: app_data
         CREWAI_DISABLE_TELEMETRY: true
         OTEL_SDK_DISABLED: true
+        # Gunicorn configuration
+        GUNICORN_WORKERS: "4"
+        GUNICORN_THREADS: "4"
+        GUNICORN_TIMEOUT: "0"
+        GUNICORN_KEEPALIVE: "650"
       secrets:
         - snowflakeSecret:
             objectReference: serper_api_key
           directoryPath: /secrets/serper
 
     - name: eap-router
-      image: /{{SNOWFLAKE_DATABASE}}/{{SNOWFLAKE_SCHEMA}}/{{SNOWFLAKE_IMG_REPO}}/eap_router:{{IMAGE_TAG}}
+      image: /BLENDX_APP_DB/BLENDX_SCHEMA/images/eap_router:{{IMAGE_TAG}}
       env:
         FE_SERVER: 127.0.0.1:8080
         BE_SERVER: 127.0.0.1:8081

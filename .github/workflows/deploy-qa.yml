@@ -311,11 +311,7 @@ jobs:
 
       - name: Generate application files from templates
         run: |
-          IMG_REPO=$(echo "${{ vars.SNOWFLAKE_REPO }}" | awk -F'/' '{print $NF}')
           python3 scripts/generate-app-files.py \
-            --database "${{ vars.SNOWFLAKE_DATABASE }}" \
-            --schema "${{ vars.SNOWFLAKE_SCHEMA }}" \
-            --img-repo "${IMG_REPO}" \
             --image-tag "${{ steps.version.outputs.short_sha }}"
 
       - name: Upload application files to Snowflake stage
