@@ -157,7 +157,7 @@ BEGIN
 
         -- Create network rule for Serper API access (prefixed to avoid conflicts)
         EXECUTE IMMEDIATE 'CREATE NETWORK RULE IF NOT EXISTS app_public.' || network_rule_name ||
-            ' TYPE = HOST_PORT VALUE_LIST = (''google.serper.dev'') MODE = EGRESS';
+            ' TYPE = HOST_PORT VALUE_LIST = (''google.serper.dev:443'') MODE = EGRESS';
 
         -- Create external access integration for Serper API (prefixed to avoid conflicts)
         EXECUTE IMMEDIATE 'CREATE EXTERNAL ACCESS INTEGRATION IF NOT EXISTS ' || eai_name ||

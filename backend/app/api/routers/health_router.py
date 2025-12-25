@@ -80,7 +80,7 @@ async def test_cortex_default(db: Session = Depends(get_db)):
         }
 
 
-@router.get("/test-cortex/with-warehouse")
+@router.get("/test-cortex-with-warehouse")
 async def test_cortex_with_warehouse(db: Session = Depends(get_db)):
     """
     Test 2: Cortex CON USE WAREHOUSE ejecutado por separado.
@@ -123,7 +123,7 @@ async def test_cortex_with_warehouse(db: Session = Depends(get_db)):
         }
 
 
-@router.get("/test-cortex/check-warehouse")
+@router.get("/test-cortex-check-warehouse")
 async def test_cortex_check_warehouse(db: Session = Depends(get_db)):
     """
     Test 3: Verificar qué warehouse está activo en la sesión actual.
@@ -169,7 +169,7 @@ async def test_cortex_check_warehouse(db: Session = Depends(get_db)):
         }
 
 
-@router.get("/test-cortex/simple-query")
+@router.get("/test-cortex-simple-query")
 async def test_cortex_simple_query(db: Session = Depends(get_db)):
     """
     Test 4: Query simple SIN Cortex para verificar que la conexión funciona.
@@ -197,7 +197,7 @@ async def test_cortex_simple_query(db: Session = Depends(get_db)):
         }
 
 
-@router.get("/test-cortex/list-models")
+@router.get("/test-cortex-list-models")
 async def test_cortex_list_models(db: Session = Depends(get_db)):
     """
     Test 5: Listar modelos disponibles en Cortex.
@@ -236,6 +236,70 @@ async def test_cortex_list_models(db: Session = Depends(get_db)):
             "message": f"Failed: {str(e)}",
             "error_type": type(e).__name__,
         }
+
+
+@router.get("/test-network")
+async def test_network():
+    """
+    Test 6: Diagnóstico de red - DNS y conectividad.
+    Verifica si el contenedor puede resolver DNS y conectar a hosts externos.
+    """
+    import socket
+
+    logger.info("Testing network connectivity")
+
+    results = {
+        "status": "success",
+        "dns_resolution": {},
+        "connectivity": {},
+    }
+
+    # Hosts a probar
+    hosts_to_test = [
+        ("google.serper.dev", 443),
+        ("api.anthropic.com", 443),
+        ("www.google.com", 443),
+    ]
+
+    for host, port in hosts_to_test:
+        # Test DNS
+        try:
+            ip = socket.gethostbyname(host)
+            results["dns_resolution"][host] = {
+                "resolved": True,
+                "ip": ip,
+            }
+        except socket.gaierror as e:
+            results["dns_resolution"][host] = {
+                "resolved": False,
+                "error": str(e),
+            }
+            results["status"] = "partial_failure"
+
+        # Test conectividad TCP (solo si DNS resolvió)
+        if results["dns_resolution"].get(host, {}).get("resolved"):
+            try:
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.settimeout(5)
+                result = sock.connect_ex((host, port))
+                sock.close()
+                results["connectivity"][f"{host}:{port}"] = {
+                    "connected": result == 0,
+                    "error_code": result if result != 0 else None,
+                }
+            except Exception as e:
+                results["connectivity"][f"{host}:{port}"] = {
+                    "connected": False,
+                    "error": str(e),
+                }
+
+    # Info adicional de red del contenedor
+    try:
+        results["container_hostname"] = socket.gethostname()
+    except Exception:
+        pass
+
+    return results
 
 
 @router.get("/test-secrets")
