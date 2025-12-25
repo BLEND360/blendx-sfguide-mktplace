@@ -1,11 +1,11 @@
 spec:
   containers:
     - name: eap-frontend
-      image: /BLENDX_APP_DB/BLENDX_SCHEMA/images/eap_frontend:{{IMAGE_TAG}}
+      image: /BLENDX_APP_DB/BLENDX_SCHEMA/IMG_REPO/eap_frontend:{{IMAGE_TAG}}
       env:
         VUE_APP_API_URL: /api
     - name: eap-backend
-      image: /BLENDX_APP_DB/BLENDX_SCHEMA/images/eap_backend:{{IMAGE_TAG}}
+      image: /BLENDX_APP_DB/BLENDX_SCHEMA/IMG_REPO/eap_backend:{{IMAGE_TAG}}
       env:
         ENVIRONMENT: PRODUCTION
         SNOWFLAKE_AUTHMETHOD: oauth
@@ -28,7 +28,7 @@ spec:
           directoryPath: /secrets/serper
 
     - name: eap-router
-      image: /BLENDX_APP_DB/BLENDX_SCHEMA/images/eap_router:{{IMAGE_TAG}}
+      image: /BLENDX_APP_DB/BLENDX_SCHEMA/IMG_REPO/eap_router:{{IMAGE_TAG}}
       env:
         FE_SERVER: 127.0.0.1:8080
         BE_SERVER: 127.0.0.1:8081

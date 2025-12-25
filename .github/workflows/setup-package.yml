@@ -140,6 +140,7 @@ jobs:
           schema: ${{ vars.SNOWFLAKE_SCHEMA }}
           host: ${{ secrets.SNOWFLAKE_HOST }}
           github-sha: ${{ github.sha }}
+          branch-tag: qa
 
   build-frontend:
     needs: [validate]
@@ -167,6 +168,7 @@ jobs:
           schema: ${{ vars.SNOWFLAKE_SCHEMA }}
           host: ${{ secrets.SNOWFLAKE_HOST }}
           github-sha: ${{ github.sha }}
+          branch-tag: qa
 
   build-router:
     needs: [validate]
@@ -194,6 +196,7 @@ jobs:
           schema: ${{ vars.SNOWFLAKE_SCHEMA }}
           host: ${{ secrets.SNOWFLAKE_HOST }}
           github-sha: ${{ github.sha }}
+          branch-tag: qa
 
   # ============================================
   # DEPLOY-PACKAGE: Create package and register first version

@@ -12,6 +12,7 @@ flowchart LR
 
     subgraph QA
         B -->|deploy-qa.yml| C[Build Images]
+        C -->|"tag: sha + qa"| R[(Shared Registry)]
         C --> D[Deploy to QA Channel]
         D --> E[Upgrade QA App]
     end
@@ -34,6 +35,7 @@ flowchart LR
     style F fill:#ffe0b2
     style H fill:#e8f5e9
     style K fill:#f3e5f5
+    style R fill:#e0e0e0
 ```
 
 ### Pipeline Flow
@@ -46,16 +48,18 @@ sequenceDiagram
     participant Stb as Stable Pipeline
     participant Rel as Release Pipeline
     participant Prod as Prod Pipeline
+    participant Reg as Shared Registry
     participant SF as Snowflake
 
     Dev->>GH: merge develop → qa
     GH->>QA: trigger deploy-qa.yml
-    QA->>SF: Build & push images
+    QA->>Reg: Build & push images (sha + qa tags)
     QA->>SF: Register patch in QA channel
     QA->>SF: Upgrade QA app instance
 
     Dev->>GH: merge qa → stable
     GH->>Stb: trigger deploy-stable.yml
+    Note over Stb,Reg: No rebuild - reuses images from registry
     Stb->>SF: Read QA version
     Stb->>SF: Promote to STABLE channel
     Stb->>SF: Upgrade STABLE app instance
@@ -64,6 +68,7 @@ sequenceDiagram
     GH->>Rel: trigger release.yml
     Rel->>GH: create tag (release/vX.Y.Z)
     Rel->>Prod: trigger deploy-prod.yml
+    Note over Prod,Reg: No rebuild - reuses images from registry
     Prod->>SF: Read STABLE version
     Prod->>SF: Promote to DEFAULT channel
 ```
@@ -137,9 +142,9 @@ These can be stored as **variables** since they are not sensitive:
 | `SNOWFLAKE_DEPLOY_USER` | CI/CD user name | `MK_BLENDX_DEPLOY_USER` |
 | `SNOWFLAKE_DEPLOY_ROLE` | CI/CD role name | `MK_BLENDX_DEPLOY_ROLE` |
 | `SNOWFLAKE_WAREHOUSE` | Warehouse name | `BLENDX_APP_WH` |
-| `SNOWFLAKE_DATABASE` | Database name | `BLENDX_APP_DB` |
+| `SNOWFLAKE_DATABASE` | Database name (for stage and files) | `BLENDX_APP_DB` |
 | `SNOWFLAKE_SCHEMA` | Schema name | `BLENDX_SCHEMA` |
-| `SNOWFLAKE_REPO` | Image repository URL | `org-account.registry.snowflakecomputing.com/db/schema/img_repo` |
+| `SNOWFLAKE_REPO` | Image repository URL | `org-account.registry.snowflakecomputing.com/db/schema/images` |
 | `SNOWFLAKE_APP_PACKAGE` | Application package name | `MK_BLENDX_APP_PKG` |
 | `SNOWFLAKE_ROLE` | Role for app management | `BLENDX_APP_ROLE` |
 
@@ -153,6 +158,21 @@ These variables differ per environment:
 | `SNOWFLAKE_COMPUTE_POOL` | `BLENDX_APP_COMPUTE_POOL_QA` | `BLENDX_APP_COMPUTE_POOL_STABLE` | *(not used)* |
 
 > **Note**: The `production` environment only promotes versions to the DEFAULT channel and doesn't manage an app instance directly. Using separate compute pools per environment ensures resource isolation between QA and STABLE.
+
+### Shared Resources Architecture
+
+The application uses a **single shared image registry and warehouse** across all environments, while keeping data isolated per environment:
+
+| Resource | Scope | Notes |
+|----------|-------|-------|
+| **Image Registry** | Shared | `/BLENDX_APP_DB/BLENDX_SCHEMA/IMG_REPO/` - Docker images are immutable and reused across QA → STABLE → PROD |
+| **Warehouse** | Shared | `BLENDX_APP_WH` - Used for query execution by all environments |
+| **Application Package** | Shared | Single package with multiple release channels (QA, STABLE, DEFAULT) |
+| **Database/Schema** | Per environment | Data isolation - each environment has its own database |
+| **Compute Pool** | Per environment | Resource isolation - each environment runs on its own compute |
+| **App Instance** | Per environment | Separate app instances for QA and STABLE testing |
+
+This architecture allows versions to be promoted between environments (QA → STABLE → PROD) without rebuilding images or regenerating application files, since the same artifacts are used across all environments.
 
 ### Step 4: Run Setup Package Workflow
 
@@ -262,8 +282,8 @@ Before building, the pipeline validates:
 
 1. Validates that `qa` was updated via a merge from `develop`
 2. Builds Docker images for backend, frontend, and router (parallel)
-3. Pushes images to Snowflake Image Repository
-4. Generates `setup.sql` from templates
+3. Pushes images to Snowflake Image Repository (shared registry)
+4. Generates application files from templates (only `IMAGE_TAG` is dynamic)
 5. Uploads application files to Snowflake stage
 6. Creates the Application Package if it doesn't exist
 7. Registers a new patch in the QA release channel

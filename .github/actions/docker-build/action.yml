@@ -38,6 +38,10 @@ inputs:
   github-sha:
     description: 'GitHub SHA for tagging'
     required: true
+  branch-tag:
+    description: 'Branch name for additional tagging (e.g., qa, stable)'
+    required: false
+    default: ''
 
 outputs:
   image-tag:
@@ -82,14 +86,26 @@ runs:
       run: |
         SHORT_SHA=$(echo "${{ inputs.github-sha }}" | cut -c1-7)
         echo "short_sha=$SHORT_SHA" >> $GITHUB_OUTPUT
-        echo "tag=${{ inputs.snowflake-repo }}/${{ inputs.image-name }}:$SHORT_SHA" >> $GITHUB_OUTPUT
+
+        # Primary tag with SHA
+        SHA_TAG="${{ inputs.snowflake-repo }}/${{ inputs.image-name }}:$SHORT_SHA"
+        echo "tag=$SHA_TAG" >> $GITHUB_OUTPUT
+
+        # Build tags list (SHA tag + optional branch tag)
+        TAGS="$SHA_TAG"
+        if [ -n "${{ inputs.branch-tag }}" ]; then
+          BRANCH_TAG="${{ inputs.snowflake-repo }}/${{ inputs.image-name }}:${{ inputs.branch-tag }}"
+          TAGS="$TAGS,$BRANCH_TAG"
+          echo "branch_tag=$BRANCH_TAG" >> $GITHUB_OUTPUT
+        fi
+        echo "tags=$TAGS" >> $GITHUB_OUTPUT
 
     - name: Build and push image
       uses: docker/build-push-action@v5
       with:
         context: ${{ inputs.context }}
         platforms: linux/amd64
-        tags: ${{ steps.meta.outputs.tag }}
+        tags: ${{ steps.meta.outputs.tags }}
         push: true
         cache-from: type=gha,scope=${{ inputs.image-name }}
         cache-to: type=gha,mode=max,scope=${{ inputs.image-name }}
