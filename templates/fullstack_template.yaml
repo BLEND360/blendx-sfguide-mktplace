@@ -1,4 +1,6 @@
 spec:
+  platformMonitor:
+    defaultEnabled: true
   containers:
     - name: eap-frontend
       image: /BLENDX_APP_DB/BLENDX_SCHEMA/IMG_REPO/eap_frontend:{{IMAGE_TAG}}

@@ -107,8 +107,8 @@ $$;
 
 GRANT USAGE ON PROCEDURE app_data.verify_migrations() TO APPLICATION ROLE app_admin;
 
--- Internal procedure with env_prefix and warehouse_size parameters (use start_application wrapper instead)
-CREATE OR REPLACE PROCEDURE app_public.start_application_internal(env_prefix VARCHAR, warehouse_size VARCHAR)
+-- Internal procedure with env_prefix, warehouse_size, and compute pool parameters (use start_application wrapper instead)
+CREATE OR REPLACE PROCEDURE app_public.start_application_internal(env_prefix VARCHAR, warehouse_size VARCHAR, cp_min_nodes NUMBER, cp_max_nodes NUMBER)
     RETURNS string
     LANGUAGE sql
     AS $$
@@ -120,6 +120,8 @@ DECLARE
     network_rule_name VARCHAR;
     wh_name VARCHAR;
     wh_size VARCHAR;
+    pool_min NUMBER;
+    pool_max NUMBER;
 BEGIN
         -- Build resource names with optional environment prefix (all uppercase for consistency)
         poolname := CASE WHEN :env_prefix = '' THEN 'BLENDX_APP_COMPUTE_POOL' ELSE UPPER(:env_prefix) || '_BLENDX_APP_COMPUTE_POOL' END;
@@ -129,6 +131,10 @@ BEGIN
 
         -- Default warehouse size to X-SMALL if not provided
         wh_size := CASE WHEN :warehouse_size = '' OR :warehouse_size IS NULL THEN 'X-SMALL' ELSE :warehouse_size END;
+
+        -- Default compute pool min/max nodes if not provided (0 or NULL means use default)
+        pool_min := CASE WHEN :cp_min_nodes IS NULL OR :cp_min_nodes <= 0 THEN 1 ELSE :cp_min_nodes END;
+        pool_max := CASE WHEN :cp_max_nodes IS NULL OR :cp_max_nodes <= 0 THEN 3 ELSE :cp_max_nodes END;
 
         -- Verify all migrations are applied (migrations are idempotent via setup.sql DDL)
         CALL app_data.verify_migrations() INTO :migration_verification;
@@ -147,7 +153,7 @@ BEGIN
 
         -- Create compute pool if it doesn't exist
         EXECUTE IMMEDIATE 'CREATE COMPUTE POOL IF NOT EXISTS ' || poolname ||
-            ' MIN_NODES = 1 MAX_NODES = 3 INSTANCE_FAMILY = CPU_X64_M AUTO_RESUME = TRUE AUTO_SUSPEND_SECS = 300';
+            ' MIN_NODES = ' || pool_min || ' MAX_NODES = ' || pool_max || ' INSTANCE_FAMILY = CPU_X64_M AUTO_RESUME = TRUE AUTO_SUSPEND_SECS = 300';
 
         -- Create network rule for Serper API access (prefixed to avoid conflicts)
         EXECUTE IMMEDIATE 'CREATE NETWORK RULE IF NOT EXISTS app_public.' || network_rule_name ||
@@ -165,13 +171,13 @@ BEGIN
         GRANT USAGE ON SERVICE app_public.blendx_st_spcs TO APPLICATION ROLE app_user;
         GRANT SERVICE ROLE app_public.blendx_st_spcs!ALL_ENDPOINTS_USAGE TO APPLICATION ROLE app_user;
 
-        RETURN migration_verification || ' | ' || migration_status || '. Service started with pool ' || poolname || ', warehouse ' || wh_name || ' (' || wh_size || ')' || ' and EAI ' || eai_name || '. Check status, and when ready, get URL';
+        RETURN migration_verification || ' | ' || migration_status || '. Service started with pool ' || poolname || ' (min=' || pool_min || ', max=' || pool_max || '), warehouse ' || wh_name || ' (' || wh_size || ')' || ' and EAI ' || eai_name || '. Check status, and when ready, get URL';
 END;
 $$;
 
-GRANT USAGE ON PROCEDURE app_public.start_application_internal(VARCHAR, VARCHAR) TO APPLICATION ROLE app_admin;
+GRANT USAGE ON PROCEDURE app_public.start_application_internal(VARCHAR, VARCHAR, NUMBER, NUMBER) TO APPLICATION ROLE app_admin;
 
--- Public wrapper: start_application() - uses default resource names and X-SMALL warehouse
+-- Public wrapper: start_application() - uses default resource names, X-SMALL warehouse, and default compute pool (1-3 nodes)
 CREATE OR REPLACE PROCEDURE app_public.start_application()
     RETURNS string
     LANGUAGE sql
@@ -179,7 +185,7 @@ CREATE OR REPLACE PROCEDURE app_public.start_application()
 DECLARE
     result VARCHAR;
 BEGIN
-    CALL app_public.start_application_internal('', 'X-SMALL') INTO :result;
+    CALL app_public.start_application_internal('', 'X-SMALL', NULL, NULL) INTO :result;
     RETURN result;
 END;
 $$;
@@ -194,12 +200,27 @@ CREATE OR REPLACE PROCEDURE app_public.start_application(warehouse_size VARCHAR)
 DECLARE
     result VARCHAR;
 BEGIN
-    CALL app_public.start_application_internal('', :warehouse_size) INTO :result;
+    CALL app_public.start_application_internal('', :warehouse_size, NULL, NULL) INTO :result;
     RETURN result;
 END;
 $$;
 
 GRANT USAGE ON PROCEDURE app_public.start_application(VARCHAR) TO APPLICATION ROLE app_admin;
+
+-- Public wrapper: start_application(warehouse_size, min_nodes, max_nodes) - custom warehouse and compute pool
+CREATE OR REPLACE PROCEDURE app_public.start_application(warehouse_size VARCHAR, min_nodes NUMBER, max_nodes NUMBER)
+    RETURNS string
+    LANGUAGE sql
+    AS $$
+DECLARE
+    result VARCHAR;
+BEGIN
+    CALL app_public.start_application_internal('', :warehouse_size, :min_nodes, :max_nodes) INTO :result;
+    RETURN result;
+END;
+$$;
+
+GRANT USAGE ON PROCEDURE app_public.start_application(VARCHAR, NUMBER, NUMBER) TO APPLICATION ROLE app_admin;
 
 -- Public wrapper: start_application_with_prefix(env_prefix) - uses prefixed resource names with default warehouse size
 CREATE OR REPLACE PROCEDURE app_public.start_application_with_prefix(env_prefix VARCHAR)
@@ -209,7 +230,7 @@ CREATE OR REPLACE PROCEDURE app_public.start_application_with_prefix(env_prefix 
 DECLARE
     result VARCHAR;
 BEGIN
-    CALL app_public.start_application_internal(:env_prefix, 'X-SMALL') INTO :result;
+    CALL app_public.start_application_internal(:env_prefix, 'X-SMALL', NULL, NULL) INTO :result;
     RETURN result;
 END;
 $$;
@@ -224,12 +245,27 @@ CREATE OR REPLACE PROCEDURE app_public.start_application_with_prefix(env_prefix 
 DECLARE
     result VARCHAR;
 BEGIN
-    CALL app_public.start_application_internal(:env_prefix, :warehouse_size) INTO :result;
+    CALL app_public.start_application_internal(:env_prefix, :warehouse_size, NULL, NULL) INTO :result;
     RETURN result;
 END;
 $$;
 
 GRANT USAGE ON PROCEDURE app_public.start_application_with_prefix(VARCHAR, VARCHAR) TO APPLICATION ROLE app_admin;
+
+-- Public wrapper: start_application_with_prefix(env_prefix, warehouse_size, min_nodes, max_nodes) - full customization
+CREATE OR REPLACE PROCEDURE app_public.start_application_with_prefix(env_prefix VARCHAR, warehouse_size VARCHAR, min_nodes NUMBER, max_nodes NUMBER)
+    RETURNS string
+    LANGUAGE sql
+    AS $$
+DECLARE
+    result VARCHAR;
+BEGIN
+    CALL app_public.start_application_internal(:env_prefix, :warehouse_size, :min_nodes, :max_nodes) INTO :result;
+    RETURN result;
+END;
+$$;
+
+GRANT USAGE ON PROCEDURE app_public.start_application_with_prefix(VARCHAR, VARCHAR, NUMBER, NUMBER) TO APPLICATION ROLE app_admin;
 
 CREATE OR REPLACE PROCEDURE app_public.stop_app()
     RETURNS string
@@ -267,6 +303,68 @@ BEGIN
 END
 $$;
 GRANT USAGE ON PROCEDURE app_public.update_service() TO APPLICATION ROLE app_admin;
+
+-- Internal procedure to alter compute pool settings (use alter_compute_pool wrapper instead)
+CREATE OR REPLACE PROCEDURE app_public.alter_compute_pool_internal(env_prefix VARCHAR, min_nodes NUMBER, max_nodes NUMBER)
+    RETURNS string
+    LANGUAGE sql
+    AS
+$$
+DECLARE
+    poolname VARCHAR;
+    alter_stmt VARCHAR;
+BEGIN
+    -- Build compute pool name with optional environment prefix
+    poolname := CASE WHEN :env_prefix = '' THEN 'BLENDX_APP_COMPUTE_POOL' ELSE UPPER(:env_prefix) || '_BLENDX_APP_COMPUTE_POOL' END;
+
+    -- Build ALTER statement based on provided parameters
+    alter_stmt := 'ALTER COMPUTE POOL ' || poolname;
+
+    IF (:min_nodes IS NOT NULL AND :min_nodes > 0) THEN
+        alter_stmt := alter_stmt || ' SET MIN_NODES = ' || :min_nodes;
+    END IF;
+
+    IF (:max_nodes IS NOT NULL AND :max_nodes > 0) THEN
+        alter_stmt := alter_stmt || ' MAX_NODES = ' || :max_nodes;
+    END IF;
+
+    -- Execute the alter statement
+    EXECUTE IMMEDIATE alter_stmt;
+
+    RETURN 'Compute pool ' || poolname || ' updated: MIN_NODES=' || COALESCE(:min_nodes::VARCHAR, 'unchanged') || ', MAX_NODES=' || COALESCE(:max_nodes::VARCHAR, 'unchanged');
+END
+$$;
+GRANT USAGE ON PROCEDURE app_public.alter_compute_pool_internal(VARCHAR, NUMBER, NUMBER) TO APPLICATION ROLE app_admin;
+
+-- Public wrapper: alter_compute_pool(min_nodes, max_nodes) - alter default compute pool
+CREATE OR REPLACE PROCEDURE app_public.alter_compute_pool(min_nodes NUMBER, max_nodes NUMBER)
+    RETURNS string
+    LANGUAGE sql
+    AS
+$$
+DECLARE
+    result VARCHAR;
+BEGIN
+    CALL app_public.alter_compute_pool_internal('', :min_nodes, :max_nodes) INTO :result;
+    RETURN result;
+END
+$$;
+GRANT USAGE ON PROCEDURE app_public.alter_compute_pool(NUMBER, NUMBER) TO APPLICATION ROLE app_admin;
+
+-- Public wrapper: alter_compute_pool_with_prefix(env_prefix, min_nodes, max_nodes) - alter prefixed compute pool
+CREATE OR REPLACE PROCEDURE app_public.alter_compute_pool_with_prefix(env_prefix VARCHAR, min_nodes NUMBER, max_nodes NUMBER)
+    RETURNS string
+    LANGUAGE sql
+    AS
+$$
+DECLARE
+    result VARCHAR;
+BEGIN
+    CALL app_public.alter_compute_pool_internal(:env_prefix, :min_nodes, :max_nodes) INTO :result;
+    RETURN result;
+END
+$$;
+GRANT USAGE ON PROCEDURE app_public.alter_compute_pool_with_prefix(VARCHAR, NUMBER, NUMBER) TO APPLICATION ROLE app_admin;
 
 -- Internal procedure with env_prefix parameter for destroy (use destroy_app wrapper instead)
 CREATE OR REPLACE PROCEDURE app_public.destroy_app_internal(env_prefix VARCHAR)
