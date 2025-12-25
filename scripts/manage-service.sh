@@ -15,12 +15,12 @@ echo "Environment Prefix: ${ENV_PREFIX:-<none>}"
 echo ""
 
 # Function to start the app
-start_app() {
-    echo "Starting app with start_app()..."
+start_application() {
+    echo "Starting app with start_application()..."
     if [ -n "$ENV_PREFIX" ]; then
-        snow sql -q "USE ROLE $ROLE; CALL $APP_INSTANCE.app_public.start_app_with_prefix('$ENV_PREFIX');" --connection $CONNECTION
+        snow sql -q "USE ROLE $ROLE; CALL $APP_INSTANCE.app_public.start_application_with_prefix('$ENV_PREFIX');" --connection $CONNECTION
     else
-        snow sql -q "USE ROLE $ROLE; CALL $APP_INSTANCE.app_public.start_app();" --connection $CONNECTION
+        snow sql -q "USE ROLE $ROLE; CALL $APP_INSTANCE.app_public.start_application();" --connection $CONNECTION
     fi
 }
 
@@ -35,10 +35,10 @@ echo ""
 # Check if output contains "0 Row" (no services) or error
 if echo "$SERVICE_OUTPUT" | grep -q "0 Row"; then
     echo "Service does not exist."
-    start_app
+    start_application
 elif echo "$SERVICE_OUTPUT" | grep -qi "error\|failed"; then
     echo "Error querying services."
-    start_app
+    start_application
 else
     # Service exists - check if suspended
     if echo "$SERVICE_OUTPUT" | grep -qi "SUSPENDED"; then
@@ -46,12 +46,12 @@ else
         snow sql -q "USE ROLE $ROLE; CALL $APP_INSTANCE.app_public.resume_app();" --connection $CONNECTION
     else
         echo "Service exists and is running. Attempting to update service specification..."
-        # Try update_service(), if it fails (service doesn't actually exist), fall back to start_app()
+        # Try update_service(), if it fails (service doesn't actually exist), fall back to start_application()
         UPDATE_OUTPUT=$(snow sql -q "USE ROLE $ROLE; CALL $APP_INSTANCE.app_public.update_service();" --connection $CONNECTION 2>&1)
 
         if echo "$UPDATE_OUTPUT" | grep -qi "does not exist\|error"; then
-            echo "Update failed. Service may not exist. Falling back to start_app()..."
-            start_app
+            echo "Update failed. Service may not exist. Falling back to start_application()..."
+            start_application
         else
             echo "$UPDATE_OUTPUT"
         fi
