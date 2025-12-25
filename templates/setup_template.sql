@@ -107,35 +107,37 @@ $$;
 
 GRANT USAGE ON PROCEDURE app_data.verify_migrations() TO APPLICATION ROLE app_admin;
 
--- Internal procedure with env_prefix parameter (use start_application wrapper instead)
-CREATE OR REPLACE PROCEDURE app_public.start_application_internal(env_prefix VARCHAR)
+-- Internal procedure with env_prefix and warehouse_size parameters (use start_application wrapper instead)
+CREATE OR REPLACE PROCEDURE app_public.start_application_internal(env_prefix VARCHAR, warehouse_size VARCHAR)
     RETURNS string
     LANGUAGE sql
     AS $$
 DECLARE
     migration_status VARCHAR;
     migration_verification VARCHAR;
-    app_warehouse VARCHAR;
     poolname VARCHAR;
     eai_name VARCHAR;
     network_rule_name VARCHAR;
+    wh_size VARCHAR;
 BEGIN
         -- Build resource names with optional environment prefix
-        app_warehouse := CASE WHEN :env_prefix = '' THEN 'BLENDX_APP_WH' ELSE :env_prefix || '_BLENDX_APP_WH' END;
         poolname := CASE WHEN :env_prefix = '' THEN 'BLENDX_APP_COMPUTE_POOL' ELSE :env_prefix || '_BLENDX_APP_COMPUTE_POOL' END;
         eai_name := CASE WHEN :env_prefix = '' THEN 'blendx_serper_eai' ELSE :env_prefix || '_blendx_serper_eai' END;
         network_rule_name := CASE WHEN :env_prefix = '' THEN 'blendx_serper_network_rule' ELSE :env_prefix || '_blendx_serper_network_rule' END;
+
+        -- Default warehouse size to X-SMALL if not provided
+        wh_size := CASE WHEN :warehouse_size = '' OR :warehouse_size IS NULL THEN 'X-SMALL' ELSE :warehouse_size END;
 
         -- Verify all migrations are applied (migrations are idempotent via setup.sql DDL)
         CALL app_data.verify_migrations() INTO :migration_verification;
         CALL app_data.get_migration_status() INTO :migration_status;
 
         -- First, create the application warehouse (unique name to avoid conflicts)
-        CREATE WAREHOUSE IF NOT EXISTS IDENTIFIER(:app_warehouse)
-            WAREHOUSE_SIZE = 'X-SMALL'
-            AUTO_SUSPEND = 60
-            AUTO_RESUME = TRUE
-            INITIALLY_SUSPENDED = TRUE;
+        EXECUTE IMMEDIATE 'CREATE WAREHOUSE IF NOT EXISTS BLENDX_APP_WH ' ||
+            'WAREHOUSE_SIZE = ''' || wh_size || ''' ' ||
+            'AUTO_SUSPEND = 60 ' ||
+            'AUTO_RESUME = TRUE ' ||
+            'INITIALLY_SUSPENDED = TRUE';
 
         -- Create compute pool if it doesn't exist
         EXECUTE IMMEDIATE 'CREATE COMPUTE POOL IF NOT EXISTS ' || poolname ||
@@ -151,19 +153,19 @@ BEGIN
 
         -- Create the service (prefixed to avoid conflicts)
         EXECUTE IMMEDIATE 'CREATE SERVICE app_public.blendx_st_spcs IN COMPUTE POOL ' || poolname ||
-            ' FROM SPECIFICATION_FILE=''/fullstack.yaml'' QUERY_WAREHOUSE=' || app_warehouse ||
+            ' FROM SPECIFICATION_FILE=''/fullstack.yaml'' QUERY_WAREHOUSE=BLENDX_APP_WH' ||
             ' EXTERNAL_ACCESS_INTEGRATIONS = (' || eai_name || ')';
 
         GRANT USAGE ON SERVICE app_public.blendx_st_spcs TO APPLICATION ROLE app_user;
         GRANT SERVICE ROLE app_public.blendx_st_spcs!ALL_ENDPOINTS_USAGE TO APPLICATION ROLE app_user;
 
-        RETURN migration_verification || ' | ' || migration_status || '. Service started with pool ' || poolname || ', warehouse ' || app_warehouse || ' and EAI ' || eai_name || '. Check status, and when ready, get URL';
+        RETURN migration_verification || ' | ' || migration_status || '. Service started with pool ' || poolname || ', warehouse BLENDX_APP_WH (' || wh_size || ')' || ' and EAI ' || eai_name || '. Check status, and when ready, get URL';
 END;
 $$;
 
-GRANT USAGE ON PROCEDURE app_public.start_application_internal(VARCHAR) TO APPLICATION ROLE app_admin;
+GRANT USAGE ON PROCEDURE app_public.start_application_internal(VARCHAR, VARCHAR) TO APPLICATION ROLE app_admin;
 
--- Public wrapper: start_application() - uses default resource names
+-- Public wrapper: start_application() - uses default resource names and X-SMALL warehouse
 CREATE OR REPLACE PROCEDURE app_public.start_application()
     RETURNS string
     LANGUAGE sql
@@ -171,14 +173,29 @@ CREATE OR REPLACE PROCEDURE app_public.start_application()
 DECLARE
     result VARCHAR;
 BEGIN
-    CALL app_public.start_application_internal('') INTO :result;
+    CALL app_public.start_application_internal('', 'X-SMALL') INTO :result;
     RETURN result;
 END;
 $$;
 
 GRANT USAGE ON PROCEDURE app_public.start_application() TO APPLICATION ROLE app_admin;
 
--- Public wrapper: start_application(env_prefix) - uses prefixed resource names
+-- Public wrapper: start_application(warehouse_size) - uses default names with custom warehouse size
+CREATE OR REPLACE PROCEDURE app_public.start_application(warehouse_size VARCHAR)
+    RETURNS string
+    LANGUAGE sql
+    AS $$
+DECLARE
+    result VARCHAR;
+BEGIN
+    CALL app_public.start_application_internal('', :warehouse_size) INTO :result;
+    RETURN result;
+END;
+$$;
+
+GRANT USAGE ON PROCEDURE app_public.start_application(VARCHAR) TO APPLICATION ROLE app_admin;
+
+-- Public wrapper: start_application_with_prefix(env_prefix) - uses prefixed resource names with default warehouse size
 CREATE OR REPLACE PROCEDURE app_public.start_application_with_prefix(env_prefix VARCHAR)
     RETURNS string
     LANGUAGE sql
@@ -186,12 +203,27 @@ CREATE OR REPLACE PROCEDURE app_public.start_application_with_prefix(env_prefix 
 DECLARE
     result VARCHAR;
 BEGIN
-    CALL app_public.start_application_internal(:env_prefix) INTO :result;
+    CALL app_public.start_application_internal(:env_prefix, 'X-SMALL') INTO :result;
     RETURN result;
 END;
 $$;
 
 GRANT USAGE ON PROCEDURE app_public.start_application_with_prefix(VARCHAR) TO APPLICATION ROLE app_admin;
+
+-- Public wrapper: start_application_with_prefix(env_prefix, warehouse_size) - uses prefixed names with custom warehouse size
+CREATE OR REPLACE PROCEDURE app_public.start_application_with_prefix(env_prefix VARCHAR, warehouse_size VARCHAR)
+    RETURNS string
+    LANGUAGE sql
+    AS $$
+DECLARE
+    result VARCHAR;
+BEGIN
+    CALL app_public.start_application_internal(:env_prefix, :warehouse_size) INTO :result;
+    RETURN result;
+END;
+$$;
+
+GRANT USAGE ON PROCEDURE app_public.start_application_with_prefix(VARCHAR, VARCHAR) TO APPLICATION ROLE app_admin;
 
 CREATE OR REPLACE PROCEDURE app_public.stop_app()
     RETURNS string
