@@ -28,8 +28,18 @@ privileges:
       description: "Enables application to create its own warehouse(s)"
  - EXECUTE MANAGED TASK:
       description: "Enables application to execute Snowflake Cortex functions"
+ - CREATE NETWORK RULE:
+      description: "Create network rules for external API access"
  - CREATE EXTERNAL ACCESS INTEGRATION:
       description: "Create external access integration for external API access (Serper web search)"
+
+telemetry:
+  log:
+    auto_enable: true
+  trace:
+    auto_enable: true
+  metric:
+    auto_enable: true
 
 references:
  - serper_api_key:
