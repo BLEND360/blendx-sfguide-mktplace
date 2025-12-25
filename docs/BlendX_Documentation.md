@@ -66,7 +66,7 @@ Go to Connections and set up the Serper API key
 
 ```sql
 -- For marketplace consumers (no prefix needed)
-CALL <app_name>.app_public.start_app();
+CALL <app_name>.app_public.start_application();
 ```
 
 Get the application URL:
@@ -333,11 +333,11 @@ If configured, the application may connect to:
 
 ```sql
 -- For marketplace consumers (no prefix needed)
-CALL <app_name>.app_public.start_app();
+CALL <app_name>.app_public.start_application();
 
 -- For development environments with prefix
-CALL <app_name>.app_public.start_app_with_prefix('<env_prefix>');
--- Example: CALL my_app.app_public.start_app_with_prefix('QA');
+CALL <app_name>.app_public.start_application_with_prefix('<env_prefix>');
+-- Example: CALL my_app.app_public.start_application_with_prefix('QA');
 ```
 
 ### Stop Application

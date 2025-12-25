@@ -95,7 +95,7 @@ Get your API key from https://serper.dev
 3. Start the application:
 
 ```sql
-CALL <app_name>.app_public.start_app();
+CALL <app_name>.app_public.start_application();
 ```
 
 ### Step 5: Access the Application

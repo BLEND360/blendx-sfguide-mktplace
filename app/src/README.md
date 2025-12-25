@@ -79,7 +79,7 @@ After activation, start the service by calling:
 
 ```sql
 -- For marketplace consumers (no prefix needed)
-CALL <app_name>.app_public.start_app();
+CALL <app_name>.app_public.start_application();
 ```
 
 Check the service status:
@@ -120,7 +120,7 @@ Once the application is running, open the URL returned by `app_url()` to access 
 -- <your_role>: Your Snowflake role
 
 -- Start application
-CALL <app_name>.app_public.start_app();
+CALL <app_name>.app_public.start_application();
 
 -- Get application URL
 CALL <app_name>.app_public.app_url();

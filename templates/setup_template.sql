@@ -9,7 +9,7 @@ GRANT USAGE ON SCHEMA app_public TO APPLICATION ROLE app_user;
 CREATE OR ALTER VERSIONED SCHEMA v1;
 GRANT USAGE ON SCHEMA v1 TO APPLICATION ROLE app_admin;
 
--- Network rule and External Access Integration are created in start_app() procedure
+-- Network rule and External Access Integration are created in start_application() procedure
 -- after the application has been granted CREATE EXTERNAL ACCESS INTEGRATION privilege
 
 -- Create schema for application data
@@ -107,8 +107,8 @@ $$;
 
 GRANT USAGE ON PROCEDURE app_data.verify_migrations() TO APPLICATION ROLE app_admin;
 
--- Internal procedure with env_prefix parameter (use start_app wrapper instead)
-CREATE OR REPLACE PROCEDURE app_public.start_app_internal(env_prefix VARCHAR)
+-- Internal procedure with env_prefix parameter (use start_application wrapper instead)
+CREATE OR REPLACE PROCEDURE app_public.start_application_internal(env_prefix VARCHAR)
     RETURNS string
     LANGUAGE sql
     AS $$
@@ -161,37 +161,37 @@ BEGIN
 END;
 $$;
 
-GRANT USAGE ON PROCEDURE app_public.start_app_internal(VARCHAR) TO APPLICATION ROLE app_admin;
+GRANT USAGE ON PROCEDURE app_public.start_application_internal(VARCHAR) TO APPLICATION ROLE app_admin;
 
--- Public wrapper: start_app() - uses default resource names
-CREATE OR REPLACE PROCEDURE app_public.start_app()
+-- Public wrapper: start_application() - uses default resource names
+CREATE OR REPLACE PROCEDURE app_public.start_application()
     RETURNS string
     LANGUAGE sql
     AS $$
 DECLARE
     result VARCHAR;
 BEGIN
-    CALL app_public.start_app_internal('') INTO :result;
+    CALL app_public.start_application_internal('') INTO :result;
     RETURN result;
 END;
 $$;
 
-GRANT USAGE ON PROCEDURE app_public.start_app() TO APPLICATION ROLE app_admin;
+GRANT USAGE ON PROCEDURE app_public.start_application() TO APPLICATION ROLE app_admin;
 
--- Public wrapper: start_app(env_prefix) - uses prefixed resource names
-CREATE OR REPLACE PROCEDURE app_public.start_app_with_prefix(env_prefix VARCHAR)
+-- Public wrapper: start_application(env_prefix) - uses prefixed resource names
+CREATE OR REPLACE PROCEDURE app_public.start_application_with_prefix(env_prefix VARCHAR)
     RETURNS string
     LANGUAGE sql
     AS $$
 DECLARE
     result VARCHAR;
 BEGIN
-    CALL app_public.start_app_internal(:env_prefix) INTO :result;
+    CALL app_public.start_application_internal(:env_prefix) INTO :result;
     RETURN result;
 END;
 $$;
 
-GRANT USAGE ON PROCEDURE app_public.start_app(VARCHAR) TO APPLICATION ROLE app_admin;
+GRANT USAGE ON PROCEDURE app_public.start_application_with_prefix(VARCHAR) TO APPLICATION ROLE app_admin;
 
 CREATE OR REPLACE PROCEDURE app_public.stop_app()
     RETURNS string
