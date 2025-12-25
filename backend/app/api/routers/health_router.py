@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.database.db import get_db
 from app.handlers.lite_llm_handler import get_llm
-from app.utils.spcs_helper import get_serper_api_key, get_secret, _LOCAL_SECRETS_DIR
+from app.utils.spcs_helper import get_serper_api_key, get_secret, get_effective_warehouse, _LOCAL_SECRETS_DIR
 
 router = APIRouter(tags=["Health"])
 logger = logging.getLogger(__name__)
@@ -57,13 +57,16 @@ async def test_cortex(db: Session = Depends(get_db)):
     logger.info("Testing Cortex connection via SQL")
 
     try:
-        # Get warehouse from env var, or detect from current session (QUERY_WAREHOUSE)
-        warehouse = os.getenv("SNOWFLAKE_WAREHOUSE", "").strip()
+        # Get effective warehouse (base name + env prefix from database if present)
+        warehouse = get_effective_warehouse()
+
         if not warehouse:
-            # Get warehouse from current session (set by QUERY_WAREHOUSE in CREATE SERVICE)
-            result = db.execute(text("SELECT CURRENT_WAREHOUSE()")).fetchone()
-            warehouse = result[0] if result and result[0] else None
-            logger.info(f"Detected warehouse from session: {warehouse}")
+            logger.error("Could not determine warehouse name")
+            return {
+                "status": "error",
+                "message": "Could not determine warehouse name. Set SNOWFLAKE_WAREHOUSE env var.",
+                "response": None,
+            }
 
         test_prompt = "Say 'Hello, Cortex is working!' in exactly those words."
 
