@@ -5,9 +5,9 @@
 # Use this to clean up everything and start fresh
 #
 # Usage:
-#   ./scripts/cleanup.sh              # Interactive cleanup
-#   ./scripts/cleanup.sh --dry-run    # Show what would be deleted
-#   ./scripts/cleanup.sh --all        # Delete everything including infrastructure
+#   ./scripts/dev/cleanup.sh              # Interactive cleanup
+#   ./scripts/dev/cleanup.sh --dry-run    # Show what would be deleted
+#   ./scripts/dev/cleanup.sh --all        # Delete everything including infrastructure
 
 set -e  # Exit on error
 
@@ -16,7 +16,7 @@ set -e  # Exit on error
 # ============================================
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+PROJECT_ROOT="$(dirname "$(dirname "$SCRIPT_DIR")")"
 
 # Colors for output
 RED='\033[0;31m'

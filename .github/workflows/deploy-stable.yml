@@ -229,8 +229,8 @@ jobs:
             export SNOWFLAKE_COMPUTE_POOL="${{ vars.SNOWFLAKE_COMPUTE_POOL }}"
             export SNOWFLAKE_CONNECTION="${{ env.SNOWFLAKE_CONNECTION }}"
             export SNOWFLAKE_ENV_PREFIX="STABLE"
-            chmod +x scripts/manage-service.sh
-            ./scripts/manage-service.sh
+            chmod +x scripts/deploy/manage-service.sh
+            ./scripts/deploy/manage-service.sh
           fi
 
       - name: Summary
