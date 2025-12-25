@@ -13,9 +13,9 @@ artifacts:
   setup_script: setup.sql
   container_services:
     images:
-      - /BLENDX_APP_DB/BLENDX_SCHEMA/images/eap_frontend:{{IMAGE_TAG}}
-      - /BLENDX_APP_DB/BLENDX_SCHEMA/images/eap_backend:{{IMAGE_TAG}}
-      - /BLENDX_APP_DB/BLENDX_SCHEMA/images/eap_router:{{IMAGE_TAG}}
+      - /BLENDX_APP_DB/BLENDX_SCHEMA/IMG_REPO/eap_frontend:{{IMAGE_TAG}}
+      - /BLENDX_APP_DB/BLENDX_SCHEMA/IMG_REPO/eap_backend:{{IMAGE_TAG}}
+      - /BLENDX_APP_DB/BLENDX_SCHEMA/IMG_REPO/eap_router:{{IMAGE_TAG}}
 
 privileges:
  - IMPORTED PRIVILEGES ON SNOWFLAKE DB:

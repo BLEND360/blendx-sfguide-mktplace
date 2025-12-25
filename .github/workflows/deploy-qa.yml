@@ -206,6 +206,7 @@ jobs:
           schema: ${{ vars.SNOWFLAKE_SCHEMA }}
           host: ${{ secrets.SNOWFLAKE_HOST }}
           github-sha: ${{ github.sha }}
+          branch-tag: qa
 
   build-frontend:
     needs: [validate, preflight]
@@ -233,6 +234,7 @@ jobs:
           schema: ${{ vars.SNOWFLAKE_SCHEMA }}
           host: ${{ secrets.SNOWFLAKE_HOST }}
           github-sha: ${{ github.sha }}
+          branch-tag: qa
 
   build-router:
     needs: [validate, preflight]
@@ -260,6 +262,7 @@ jobs:
           schema: ${{ vars.SNOWFLAKE_SCHEMA }}
           host: ${{ secrets.SNOWFLAKE_HOST }}
           github-sha: ${{ github.sha }}
+          branch-tag: qa
 
   # ============================================
   # DEPLOY-PACKAGE: Generate and upload app files
