@@ -13,9 +13,9 @@ artifacts:
   setup_script: setup.sql
   container_services:
     images:
-      - /{{SNOWFLAKE_DATABASE}}/{{SNOWFLAKE_SCHEMA}}/{{SNOWFLAKE_IMG_REPO}}/eap_frontend:{{IMAGE_TAG}}
-      - /{{SNOWFLAKE_DATABASE}}/{{SNOWFLAKE_SCHEMA}}/{{SNOWFLAKE_IMG_REPO}}/eap_backend:{{IMAGE_TAG}}
-      - /{{SNOWFLAKE_DATABASE}}/{{SNOWFLAKE_SCHEMA}}/{{SNOWFLAKE_IMG_REPO}}/eap_router:{{IMAGE_TAG}}
+      - /BLENDX_APP_DB/BLENDX_SCHEMA/IMG_REPO/eap_frontend:{{IMAGE_TAG}}
+      - /BLENDX_APP_DB/BLENDX_SCHEMA/IMG_REPO/eap_backend:{{IMAGE_TAG}}
+      - /BLENDX_APP_DB/BLENDX_SCHEMA/IMG_REPO/eap_router:{{IMAGE_TAG}}
 
 privileges:
  - IMPORTED PRIVILEGES ON SNOWFLAKE DB:
@@ -30,6 +30,10 @@ privileges:
       description: "Enables application to execute Snowflake Cortex functions"
  - CREATE EXTERNAL ACCESS INTEGRATION:
       description: "Create external access integration for external API access (Serper web search)"
+
+configuration:
+  log_level: INFO
+  trace_level: ON_EVENT
 
 references:
  - serper_api_key:

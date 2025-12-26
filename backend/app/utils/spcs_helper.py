@@ -57,6 +57,44 @@ def get_secret(secret_name: str, key: str = "secret_string") -> str | None:
     return None
 
 
+def get_effective_warehouse() -> str | None:
+    """
+    Get the effective warehouse name for this SPCS service.
+
+    Takes SNOWFLAKE_WAREHOUSE env var (e.g., BLENDX_APP_WH) and prefixes it
+    with the environment suffix from SNOWFLAKE_DATABASE if present.
+
+    Examples:
+    - SNOWFLAKE_DATABASE=BLENDX_APP_INSTANCE, SNOWFLAKE_WAREHOUSE=BLENDX_APP_WH -> BLENDX_APP_WH
+    - SNOWFLAKE_DATABASE=BLENDX_APP_INSTANCE_QA, SNOWFLAKE_WAREHOUSE=BLENDX_APP_WH -> QA_BLENDX_APP_WH
+    - SNOWFLAKE_DATABASE=BLENDX_APP_INSTANCE_STABLE, SNOWFLAKE_WAREHOUSE=BLENDX_APP_WH -> STABLE_BLENDX_APP_WH
+
+    Returns:
+        The effective warehouse name or None if SNOWFLAKE_WAREHOUSE not set
+    """
+    base_warehouse = os.getenv("SNOWFLAKE_WAREHOUSE", "").strip()
+    if not base_warehouse:
+        return None
+
+    database = os.getenv("SNOWFLAKE_DATABASE", "").strip()
+    if not database:
+        return base_warehouse
+
+    # Expected prefix for the database name
+    base_prefix = "BLENDX_APP_INSTANCE"
+
+    if database == base_prefix:
+        # No environment suffix
+        return base_warehouse
+    elif database.startswith(base_prefix + "_"):
+        # Has environment suffix (e.g., _QA, _STABLE)
+        env_suffix = database[len(base_prefix) + 1:]  # Extract QA, STABLE, etc.
+        return f"{env_suffix}_{base_warehouse}"
+
+    # Database doesn't match expected pattern, return base warehouse
+    return base_warehouse
+
+
 def get_serper_api_key() -> str | None:
     """
     Get the Serper API key from SPCS secrets, local secrets, or environment variable.

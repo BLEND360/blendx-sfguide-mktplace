@@ -7,6 +7,10 @@ repos:
       - id: uv-sync
         args: ["--frozen"]
         language_version: "3.12"
+      - id: uv-export
+        args: ["--no-hashes", "--no-dev", "-o", "backend/requirements.txt"]
+        files: ^backend/pyproject\.toml$|^backend/uv\.lock$
+        language_version: "3.12"
 
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v4.5.0
