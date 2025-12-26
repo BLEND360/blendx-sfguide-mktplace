@@ -19,11 +19,18 @@ RUN apt-get update && \
 COPY requirements.txt ./
 RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
 
+# Pre-cache tiktoken encodings to avoid runtime downloads
+ENV TIKTOKEN_CACHE_DIR=/install/tiktoken_cache
+RUN mkdir -p $TIKTOKEN_CACHE_DIR && \
+    PYTHONPATH=/install/lib/python3.10/site-packages \
+    python -c "import tiktoken; tiktoken.get_encoding('cl100k_base')"
+
 # ---------- Runtime stage ----------
 FROM python:3.10-slim AS runtime
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    TIKTOKEN_CACHE_DIR=/usr/local/tiktoken_cache
 
 WORKDIR /app
 
