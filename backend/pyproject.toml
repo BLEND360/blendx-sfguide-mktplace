@@ -12,7 +12,7 @@ dependencies = [
     "fastapi",
     "uvicorn[standard]",
     "requests",
-    "litellm[proxy]",
+    "litellm[proxy]>=1.55.0",
     "sqlalchemy",
     "snowflake-sqlalchemy",
     "alembic",

@@ -16,7 +16,7 @@ import litellm
 import requests
 from chromadb import Documents, EmbeddingFunction, Embeddings
 from crewai.llm import LLM
-from litellm import CustomLLM
+from litellm.llms.custom_llm import CustomLLM
 from snowflake.snowpark import Session
 
 from app.config.settings import Settings, get_settings

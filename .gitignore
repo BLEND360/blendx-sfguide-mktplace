@@ -18,7 +18,6 @@ app/src/manifest.yml
 app/src/fullstack.yaml
 
 # Generated during build
-backend/requirements.txt
 local_setup.sql
 local_migrations.sql
 
