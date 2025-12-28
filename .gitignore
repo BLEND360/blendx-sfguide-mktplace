@@ -28,3 +28,6 @@ docs/BlendX_Documentation.pdf
 # generated scripts
 local_setup.sql
 local_migrations.sql
+scripts/sql/migrations.sql
+scripts/sql/migrations/
+scripts/sql/migrations_manifest.json

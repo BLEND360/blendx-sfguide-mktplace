@@ -200,7 +200,6 @@ All containers communicate with each other through the router.
 - [ ] Cached `uv` layers for faster rebuilds
 - [ ] `uv sync --frozen` for reproducible builds
 - [ ] Support for `uv` workspaces (monorepo)
-- [ ] Documentation on migrating from pip/poetry to uv
 
 ---
 
@@ -301,7 +300,7 @@ Create `checklists/marketplace_listing.md` with all required fields:
 
 ### 15. Advanced Health Checks
 
-- [ ] Complete health check endpoints (`/health`, `/ready`, `/live`)
+- [ ] Complete health check endpoints (`/health`)
 - [ ] Snowflake connectivity verification
 - [ ] External dependency status
 - [ ] Health check integrated into the router

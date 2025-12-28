@@ -70,7 +70,7 @@ BEGIN
             status,
             error_message,
             metadata
-        FROM app_data.crew_execution_results
+        FROM app_data.crew_executions
         ORDER BY execution_timestamp DESC
         LIMIT 1;
     OPEN result_cursor;
@@ -106,7 +106,7 @@ BEGIN
             status,
             error_message,
             metadata
-        FROM app_data.crew_execution_results
+        FROM app_data.crew_executions
         ORDER BY execution_timestamp DESC
         LIMIT :num_results;
     OPEN result_cursor;
@@ -124,7 +124,7 @@ CREATE OR REPLACE PROCEDURE app_public.count_crew_executions()
 $$
 BEGIN
     LET total_count NUMBER;
-    SELECT COUNT(*) INTO :total_count FROM app_data.crew_execution_results;
+    SELECT COUNT(*) INTO :total_count FROM app_data.crew_executions;
     RETURN total_count;
 END;
 $$;
