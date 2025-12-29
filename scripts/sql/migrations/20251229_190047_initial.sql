@@ -1,0 +1,94 @@
+-- =============================================================================
+-- Migration: bdeeff6c3dc1
+-- initial
+-- =============================================================================
+-- This migration is idempotent and can be safely re-run.
+-- It uses IF NOT EXISTS / IF EXISTS clauses for all operations.
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS app_data.chat_messages (
+    id VARCHAR NOT NULL,
+    chat_id VARCHAR NOT NULL,
+    role VARCHAR,
+    content TEXT,
+    summary TEXT,
+    user_id VARCHAR,
+    created_at TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id)
+);
+
+CREATE TABLE IF NOT EXISTS app_data.crew_executions (
+    id VARCHAR NOT NULL,
+    status VARCHAR NOT NULL,
+    execution_timestamp TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP,
+    raw_output VARIANT,
+    result_text TEXT,
+    error_message TEXT,
+    metadata VARIANT,
+    workflow_id VARCHAR,
+    is_test BOOLEAN NOT NULL,
+    PRIMARY KEY (id)
+);
+
+CREATE TABLE IF NOT EXISTS app_data.execution_groups (
+    id VARCHAR NOT NULL,
+    name VARCHAR,
+    status VARCHAR NOT NULL,
+    description TEXT,
+    created_at TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP,
+    finished_at TIMESTAMP_NTZ,
+    PRIMARY KEY (id)
+);
+
+CREATE TABLE IF NOT EXISTS app_data.flow_executions (
+    id VARCHAR NOT NULL,
+    name VARCHAR,
+    status VARCHAR NOT NULL,
+    description TEXT,
+    created_at TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP,
+    finished_at TIMESTAMP_NTZ,
+    PRIMARY KEY (id)
+);
+
+CREATE TABLE IF NOT EXISTS app_data.workflows (
+    workflow_id VARCHAR NOT NULL,
+    version INTEGER NOT NULL,
+    type VARCHAR NOT NULL,
+    mermaid TEXT,
+    title VARCHAR,
+    status VARCHAR NOT NULL,
+    rationale TEXT,
+    yaml_text TEXT NOT NULL,
+    chat_id VARCHAR,
+    message_id VARCHAR,
+    user_id VARCHAR,
+    model VARCHAR,
+    stable BOOLEAN NOT NULL,
+    created_at TIMESTAMP_NTZ NOT NULL,
+    updated_at TIMESTAMP_NTZ NOT NULL,
+    PRIMARY KEY (workflow_id, version)
+);
+
+CREATE TABLE IF NOT EXISTS app_data.agent_executions (
+    id VARCHAR NOT NULL,
+    name VARCHAR,
+    status VARCHAR NOT NULL,
+    input TEXT,
+    output TEXT,
+    created_at TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP,
+    finished_at TIMESTAMP_NTZ,
+    crew_execution_id VARCHAR,
+    PRIMARY KEY (id),
+    FOREIGN KEY (crew_execution_id) REFERENCES app_data.crew_executions(id)
+);
+
+-- Mark migration as applied (idempotent)
+INSERT INTO app_data.alembic_version (version_num)
+SELECT 'bdeeff6c3dc1' WHERE NOT EXISTS (
+    SELECT 1 FROM app_data.alembic_version WHERE version_num = 'bdeeff6c3dc1'
+);
