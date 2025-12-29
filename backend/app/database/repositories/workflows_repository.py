@@ -51,8 +51,8 @@ class WorkflowsRepository:
             self.session.execute(
                 text(
                     f"""
-                    INSERT INTO {get_table_name()} (workflow_id, version, type, mermaid, title, status, rationale, yaml_text, chat_id, message_id, user_id, model, stable, created_at)
-                    VALUES (:workflow_id, :version, :type, :mermaid, :title, :status, :rationale, :yaml_text, :chat_id, :message_id, :user_id, :model, :stable, CURRENT_TIMESTAMP())
+                    INSERT INTO {get_table_name()} (workflow_id, version, type, mermaid, title, status, rationale, yaml_text, chat_id, message_id, user_id, model, stable, created_at, updated_at)
+                    VALUES (:workflow_id, :version, :type, :mermaid, :title, :status, :rationale, :yaml_text, :chat_id, :message_id, :user_id, :model, :stable, CURRENT_TIMESTAMP(), CURRENT_TIMESTAMP())
                     """
                 ),
                 {

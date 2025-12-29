@@ -527,7 +527,7 @@ jobs:
 
           # Check if output contains "No data" or "0 Row" (no applications found)
           if echo "$APP_OUTPUT" | grep -qiE "No data|0 Row"; then
-            echo "::warning::Application does not exist. Run setup/create-application.sh first."
+            echo "::warning::Application does not exist. Run setup/create-application.sh --env qa first."
             exit 1
           elif echo "$APP_OUTPUT" | grep -qi "error\|does not exist"; then
             echo "::warning::Error checking application or application does not exist."
