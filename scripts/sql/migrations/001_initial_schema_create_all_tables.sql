@@ -31,18 +31,15 @@ CREATE TABLE IF NOT EXISTS app_data.flow_executions (
 CREATE TABLE IF NOT EXISTS app_data.crew_executions (
     id VARCHAR(36),
     status VARCHAR(50) NOT NULL DEFAULT 'PENDING',
-    name VARCHAR(255),
-    input TEXT,
-    output TEXT,
-    context VARIANT,
-    created_at TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP(),
+    execution_timestamp TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP(),
     updated_at TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP(),
-    finished_at TIMESTAMP_NTZ,
-    execution_group_id VARCHAR(36),
-    flow_execution_id VARCHAR(36),
-    PRIMARY KEY (id),
-    FOREIGN KEY (execution_group_id) REFERENCES app_data.execution_groups(id),
-    FOREIGN KEY (flow_execution_id) REFERENCES app_data.flow_executions(id)
+    raw_output VARIANT,
+    result_text TEXT,
+    error_message TEXT,
+    metadata VARIANT,
+    workflow_id VARCHAR(255),
+    is_test BOOLEAN NOT NULL DEFAULT FALSE,
+    PRIMARY KEY (id)
 );
 
 CREATE TABLE IF NOT EXISTS app_data.agent_executions (
