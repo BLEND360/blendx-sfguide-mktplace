@@ -207,7 +207,7 @@ jobs:
 
           if echo "$APP_EXISTS" | grep -q "0 Row"; then
             echo "STABLE application instance does not exist yet. Skipping upgrade."
-            echo "Create the STABLE instance manually using setup/create-application.sh"
+            echo "Create the STABLE instance manually using setup/create-application.sh --env stable"
           else
             echo "Upgrading STABLE application ${{ vars.SNOWFLAKE_APP_INSTANCE }} to version $VERSION patch $PATCH..."
             snow sql -q "USE ROLE ${{ vars.SNOWFLAKE_ROLE }}; ALTER APPLICATION ${{ vars.SNOWFLAKE_APP_INSTANCE }} UPGRADE USING VERSION $VERSION PATCH $PATCH;" --connection ${{ env.SNOWFLAKE_CONNECTION }}

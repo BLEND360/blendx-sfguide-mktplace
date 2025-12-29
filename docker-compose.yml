@@ -8,21 +8,17 @@ services:
     container_name: blendx-backend
     ports:
       - "8081:8081"
+    env_file:
+      - ./backend/.env
     environment:
-      - ENVIRONMENT=DEVELOPMENT
-      - SNOWFLAKE_ACCOUNT=${SNOWFLAKE_ACCOUNT}
-      - SNOWFLAKE_USER=${SNOWFLAKE_USER}
-      - SNOWFLAKE_DATABASE=${SNOWFLAKE_DATABASE:-spcs_app_test}
-      - SNOWFLAKE_SCHEMA=${SNOWFLAKE_SCHEMA:-app_data}
-      - SNOWFLAKE_WAREHOUSE=${SNOWFLAKE_WAREHOUSE:-DEV_WH}
-      - SNOWFLAKE_ROLE=${SNOWFLAKE_ROLE:-naspcs_role}
+      - ENVIRONMENT=LOCAL
       - CREW_EXECUTION_SCHEMA=app_data
       - WORKFLOWS_SCHEMA=app_data
       - CREWAI_DISABLE_TELEMETRY=true
       - OTEL_SDK_DISABLED=true
-      - SERPER_API_KEY=${SERPER_API_KEY}
     volumes:
       - ./backend:/app
+      - ./backend/keys:/app/keys
     networks:
       - blendx-network
     healthcheck:
