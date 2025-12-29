@@ -1,2 +1,2 @@
-# Generated files - do not commit
-*.sql
+# Local development files - do not commit
+local_*.sql

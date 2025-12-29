@@ -60,6 +60,10 @@ BEGIN
         EXECUTE IMMEDIATE 'CREATE EXTERNAL ACCESS INTEGRATION IF NOT EXISTS ' || eai_name ||
             ' ALLOWED_NETWORK_RULES = (' || network_rule_name || ') ENABLED = TRUE';
 
+        -- Explicitly bind the External Access Integration to the Native Application
+        EXECUTE IMMEDIATE 'ALTER APPLICATION CURRENT_APPLICATION ' ||
+            'SET EXTERNAL_ACCESS_INTEGRATIONS = (' || eai_name || ')';
+
         -- Create the service (warehouse is passed via QUERY_WAREHOUSE, backend detects it via CURRENT_WAREHOUSE())
         EXECUTE IMMEDIATE 'CREATE SERVICE app_public.blendx_st_spcs IN COMPUTE POOL ' || poolname ||
             ' FROM SPECIFICATION_FILE=''/fullstack.yaml'' QUERY_WAREHOUSE=' || wh_name ||

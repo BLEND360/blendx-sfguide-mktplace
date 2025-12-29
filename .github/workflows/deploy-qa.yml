@@ -86,7 +86,7 @@ jobs:
         run: |
           echo "Checking that all Alembic migrations have corresponding SQL files..."
 
-          MIGRATIONS_DIR="scripts/sql/migrations"
+          MIGRATIONS_DIR="scripts/generated/migrations/sql"
           ALEMBIC_DIR="backend/alembic/versions"
           ERRORS=0
 

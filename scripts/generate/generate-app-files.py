@@ -207,8 +207,8 @@ def main():
         # Generate setup.sql and modular setup scripts
         generate_setup_scripts(
             'templates',
-            'scripts/sql/migrations.sql',
-            'scripts/sql/migrations_manifest.json',
+            'scripts/generated/migrations/migrations.sql',
+            'scripts/generated/migrations/migrations_manifest.json',
             str(output_dir),
             dry_run=args.dry_run
         )

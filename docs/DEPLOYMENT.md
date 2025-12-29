@@ -485,13 +485,15 @@ When you need to modify the database schema:
 ### Generated Files Structure
 
 ```
-scripts/sql/
-├── migrations/                          # Individual migration files
-│   ├── 001_initial_schema.sql          # First migration
-│   ├── 002_add_new_column.sql          # Second migration
-│   └── ...
-├── migrations.sql                       # Combined file (all migrations)
-└── migrations_manifest.json             # Metadata about migrations
+scripts/generated/
+├── migrations/                          # Migration files (committed)
+│   ├── sql/                             # Individual migration files
+│   │   ├── 001_initial_schema.sql
+│   │   ├── 002_add_new_column.sql
+│   │   └── ...
+│   ├── migrations.sql                   # Combined file (all migrations)
+│   └── migrations_manifest.json         # Metadata about migrations
+└── local_*.sql                          # Local dev files (not committed)
 ```
 
 ### Local Development Commands
@@ -520,9 +522,9 @@ From the project root:
 | `backend/alembic/versions/` | Migration scripts (Python) |
 | `backend/app/database/models/` | SQLAlchemy models (source of truth) |
 | `scripts/generate/generate_migrations_sql.py` | Converts Alembic migrations to SQL |
-| `scripts/sql/migrations/` | Individual SQL migration files |
-| `scripts/sql/migrations.sql` | Combined SQL (auto-generated) |
-| `scripts/sql/migrations_manifest.json` | Migration metadata |
+| `scripts/generated/migrations/sql/` | Individual SQL migration files (auto-generated) |
+| `scripts/generated/migrations/migrations.sql` | Combined SQL (auto-generated) |
+| `scripts/generated/migrations/migrations_manifest.json` | Migration metadata (auto-generated) |
 | `templates/setup_template.sql` | Template with `{{MIGRATIONS_SQL}}` placeholder |
 
 ### CI/CD Integration
@@ -530,7 +532,7 @@ From the project root:
 The migration SQL is automatically generated during the QA deployment pipeline:
 
 1. `generate-app-files.py` calls `generate_migrations_sql.py`
-2. Individual `.sql` files are generated in `scripts/sql/migrations/`
+2. Individual `.sql` files are generated in `scripts/generated/migrations/sql/`
 3. Combined `migrations.sql` is injected into `setup.sql`
 4. When installed/upgraded, idempotent SQL ensures correct schema state
 
@@ -539,7 +541,7 @@ The migration SQL is automatically generated during the QA deployment pipeline:
 The QA pipeline validates that all Alembic migrations have corresponding SQL files before deploying. If any migration is missing its SQL file, the pipeline will fail with an error indicating which files need to be generated.
 
 This validation runs in the `validate` job of `deploy-qa.yml` and checks:
-- Every `.py` file in `backend/alembic/versions/` has a corresponding `.sql` file in `scripts/sql/migrations/`
+- Every `.py` file in `backend/alembic/versions/` has a corresponding `.sql` file in `scripts/generated/migrations/sql/`
 
 If validation fails, run:
 ```bash

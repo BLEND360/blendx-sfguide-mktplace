@@ -18,10 +18,13 @@ scripts/
 ├── deploy/                # Deployment and service management
 │   ├── manage-service.sh  # Manage SPCS service (resume/restart)
 │   └── wait-for-service.sh # Wait for service readiness
-├── sql/                   # SQL files
-│   ├── migrations/        # Individual migration SQL files
-│   ├── migrations.sql     # Combined migrations
-│   └── migrations_manifest.json
+├── generated/             # Auto-generated files (do not edit manually)
+│   ├── migrations/        # Migration files (committed)
+│   │   ├── sql/           # Individual migration SQL files
+│   │   ├── migrations.sql # Combined migrations
+│   │   └── migrations_manifest.json
+│   └── local_*.sql        # Local dev files (not committed)
+├── sql/                   # SQL files (manually maintained)
 ├── hooks/                 # Git hooks
 │   └── check-migrations.sh
 ├── test/                  # Test scripts
@@ -229,11 +232,17 @@ If you need to recreate the test application:
 | `provider-setup.sh` | **Initial setup** - Creates application package (Provider) |
 | `create-application.sh` | **Initial setup** - Creates application instance (Consumer) |
 
+### Generated Files
+| File | Purpose |
+|--------|---------|
+| `generated/migrations/sql/` | Individual SQL migration files (auto-generated, committed) |
+| `generated/migrations/migrations.sql` | Combined migrations SQL (auto-generated, committed) |
+| `generated/migrations/migrations_manifest.json` | Migration metadata (auto-generated, committed) |
+| `generated/local_*.sql` | Local development files (auto-generated, not committed) |
+
 ### SQL Files
 | File | Purpose |
 |--------|---------|
-| `sql/migrations/` | Individual SQL migration files |
-| `sql/migrations.sql` | Combined migrations SQL |
 | `sql/consumer_example.sql` | Consumer setup example |
 
 ## Configuration
