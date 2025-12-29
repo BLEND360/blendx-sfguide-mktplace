@@ -96,6 +96,15 @@ dev-setup:       ## [Local] Setup .env file from example
 		echo "$(GREEN)✓ .env created. Edit with your credentials$(NC)"; \
 	fi
 
+init:            ## [Local] Initialize development environment (hooks, pre-commit, .env)
+	@echo "$(BLUE)Initializing development environment...$(NC)"
+	@git config core.hooksPath .githooks
+	@echo "$(GREEN)✓ Git hooks configured$(NC)"
+	@pre-commit install
+	@echo "$(GREEN)✓ Pre-commit hooks installed$(NC)"
+	@$(MAKE) dev-setup
+	@echo "$(GREEN)✓ Development environment ready$(NC)"
+
 requirements:    ## Regenerate backend/requirements.txt from pyproject.toml
 	@echo "$(BLUE)Regenerating requirements.txt...$(NC)"
 	cd backend && uv export --no-hashes --no-dev -o requirements.txt

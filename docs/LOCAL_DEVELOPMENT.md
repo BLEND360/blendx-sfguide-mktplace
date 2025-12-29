@@ -32,13 +32,13 @@ python scripts/generate/generate_local_setup.py \
     --database BLENDX_APP_DEV_DB \
     --schema APP_DATA \
     --role BLENDX_APP_DEV_ROLE \
-    --user BLENDX_DEV_USER \
+    --user BLENDX_APP_DEV_USER \
     --warehouse BLENDX_APP_DEV_WH
 ```
 
-This generates two files:
-- `local_setup.sql` - Full setup (database, role, grants, tables)
-- `local_migrations.sql` - Only migrations (for updating existing DB)
+This generates two files in `scripts/generated/`:
+- `local_setup.sql` - Infrastructure setup (database, schema, role, grants, warehouse)
+- `local_cleanup.sql` - Drop all resources (for reset)
 
 #### JWT Authentication (auto-configured)
 
@@ -58,30 +58,43 @@ To skip service user creation, use `--no-service-user`.
 #### Run the setup
 
 ```bash
-snow sql -f local_setup.sql --connection your_connection_name
+snow sql -f scripts/generated/local_setup.sql --connection your_connection_name
 ```
 
 This will create:
 - Database and schema
 - Role with appropriate grants (including Snowflake Cortex)
-- All required tables (from Alembic migrations)
+- Warehouse
 - Optional service user with JWT auth
+
+#### Generate and run migrations
+
+After setting up the infrastructure, generate and apply the database migrations:
+
+```bash
+# Generate migrations SQL with your database, schema, and role
+python scripts/generate/generate_migrations_sql.py \
+    --schema APP_DATA \
+    --database BLENDX_APP_DEV_DB \
+    --role BLENDX_APP_DEV_ROLE
+
+# Apply migrations
+snow sql -f scripts/generated/local_migrations.sql --connection your_connection_name
+```
 
 #### Updating an existing database
 
 When new migrations are added, regenerate and run only the migrations:
 
 ```bash
-# Regenerate files (to get latest migrations)
-python scripts/generate/generate_local_setup.py \
-    --database MY_DEV_DB \
+# Generate SQL from Alembic migrations
+python scripts/generate/generate_migrations_sql.py \
     --schema APP_DATA \
-    --role MY_DEV_ROLE \
-    --user MY_USERNAME \
-    --warehouse MY_DEV_WH
+    --database BLENDX_APP_DEV_DB \
+    --role BLENDX_APP_DEV_ROLE
 
-# Apply only migrations
-snow sql -f local_migrations.sql --connection your_connection_name
+# Apply migrations
+snow sql -f scripts/generated/local_migrations.sql --connection your_connection_name
 ```
 
 ## Building Docker Images Locally
@@ -214,6 +227,50 @@ docker-compose down
 Remove volumes as well:
 ```bash
 docker-compose down -v
+```
+
+## Database Migrations
+
+When you need to create or modify database tables, use Alembic migrations.
+
+### Creating a New Migration
+
+1. **Install dependencies** (if not already done):
+   ```bash
+   cd backend
+   uv sync
+   ```
+
+2. **Generate a migration** from model changes:
+   ```bash
+   uv run alembic revision --autogenerate -m "description_of_changes"
+   ```
+
+3. **Generate the SQL migration files**:
+   ```bash
+   cd ..
+   # For Native App only
+   python scripts/generate/generate_migrations_sql.py
+
+   # For local development (with your database, schema, and role)
+   python scripts/generate/generate_migrations_sql.py \
+       --schema APP_DATA \
+       --database BLENDX_APP_DEV_DB \
+       --role BLENDX_APP_DEV_ROLE
+   ```
+
+4. **Execute the migrations** in Snowflake:
+   ```bash
+   snow sql -f scripts/generated/local_migrations.sql --connection your_connection_name
+   ```
+
+### Running Migrations Directly with Alembic
+
+You can also run migrations directly against Snowflake (requires proper `.env` configuration):
+
+```bash
+cd backend
+uv run alembic upgrade head
 ```
 
 ## Development Workflow

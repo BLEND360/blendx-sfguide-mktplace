@@ -35,9 +35,42 @@ https://docs.snowflake.com/en/sql-reference/sql/create-stage  [oai_citation:3‡
 
 ---
 
+## 📌 Database Migrations in Native Apps
+
+Snowflake Native Apps **cannot execute migration tools like Alembic at runtime**. Migrations must be pre-generated as SQL and included in the setup script.
+
+### Why Alembic Cannot Run Directly
+
+1. **No shell/CLI access in runtime**: Native Apps run in Snowpark Container Services (SPCS) where containers are isolated. There's no terminal to execute commands like `alembic upgrade head`.
+
+2. **Limited permissions**: Native Apps operate with restricted permissions defined in `manifest.yml`. The execution context lacks privileges to run arbitrary DDL (`CREATE TABLE`, `ALTER TABLE`) from Python code.
+
+3. **Consumer controls the schema**: In a Native App:
+   - The **provider** defines objects in `setup_script.sql`
+   - The **consumer** installs the app and Snowflake executes the setup script with appropriate permissions
+   - DDL cannot be executed from containers at runtime
+
+4. **Setup script is SQL-only**: The `setup_script.sql` only accepts native Snowflake SQL — it cannot execute Python or external tools.
+
+### Recommended Workflow
+
+```
+Local Development              →    Native App
+───────────────────────────────────────────────
+1. Modify SQLAlchemy models
+2. alembic revision --autogenerate  →  Generates migration
+3. Extract SQL from migrations  →  Goes into setup_script.sql
+                               →  Consumer installs app
+                               →  Snowflake executes DDL
+```
+
+For local development migrations, see [LOCAL_DEVELOPMENT.md](LOCAL_DEVELOPMENT.md#database-migrations).
+
+---
+
 ## 📌 Notes & Best Practices
 
-- If you need long-term files (CSV/Parquet outputs), use `COPY INTO @my_external_stage/...` to export out of Snowflake.  
-- Avoid trying to persist files inside stored procedures or UDFs directly — instead export via stages or external object storage.  
+- If you need long-term files (CSV/Parquet outputs), use `COPY INTO @my_external_stage/...` to export out of Snowflake.
+- Avoid trying to persist files inside stored procedures or UDFs directly — instead export via stages or external object storage.
 
 ---

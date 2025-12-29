@@ -51,13 +51,14 @@ BEGIN
         EXECUTE IMMEDIATE 'CREATE COMPUTE POOL IF NOT EXISTS ' || poolname ||
             ' MIN_NODES = ' || pool_min || ' MAX_NODES = ' || pool_max || ' INSTANCE_FAMILY = CPU_X64_M AUTO_RESUME = TRUE AUTO_SUSPEND_SECS = 300';
 
-        -- Create network rule for Serper API access (prefixed to avoid conflicts)
-        EXECUTE IMMEDIATE 'CREATE NETWORK RULE IF NOT EXISTS app_public.' || network_rule_name ||
+        -- Create network rule for Serper API access at account level
+        -- Network rules must be at account level (not inside app) for EAI to work properly
+        EXECUTE IMMEDIATE 'CREATE NETWORK RULE IF NOT EXISTS ' || network_rule_name ||
             ' TYPE = HOST_PORT VALUE_LIST = (''google.serper.dev'') MODE = EGRESS';
 
-        -- Create external access integration for Serper API (prefixed to avoid conflicts)
+        -- Create external access integration for Serper API
         EXECUTE IMMEDIATE 'CREATE EXTERNAL ACCESS INTEGRATION IF NOT EXISTS ' || eai_name ||
-            ' ALLOWED_NETWORK_RULES = (app_public.' || network_rule_name || ') ENABLED = TRUE';
+            ' ALLOWED_NETWORK_RULES = (' || network_rule_name || ') ENABLED = TRUE';
 
         -- Create the service (warehouse is passed via QUERY_WAREHOUSE, backend detects it via CURRENT_WAREHOUSE())
         EXECUTE IMMEDIATE 'CREATE SERVICE app_public.blendx_st_spcs IN COMPUTE POOL ' || poolname ||
@@ -293,7 +294,7 @@ BEGIN
     DROP SERVICE IF EXISTS app_public.blendx_st_spcs;
     EXECUTE IMMEDIATE 'DROP WAREHOUSE IF EXISTS ' || wh_name;
     EXECUTE IMMEDIATE 'DROP EXTERNAL ACCESS INTEGRATION IF EXISTS ' || eai_name;
-    EXECUTE IMMEDIATE 'DROP NETWORK RULE IF EXISTS app_public.' || network_rule_name;
+    EXECUTE IMMEDIATE 'DROP NETWORK RULE IF EXISTS ' || network_rule_name;
     RETURN 'Service, warehouse ' || wh_name || ', EAI ' || eai_name || ', and network rule ' || network_rule_name || ' destroyed';
 END
 $$;
