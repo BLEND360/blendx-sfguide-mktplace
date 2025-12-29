@@ -430,7 +430,7 @@ The application uses Alembic for database schema management. SQLAlchemy models a
 Since Snowflake Native Apps cannot run Python migrations directly, the system converts Alembic migrations to idempotent SQL:
 
 1. **Development**: Developers create/modify SQLAlchemy models and generate Alembic migrations
-2. **Build**: `generate_migrations_sql.py` converts migrations to idempotent SQL files
+2. **Build**: `./scripts/generate/generate_migrations_sql.py` converts migrations to idempotent SQL files
 3. **Deployment**: SQL is injected into `setup.sql` via the `{{MIGRATIONS_SQL}}` placeholder
 4. **Upgrade**: All SQL uses `IF NOT EXISTS` / `IF EXISTS` clauses, making upgrades safe
 
