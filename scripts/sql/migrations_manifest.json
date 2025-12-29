@@ -2,11 +2,11 @@
   "migrations": [
     {
       "index": 1,
-      "revision": "001_initial",
-      "filename": "001_initial_schema_create_all_tables.sql",
-      "message": "Initial schema - Create all tables",
+      "revision": "a507c0033f7d",
+      "filename": "001_initial.sql",
+      "message": "initial",
       "down_revision": null
     }
   ],
-  "latest_version": "001_initial"
+  "latest_version": "a507c0033f7d"
 }

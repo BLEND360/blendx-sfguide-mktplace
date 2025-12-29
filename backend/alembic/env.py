@@ -12,6 +12,18 @@ from pathlib import Path
 from alembic import context
 from sqlalchemy import pool
 
+# Import snowflake dialect to register it with SQLAlchemy/Alembic
+import snowflake.sqlalchemy  # noqa: F401
+
+# Register Snowflake dialect with Alembic's DDL implementation
+from alembic.ddl.impl import DefaultImpl
+
+
+class SnowflakeImpl(DefaultImpl):
+    """Alembic implementation for Snowflake dialect."""
+
+    __dialect__ = "snowflake"
+
 # Add the backend directory to the Python path so we can import app modules
 backend_dir = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(backend_dir))

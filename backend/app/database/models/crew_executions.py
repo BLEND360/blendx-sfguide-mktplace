@@ -76,7 +76,7 @@ class CrewExecution(Base):
     raw_output = Column(VARIANT, nullable=True)
     result_text = Column(Text, nullable=True)
     error_message = Column(Text, nullable=True)
-    metadata = Column(VARIANT, nullable=True)
+    execution_metadata = Column("metadata", VARIANT, nullable=True)
     workflow_id = Column(String(255), nullable=True)
     is_test = Column(Boolean, nullable=False, default=False)
 

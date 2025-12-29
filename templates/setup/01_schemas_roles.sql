@@ -14,7 +14,6 @@ CREATE OR ALTER VERSIONED SCHEMA v1;
 GRANT USAGE ON SCHEMA v1 TO APPLICATION ROLE app_admin;
 
 -- Network rule and External Access Integration are created in start_application() procedure
--- after the application has been granted CREATE EXTERNAL ACCESS INTEGRATION privilege
 
 -- Create schema for application data
 CREATE SCHEMA IF NOT EXISTS app_data;
