@@ -31,7 +31,6 @@ class FlowExecution(Base):
     updated_at = Column(DateTime, server_default=func.current_timestamp(), onupdate=func.current_timestamp())
     finished_at = Column(DateTime, nullable=True)
 
-    crew_executions = relationship("CrewExecution", back_populates="flow_execution")
 
     def __repr__(self):
         return f"<FlowExecution(id='{self.id}', name='{self.name}', status='{self.status}')>"

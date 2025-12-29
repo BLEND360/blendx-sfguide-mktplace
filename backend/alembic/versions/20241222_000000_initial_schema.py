@@ -48,15 +48,14 @@ def upgrade() -> None:
         'crew_executions',
         sa.Column('id', sa.String(36), primary_key=True),
         sa.Column('status', sa.String(50), nullable=False, server_default='PENDING'),
-        sa.Column('name', sa.String(255), nullable=True),
-        sa.Column('input', sa.Text(), nullable=True),
-        sa.Column('output', sa.Text(), nullable=True),
-        sa.Column('context', VARIANT(), nullable=True),
-        sa.Column('created_at', sa.DateTime(), server_default=sa.text('CURRENT_TIMESTAMP()')),
+        sa.Column('execution_timestamp', sa.DateTime(), server_default=sa.text('CURRENT_TIMESTAMP()')),
         sa.Column('updated_at', sa.DateTime(), server_default=sa.text('CURRENT_TIMESTAMP()')),
-        sa.Column('finished_at', sa.DateTime(), nullable=True),
-        sa.Column('execution_group_id', sa.String(36), sa.ForeignKey('execution_groups.id'), nullable=True),
-        sa.Column('flow_execution_id', sa.String(36), sa.ForeignKey('flow_executions.id'), nullable=True),
+        sa.Column('raw_output', VARIANT(), nullable=True),
+        sa.Column('result_text', sa.Text(), nullable=True),
+        sa.Column('error_message', sa.Text(), nullable=True),
+        sa.Column('metadata', VARIANT(), nullable=True),
+        sa.Column('workflow_id', sa.String(255), nullable=True),
+        sa.Column('is_test', sa.Boolean(), nullable=False, server_default='FALSE'),
     )
 
     # Create agent_executions table
