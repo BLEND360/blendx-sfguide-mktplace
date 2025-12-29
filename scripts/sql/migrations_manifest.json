@@ -2,11 +2,11 @@
   "migrations": [
     {
       "index": 1,
-      "revision": "a507c0033f7d",
-      "filename": "001_initial.sql",
+      "revision": "bdeeff6c3dc1",
+      "filename": "20251229_190047_initial.sql",
       "message": "initial",
       "down_revision": null
     }
   ],
-  "latest_version": "a507c0033f7d"
+  "latest_version": "bdeeff6c3dc1"
 }
