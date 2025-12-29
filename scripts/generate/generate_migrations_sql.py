@@ -3,7 +3,7 @@
 Generate SQL from Alembic migrations for Snowflake Native App and local development.
 
 This script reads all Alembic migration files and generates:
-1. Individual SQL files per migration in scripts/sql/migrations/
+1. Individual SQL files per migration in scripts/generated/migrations/
 2. A combined migrations.sql for Native App (uses app_data schema)
 3. A local_migrations.sql for local development (uses custom schema)
 
@@ -18,10 +18,10 @@ Usage:
     python scripts/generate/generate_migrations_sql.py --schema MY_SCHEMA
 
 Output:
-    scripts/sql/migrations/              - Directory with individual migration SQL files
-    scripts/sql/migrations.sql           - Combined SQL file for Native App
-    scripts/sql/migrations_manifest.json - Manifest with migration metadata
-    scripts/generated/local_migrations.sql - SQL file for local development (if --schema provided)
+    scripts/generated/migrations/sql/              - Directory with individual migration SQL files
+    scripts/generated/migrations/migrations.sql    - Combined SQL file for Native App
+    scripts/generated/migrations/migrations_manifest.json - Manifest with migration metadata
+    scripts/generated/local_migrations.sql         - SQL file for local development (if --schema provided)
 """
 
 import argparse
@@ -38,9 +38,9 @@ sys.path.insert(0, str(BACKEND_DIR))
 
 ALEMBIC_VERSIONS_DIR = BACKEND_DIR / "alembic" / "versions"
 SCRIPTS_DIR = SCRIPT_DIR.parent  # scripts/generate -> scripts
-OUTPUT_DIR = SCRIPTS_DIR / "sql" / "migrations"
-OUTPUT_FILE = SCRIPTS_DIR / "sql" / "migrations.sql"
-MANIFEST_FILE = SCRIPTS_DIR / "sql" / "migrations_manifest.json"
+OUTPUT_DIR = SCRIPTS_DIR / "generated" / "migrations" / "sql"
+OUTPUT_FILE = SCRIPTS_DIR / "generated" / "migrations" / "migrations.sql"
+MANIFEST_FILE = SCRIPTS_DIR / "generated" / "migrations" / "migrations_manifest.json"
 LOCAL_MIGRATIONS_FILE = SCRIPTS_DIR / "generated" / "local_migrations.sql"
 
 

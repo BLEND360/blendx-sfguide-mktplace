@@ -1121,7 +1121,7 @@ flowchart LR
     ephemeralExecutionId: null,
     ephemeralPollingInterval: null,
     ephemeralPollingAttempts: 0,
-    maxEphemeralPollingAttempts: 180,  // 15 minutes at 5-second intervals
+    maxEphemeralPollingAttempts: 360,  // 30 minutes at 5-second intervals
     showRunResultDialog: false,
     runResultStatus: null,
     runResultData: null,
@@ -1653,8 +1653,8 @@ flowchart LR
 
       if (this.ephemeralPollingAttempts > this.maxEphemeralPollingAttempts) {
         this.stopEphemeralPolling()
-        this.runResultError = 'Timeout: Workflow execution took too long'
-        this.runResultStatus = 'FAILED'
+        this.runResultError = 'The workflow is taking longer than expected. You can check the result later in "List Executions".'
+        this.runResultStatus = 'PENDING'
         this.runningWorkflow = null
         return
       }
