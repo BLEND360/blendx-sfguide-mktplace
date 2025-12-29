@@ -14,7 +14,7 @@ CREATE TABLE IF NOT EXISTS app_data.alembic_version (
 );
 
 -- -----------------------------------------------------------------------------
--- Migration 1: a507c0033f7d
+-- Migration 1: bdeeff6c3dc1
 -- initial
 -- -----------------------------------------------------------------------------
 
@@ -101,6 +101,6 @@ CREATE TABLE IF NOT EXISTS app_data.agent_executions (
 
 -- Mark migration as applied
 INSERT INTO app_data.alembic_version (version_num)
-SELECT 'a507c0033f7d' WHERE NOT EXISTS (
-    SELECT 1 FROM app_data.alembic_version WHERE version_num = 'a507c0033f7d'
+SELECT 'bdeeff6c3dc1' WHERE NOT EXISTS (
+    SELECT 1 FROM app_data.alembic_version WHERE version_num = 'bdeeff6c3dc1'
 );

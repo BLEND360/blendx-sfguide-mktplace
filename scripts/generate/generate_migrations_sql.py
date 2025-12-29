@@ -604,8 +604,9 @@ def generate_migrations_sql(local_schema: str = None, local_database: str = None
         slug = migration["slug"]
         message = migration["message"]
 
-        # Generate filename: 001_initial_schema.sql
-        filename = f"{str(i + 1).zfill(3)}_{slug}.sql"
+        # Generate filename: use original migration filename with .sql extension
+        original_filename = migration["filepath"].stem  # e.g., 20251229_165659_initial
+        filename = f"{original_filename}.sql"
         filepath = OUTPUT_DIR / filename
 
         # Generate SQL content
