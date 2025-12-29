@@ -18,24 +18,24 @@ class CrewExecutionCreate(BaseModel):
     Fields:
         id: Unique identifier for the crew execution.
         status: Status of the execution (pending, completed, etc.).
-        name: Name of the crew.
-        input: Optional input data.
-        output: Optional output data.
-        context: Execution context as a dictionary.
-        execution_group_id: Optional related execution group ID.
-        flow_execution_id: Optional related flow execution ID.
+        result_text: Text result from the execution.
+        raw_output: Raw output as a dictionary.
+        error_message: Optional error message.
+        metadata: Execution metadata as a dictionary.
+        workflow_id: Optional related workflow ID.
+        is_test: Flag for test executions.
     """
 
     id: str
     status: StatusEnum
-    name: str
-    input: Optional[str] | None = None
-    output: Optional[str] | None = None
-    context: dict = Field(None)
-    execution_group_id: Optional[str] = None
-    flow_execution_id: Optional[str] = None
+    result_text: Optional[str] = None
+    raw_output: Optional[dict] = Field(None)
+    error_message: Optional[str] = None
+    metadata: Optional[dict] = Field(None)
+    workflow_id: Optional[str] = None
+    is_test: bool = False
 
-    model_config = {"json_schema_extra": {"example": {"context": {"key": "value"}}}}
+    model_config = {"json_schema_extra": {"example": {"metadata": {"key": "value"}}}}
 
 
 class CrewExecutionData(BaseModel):
@@ -43,18 +43,18 @@ class CrewExecutionData(BaseModel):
     Pydantic model for reading crew execution data.
 
     Fields:
-        output: Optional output data.
-        name: Name of the crew.
+        result_text: Text result from the execution.
+        status: Status of the execution.
     """
 
-    output: Optional[str] | None = None
-    name: str
+    result_text: Optional[str] = None
+    status: str
 
 
 import uuid
 
 from snowflake.sqlalchemy import VARIANT
-from sqlalchemy import Column, DateTime, Enum, ForeignKey, Integer, String, Text, func
+from sqlalchemy import Boolean, Column, DateTime, Enum, String, Text, func
 from sqlalchemy.orm import relationship
 
 from app.database.models import Base
@@ -65,37 +65,19 @@ class CrewExecution(Base):
     """
     SQLAlchemy model for the crew_executions table.
 
-    Tracks crew execution status, input/output, context, and relationships to agent, execution group, and flow execution records.
+    Tracks crew execution status, results, metadata, and relationships to workflows.
     """
 
     __tablename__ = "crew_executions"
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     status = Column(Enum(StatusEnum), nullable=False, default=StatusEnum.PENDING)
-    name = Column(String(255), nullable=True)
-    input = Column(Text, nullable=True)
-    output = Column(Text, nullable=True)
-    context = Column(VARIANT, nullable=True)
-
-    created_at = Column(DateTime, server_default=func.current_timestamp())
+    execution_timestamp = Column(DateTime, server_default=func.current_timestamp())
     updated_at = Column(DateTime, server_default=func.current_timestamp())
-    finished_at = Column(DateTime, nullable=True)
+    raw_output = Column(VARIANT, nullable=True)
+    result_text = Column(Text, nullable=True)
+    error_message = Column(Text, nullable=True)
+    metadata = Column(VARIANT, nullable=True)
+    workflow_id = Column(String(255), nullable=True)
+    is_test = Column(Boolean, nullable=False, default=False)
 
     agent_executions = relationship("AgentExecution", back_populates="crew_execution")
-
-    execution_group_id = Column(
-        String(36), ForeignKey("execution_groups.id"), nullable=True
-    )
-    execution_group = relationship(
-        "ExecutionGroup",
-        back_populates="crew_executions",
-        foreign_keys=[execution_group_id],
-    )
-
-    flow_execution_id = Column(
-        String(36), ForeignKey("flow_executions.id"), nullable=True
-    )
-    flow_execution = relationship(
-        "FlowExecution",
-        back_populates="crew_executions",
-        foreign_keys=[flow_execution_id],
-    )
