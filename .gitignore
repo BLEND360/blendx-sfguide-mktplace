@@ -13,7 +13,7 @@ backend/secrets/
 
 # Generated files (created from templates during deploy)
 app/src/setup.sql
-app/src/scripts/setup/
+app/src/setup/
 app/src/manifest.yml
 app/src/fullstack.yaml
 

@@ -13,16 +13,16 @@
 -- =============================================================================
 
 -- 1. Schemas, roles, and basic permissions
-EXECUTE IMMEDIATE FROM '/scripts/setup/01_schemas_roles.sql';
+EXECUTE IMMEDIATE FROM '/setup/01_schemas_roles.sql';
 
 -- 2. Database migrations and migration procedures
-EXECUTE IMMEDIATE FROM '/scripts/setup/02_migrations.sql';
+EXECUTE IMMEDIATE FROM '/setup/02_migrations.sql';
 
 -- 3. Application lifecycle procedures
-EXECUTE IMMEDIATE FROM '/scripts/setup/03_app_lifecycle.sql';
+EXECUTE IMMEDIATE FROM '/setup/03_app_lifecycle.sql';
 
 -- 4. Utility procedures
-EXECUTE IMMEDIATE FROM '/scripts/setup/04_utility_procedures.sql';
+EXECUTE IMMEDIATE FROM '/setup/04_utility_procedures.sql';
 
 -- 5. Configuration procedures
-EXECUTE IMMEDIATE FROM '/scripts/setup/05_config.sql';
+EXECUTE IMMEDIATE FROM '/setup/05_config.sql';

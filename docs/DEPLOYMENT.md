@@ -254,17 +254,25 @@ After creating the application instances, you need to activate and configure the
 1. **Open Snowflake UI**: Go to **Data Products > Apps > Installed Apps**
 2. **Select the application**: Click on `BLENDX_APP_INSTANCE_QA` (or the corresponding instance)
 3. **Activate the app and grant permissions**: The app will request the necessary permissions. Click **Grant** for each required permission
-4. **Configure the secret** (if required by the app):
+4. **Approve External Access**: The application requires external access to the Serper API for web search capabilities:
+   - Go to the **Security** tab in the application
+   - You will see a pending request for "Connection to Serper API" (`google.serper.dev`)
+   - Review the external access specification and click **Approve** to allow the application to connect to the Serper API
+   - This approval is required for the application to use the SerperDevTool in workflows
+
+   > **Note**: This external access is defined using `ALTER APPLICATION SET SPECIFICATION` and requires explicit consumer approval as per [Snowflake documentation](https://docs.snowflake.com/en/developer-guide/native-apps/requesting-app-specs-eai).
+
+5. **Configure the secret** (if required by the app):
    - Switch to role ACCOUNTADMIN
    - Go to the **Connections** tab
    - Press Configure and create or select an existing secret for API credentials
    - The secret should contain the necessary authentication tokens
 ![](./images/config_secret.png)
-5. **Activate the app**: Click the **Activate** button to start the application services
-6. **Verify activation**:
+6. **Activate the app**: Click the **Activate** button to start the application services
+7. **Verify activation**:
    - Wait for the status to show "Active"
    - Check that the service endpoint is accessible
-7. **Start the application**: Once the app is active, execute the start procedure with the environment prefix:
+8. **Start the application**: Once the app is active, execute the start procedure with the environment prefix:
    ```sql
    USE ROLE BLENDX_APP_ROLE;
    CALL BLENDX_APP_INSTANCE_QA.APP_PUBLIC.start_application_WITH_PREFIX('QA');

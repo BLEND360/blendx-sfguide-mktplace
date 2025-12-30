@@ -108,8 +108,8 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE app_data.{table} TO APPLICATION RO
 
     full_migrations_content = migrations_sql + '\n' + '\n'.join(grants)
 
-    # Create output scripts directory
-    scripts_setup_dir = Path(output_dir) / 'scripts' / 'setup'
+    # Create output setup directory
+    scripts_setup_dir = Path(output_dir) / 'setup'
     if not dry_run:
         scripts_setup_dir.mkdir(parents=True, exist_ok=True)
 

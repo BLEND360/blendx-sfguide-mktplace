@@ -672,7 +672,7 @@
 
         <v-card-text class="pa-4">
           <p class="mb-4">
-            You are about to run this workflow using ephemeral execution (no data will be persisted).
+            You are about to run this workflow (no data will be persisted).
           </p>
           <v-chip small outlined class="mb-4">
             <v-icon left small>mdi-tag</v-icon>
@@ -739,7 +739,7 @@
               {{ runResultStatus === 'STARTING' ? 'Starting workflow execution...' : 'Workflow is running...' }}
             </p>
             <p class="text-caption grey--text">
-              Elapsed time: {{ ephemeralPollingAttempts * 5 }} seconds
+              Elapsed time: {{ executionPollingAttempts * 5 }} seconds
             </p>
           </div>
 
@@ -1098,6 +1098,7 @@ flowchart LR
     // NL Generator polling
     nlPollingInterval: null,
     nlPollingAttempts: 0,
+    maxPollingAttempts: 200,  // ~10 minutes at 3-second intervals
 
     // Workflow History
     workflowHistory: null,
@@ -1116,12 +1117,12 @@ flowchart LR
     saveMessageIndex: null,
     saveError: null,
 
-    // Run Workflow (Ephemeral Execution)
+    // Run Workflow Execution
     runningWorkflow: null,
-    ephemeralExecutionId: null,
-    ephemeralPollingInterval: null,
-    ephemeralPollingAttempts: 0,
-    maxEphemeralPollingAttempts: 360,  // 30 minutes at 5-second intervals
+    executionId: null,
+    executionPollingInterval: null,
+    executionPollingAttempts: 0,
+    maxExecutionPollingAttempts: 360,  // 30 minutes at 5-second intervals
     showRunResultDialog: false,
     runResultStatus: null,
     runResultData: null,
@@ -1243,8 +1244,8 @@ flowchart LR
 
       if (this.nlPollingAttempts > this.maxPollingAttempts) {
         this.stopNLPolling()
-        this.chatMessages[messageIndex].status = 'error'
-        this.chatMessages[messageIndex].error = 'Timeout: Generation took too long'
+        this.chatMessages[messageIndex].status = 'pending'
+        this.chatMessages[messageIndex].statusMessage = 'The workflow is still being processed. Please check the Executions list to see the result.'
         this.isGenerating = false
         return
       }
@@ -1610,7 +1611,7 @@ flowchart LR
       // Determine endpoint based on workflow type
       // type is "run-build-flow" or "run-build-crew"
       const isFlow = workflow.type === 'run-build-flow'
-      const endpoint = isFlow ? '/ephemeral/run-flow-async' : '/ephemeral/run-crew-async'
+      const endpoint = isFlow ? '/executions/run-flow-async' : '/executions/run-crew-async'
 
       try {
         const response = await axios.post(baseUrl + endpoint, {
@@ -1619,12 +1620,12 @@ flowchart LR
           workflow_id: workflow.workflow_id || null
         })
 
-        this.ephemeralExecutionId = response.data.execution_id
+        this.executionId = response.data.execution_id
         this.runResultStatus = 'RUNNING'
         this.showRunResultDialog = true
 
         // Start polling for results
-        this.startEphemeralPolling()
+        this.startExecutionPolling()
       } catch (error) {
         console.error('Error starting workflow execution:', error)
         this.runResultError = error.response?.data?.detail || error.message
@@ -1634,25 +1635,25 @@ flowchart LR
       }
     },
 
-    startEphemeralPolling() {
-      this.ephemeralPollingAttempts = 0
-      this.ephemeralPollingInterval = setInterval(async () => {
-        await this.checkEphemeralStatus()
+    startExecutionPolling() {
+      this.executionPollingAttempts = 0
+      this.executionPollingInterval = setInterval(async () => {
+        await this.checkExecutionStatus()
       }, 5000)  // Poll every 5 seconds
     },
 
-    stopEphemeralPolling() {
-      if (this.ephemeralPollingInterval) {
-        clearInterval(this.ephemeralPollingInterval)
-        this.ephemeralPollingInterval = null
+    stopExecutionPolling() {
+      if (this.executionPollingInterval) {
+        clearInterval(this.executionPollingInterval)
+        this.executionPollingInterval = null
       }
     },
 
-    async checkEphemeralStatus() {
-      this.ephemeralPollingAttempts++
+    async checkExecutionStatus() {
+      this.executionPollingAttempts++
 
-      if (this.ephemeralPollingAttempts > this.maxEphemeralPollingAttempts) {
-        this.stopEphemeralPolling()
+      if (this.executionPollingAttempts > this.maxExecutionPollingAttempts) {
+        this.stopExecutionPolling()
         this.runResultError = 'The workflow is taking longer than expected. You can check the result later in "List Executions".'
         this.runResultStatus = 'PENDING'
         this.runningWorkflow = null
@@ -1662,26 +1663,26 @@ flowchart LR
       const baseUrl = process.env.VUE_APP_API_URL
 
       try {
-        const response = await axios.get(baseUrl + `/ephemeral/status/${this.ephemeralExecutionId}`)
+        const response = await axios.get(baseUrl + `/executions/status/${this.executionId}`)
         const data = response.data
 
         this.runResultStatus = data.status
 
         if (data.status === 'COMPLETED') {
-          this.stopEphemeralPolling()
+          this.stopExecutionPolling()
           this.runResultData = data.result
           this.runningWorkflow = null
         } else if (data.status === 'FAILED' || data.status === 'NOT_FOUND') {
-          this.stopEphemeralPolling()
+          this.stopExecutionPolling()
           this.runResultError = data.result || 'Workflow execution failed'
           this.runningWorkflow = null
         }
         // If still RUNNING, continue polling
       } catch (error) {
-        console.error('Error checking ephemeral status:', error)
+        console.error('Error checking execution status:', error)
         // Don't stop on transient errors, keep polling
-        if (this.ephemeralPollingAttempts > 5 && error.response?.status >= 500) {
-          this.stopEphemeralPolling()
+        if (this.executionPollingAttempts > 5 && error.response?.status >= 500) {
+          this.stopExecutionPolling()
           this.runResultError = error.response?.data?.detail || error.message
           this.runResultStatus = 'FAILED'
           this.runningWorkflow = null
@@ -1691,11 +1692,11 @@ flowchart LR
 
     closeRunResultDialog() {
       this.showRunResultDialog = false
-      // Cleanup the ephemeral execution from memory
-      if (this.ephemeralExecutionId) {
+      // Cleanup the execution from memory
+      if (this.executionId) {
         const baseUrl = process.env.VUE_APP_API_URL
-        axios.delete(baseUrl + `/ephemeral/status/${this.ephemeralExecutionId}`).catch(() => {})
-        this.ephemeralExecutionId = null
+        axios.delete(baseUrl + `/executions/status/${this.executionId}`).catch(() => {})
+        this.executionId = null
       }
     },
 
@@ -1867,7 +1868,7 @@ flowchart LR
 
   beforeDestroy() {
     this.stopNLPolling()
-    this.stopEphemeralPolling()
+    this.stopExecutionPolling()
   }
 }
 </script>

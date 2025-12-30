@@ -1,5 +1,5 @@
 """
-Ephemeral Workflow Execution Router
+Workflow Execution Router
 
 This module provides endpoints for executing crews and flows from YAML configuration
 without persisting any data to the database. Useful for testing, development, and
@@ -24,15 +24,15 @@ from app.crewai.engine.builders.build_engine import CrewAIEngineConfig
 from app.crewai.models.error_formatter import format_yaml_validation_error
 from app.crewai.utils.parameter_substitution import substitute_parameters
 
-router = APIRouter(prefix="/ephemeral", tags=["Ephemeral Execution"])
+router = APIRouter(prefix="/executions", tags=["Executions"])
 logger = logging.getLogger(__name__)
 
-# In-memory storage for ephemeral execution results
-_ephemeral_executions: Dict[str, Dict[str, Any]] = {}
+# In-memory storage for execution results
+_executions: Dict[str, Dict[str, Any]] = {}
 
 
-class EphemeralRequest(BaseModel):
-    """Request model for ephemeral workflow execution."""
+class ExecutionRequest(BaseModel):
+    """Request model for workflow execution."""
 
     yaml_text: str
     input: Optional[str] = None
@@ -40,14 +40,14 @@ class EphemeralRequest(BaseModel):
     workflow_id: Optional[str] = None  # Optional workflow ID to associate with execution
 
 
-class EphemeralAsyncResponse(BaseModel):
-    """Response model for async ephemeral execution initiation."""
+class ExecutionAsyncResponse(BaseModel):
+    """Response model for async execution initiation."""
 
     execution_id: str
 
 
-class EphemeralStatusResponse(BaseModel):
-    """Response model for ephemeral execution status."""
+class ExecutionStatusResponse(BaseModel):
+    """Response model for execution status."""
 
     execution_id: str
     status: str
@@ -55,7 +55,7 @@ class EphemeralStatusResponse(BaseModel):
 
 
 # -----------------------------------------------------------------------------
-# Helper functions for ephemeral execution
+# Helper functions for execution
 # -----------------------------------------------------------------------------
 
 
@@ -85,47 +85,47 @@ def _process_result(result: Any, obj: Any) -> str:
     return final_result
 
 
-def _run_single_crew_ephemeral(crew) -> str:
+def _run_single_crew(crew) -> str:
     """Run a single crew without persistence."""
     crew_name = getattr(crew, "name", None) or "Unnamed Crew"
 
     try:
-        logger.info(f"Started ephemeral crew execution: {crew_name}")
+        logger.info(f"Started crew execution: {crew_name}")
         result = crew.kickoff()
         final_result = _process_result(result, crew)
-        logger.info(f"Completed ephemeral crew execution: {crew_name}")
+        logger.info(f"Completed crew execution: {crew_name}")
         return final_result
     except Exception as e:
         error_message = f"Error in crew '{crew_name}': {str(e)}"
-        logger.error(f"Error in ephemeral crew execution {crew_name}: {str(e)}")
+        logger.error(f"Error in crew execution {crew_name}: {str(e)}")
         return error_message
 
 
-async def _run_crews_ephemeral(crews: list) -> list[str]:
+async def _run_crews(crews: list) -> list[str]:
     """Run crews without any database persistence."""
     tasks = []
     for crew in crews:
-        run_crew_partial = partial(_run_single_crew_ephemeral, crew)
+        run_crew_partial = partial(_run_single_crew, crew)
         task = asyncio.create_task(asyncio.to_thread(run_crew_partial))
         tasks.append(task)
     results = await asyncio.gather(*tasks)
     return list(results)
 
 
-async def _run_flow_ephemeral(flow, flow_name: str, inputs: Optional[dict]) -> str:
+async def _run_flow(flow, flow_name: str, inputs: Optional[dict]) -> str:
     """Run a flow without any database persistence."""
     try:
-        logger.info(f"Started ephemeral flow execution: {flow_name}")
+        logger.info(f"Started flow execution: {flow_name}")
         if inputs:
             result = await flow.kickoff_async(inputs=inputs)
         else:
             result = await flow.kickoff_async()
         final_result = _process_result(result, flow)
-        logger.info(f"Completed ephemeral flow execution: {flow_name}")
+        logger.info(f"Completed flow execution: {flow_name}")
         return final_result
     except Exception as e:
         error_message = f"Error in flow '{flow_name}': {str(e)}"
-        logger.error(f"Error in ephemeral flow execution {flow_name}: {str(e)}")
+        logger.error(f"Error in flow execution {flow_name}: {str(e)}")
         return error_message
 
 
@@ -137,13 +137,13 @@ async def _run_flow_ephemeral(flow, flow_name: str, inputs: Optional[dict]) -> s
 @router.post(
     "/run-crew-async",
     summary="Execute crews from YAML config asynchronously without persistence",
-    response_model=EphemeralAsyncResponse,
+    response_model=ExecutionAsyncResponse,
     status_code=status.HTTP_202_ACCEPTED,
 )
-async def run_crew_async_ephemeral(
-    request: EphemeralRequest,
+async def run_crew_async(
+    request: ExecutionRequest,
     background_tasks: BackgroundTasks,
-) -> EphemeralAsyncResponse:
+) -> ExecutionAsyncResponse:
     """
     Execute crews from YAML configuration asynchronously without persisting any data.
 
@@ -177,7 +177,7 @@ async def run_crew_async_ephemeral(
         )
 
     # Initialize execution tracking
-    _ephemeral_executions[execution_id] = {
+    _executions[execution_id] = {
         "status": "RUNNING",
         "result": None,
     }
@@ -185,14 +185,14 @@ async def run_crew_async_ephemeral(
     async def background_run() -> None:
         try:
             crews = crews_config.create_crews(input=request.input)
-            results = await _run_crews_ephemeral(crews)
-            _ephemeral_executions[execution_id] = {
+            results = await _run_crews(crews)
+            _executions[execution_id] = {
                 "status": "COMPLETED",
                 "result": results,
             }
         except Exception as e:
-            logger.error(f"Error running ephemeral crew: {str(e)}")
-            _ephemeral_executions[execution_id] = {
+            logger.error(f"Error running crew: {str(e)}")
+            _executions[execution_id] = {
                 "status": "FAILED",
                 "result": f"Error: {str(e)}",
             }
@@ -200,7 +200,7 @@ async def run_crew_async_ephemeral(
             crews_config.cleanup()
 
     background_tasks.add_task(background_run)
-    return EphemeralAsyncResponse(execution_id=execution_id)
+    return ExecutionAsyncResponse(execution_id=execution_id)
 
 
 # -----------------------------------------------------------------------------
@@ -211,13 +211,13 @@ async def run_crew_async_ephemeral(
 @router.post(
     "/run-flow-async",
     summary="Execute flow from YAML config asynchronously without persistence",
-    response_model=EphemeralAsyncResponse,
+    response_model=ExecutionAsyncResponse,
     status_code=status.HTTP_202_ACCEPTED,
 )
-async def run_flow_async_ephemeral(
-    request: EphemeralRequest,
+async def run_flow_async(
+    request: ExecutionRequest,
     background_tasks: BackgroundTasks,
-) -> EphemeralAsyncResponse:
+) -> ExecutionAsyncResponse:
     """
     Execute a flow from YAML configuration asynchronously without persisting any data.
 
@@ -253,7 +253,7 @@ async def run_flow_async_ephemeral(
         )
 
     # Initialize execution tracking
-    _ephemeral_executions[execution_id] = {
+    _executions[execution_id] = {
         "status": "RUNNING",
         "result": None,
     }
@@ -280,14 +280,14 @@ async def run_flow_async_ephemeral(
                 pass
 
             inputs = {"input": request.input} if request.input else None
-            result = await _run_flow_ephemeral(flow, flow_name, inputs)
-            _ephemeral_executions[execution_id] = {
+            result = await _run_flow(flow, flow_name, inputs)
+            _executions[execution_id] = {
                 "status": "COMPLETED",
                 "result": result,
             }
         except Exception as e:
-            logger.error(f"Error running ephemeral flow: {str(e)}")
-            _ephemeral_executions[execution_id] = {
+            logger.error(f"Error running flow: {str(e)}")
+            _executions[execution_id] = {
                 "status": "FAILED",
                 "result": f"Error: {str(e)}",
             }
@@ -295,7 +295,7 @@ async def run_flow_async_ephemeral(
             flow_config.cleanup()
 
     background_tasks.add_task(background_run)
-    return EphemeralAsyncResponse(execution_id=execution_id)
+    return ExecutionAsyncResponse(execution_id=execution_id)
 
 
 # -----------------------------------------------------------------------------
@@ -305,25 +305,25 @@ async def run_flow_async_ephemeral(
 
 @router.get(
     "/status/{execution_id}",
-    summary="Get status and result of an ephemeral execution",
-    response_model=EphemeralStatusResponse,
+    summary="Get status and result of an execution",
+    response_model=ExecutionStatusResponse,
 )
-async def get_ephemeral_status(execution_id: str) -> EphemeralStatusResponse:
+async def get_execution_status(execution_id: str) -> ExecutionStatusResponse:
     """
-    Get the status and result of an ephemeral workflow execution.
+    Get the status and result of a workflow execution.
 
-    Poll this endpoint to check if an async ephemeral execution has completed.
+    Poll this endpoint to check if an async execution has completed.
     """
-    execution = _ephemeral_executions.get(execution_id)
+    execution = _executions.get(execution_id)
 
     if execution is None:
-        return EphemeralStatusResponse(
+        return ExecutionStatusResponse(
             execution_id=execution_id,
             status="NOT_FOUND",
             result=None,
         )
 
-    return EphemeralStatusResponse(
+    return ExecutionStatusResponse(
         execution_id=execution_id,
         status=execution["status"],
         result=execution["result"],
@@ -332,14 +332,14 @@ async def get_ephemeral_status(execution_id: str) -> EphemeralStatusResponse:
 
 @router.delete(
     "/status/{execution_id}",
-    summary="Delete ephemeral execution result from memory",
+    summary="Delete execution result from memory",
     status_code=status.HTTP_204_NO_CONTENT,
 )
-async def delete_ephemeral_status(execution_id: str) -> None:
+async def delete_execution_status(execution_id: str) -> None:
     """
-    Delete an ephemeral execution result from memory.
+    Delete an execution result from memory.
 
     Use this to clean up completed executions and free memory.
     """
-    if execution_id in _ephemeral_executions:
-        del _ephemeral_executions[execution_id]
+    if execution_id in _executions:
+        del _executions[execution_id]
