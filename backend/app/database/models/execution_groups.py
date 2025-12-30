@@ -24,8 +24,10 @@ class ExecutionGroup(Base):
     __tablename__ = "execution_groups"
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    workflow_id = Column(String(255), nullable=True)
     name = Column(String(255), nullable=True)
     status = Column(Enum(StatusEnum), nullable=False, default=StatusEnum.PENDING)
+    result = Column(Text, nullable=True)
     description = Column(Text, nullable=True)
     created_at = Column(DateTime, server_default=func.current_timestamp())
     updated_at = Column(DateTime, server_default=func.current_timestamp(), onupdate=func.current_timestamp())

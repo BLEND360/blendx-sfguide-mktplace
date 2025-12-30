@@ -254,13 +254,13 @@ After creating the application instances, you need to activate and configure the
 1. **Open Snowflake UI**: Go to **Data Products > Apps > Installed Apps**
 2. **Select the application**: Click on `BLENDX_APP_INSTANCE_QA` (or the corresponding instance)
 3. **Activate the app and grant permissions**: The app will request the necessary permissions. Click **Grant** for each required permission
-4. **Approve External Access**: The application requires external access to the Serper API for web search capabilities:
+4. **Approve External Access**: The application requires external access to connect to external APIs (e.g., Serper for web search):
    - Go to the **Security** tab in the application
-   - You will see a pending request for "Connection to Serper API" (`google.serper.dev`)
-   - Review the external access specification and click **Approve** to allow the application to connect to the Serper API
-   - This approval is required for the application to use the SerperDevTool in workflows
+   - You will see pending requests for each configured External Access Integration
+   - Review each external access specification and click **Approve** to allow the connection
+   - By default, the application comes pre-configured with Serper API access (`google.serper.dev`)
 
-   > **Note**: This external access is defined using `ALTER APPLICATION SET SPECIFICATION` and requires explicit consumer approval as per [Snowflake documentation](https://docs.snowflake.com/en/developer-guide/native-apps/requesting-app-specs-eai).
+   > **Note**: External Access Integrations are defined using `ALTER APPLICATION SET SPECIFICATION` and require explicit consumer approval as per [Snowflake documentation](https://docs.snowflake.com/en/developer-guide/native-apps/requesting-app-specs-eai). See the [External Access Integration Management](#external-access-integration-management) section for details on adding custom integrations.
 
 5. **Configure the secret** (if required by the app):
    - Switch to role ACCOUNTADMIN
@@ -284,7 +284,7 @@ After creating the application instances, you need to activate and configure the
    The procedure automatically creates all resources with the environment prefix:
    - Compute pool: `{PREFIX}_BLENDX_APP_COMPUTE_POOL`
    - Warehouse: `{PREFIX}_BLENDX_APP_WH`
-   - External access integration: `{PREFIX}_blendx_serper_eai`
+   - External access integrations: `{PREFIX}_BLENDX_{NAME}_EAI` (one per configured EAI)
 
 Repeat these steps for each environment (QA, STABLE) as needed.
 
@@ -450,26 +450,6 @@ flowchart LR
     D -->|generate-app-files.py| E[setup.sql]
     E -->|app install/upgrade| F[Database Updated]
 ```
-
-### Idempotent Migrations for Upgrades
-
-All generated SQL is idempotent to support incremental upgrades:
-
-```sql
--- Tables: CREATE TABLE IF NOT EXISTS
-CREATE TABLE IF NOT EXISTS app_data.my_table (...);
-
--- Columns: ADD COLUMN IF NOT EXISTS
-ALTER TABLE app_data.my_table ADD COLUMN IF NOT EXISTS new_column VARCHAR(255);
-
--- Version tracking: INSERT only if not exists
-INSERT INTO app_data.alembic_version (version_num)
-SELECT '002_add_column' WHERE NOT EXISTS (
-    SELECT 1 FROM app_data.alembic_version WHERE version_num = '002_add_column'
-);
-```
-
-This means:
 - **New installation**: All tables and columns are created
 - **Upgrade**: Only new tables/columns are added, existing data is preserved
 
@@ -511,16 +491,38 @@ Run these commands from the `backend/` directory:
 | Command | Description |
 |---------|-------------|
 | `alembic revision --autogenerate -m "desc"` | Create new migration from model changes |
-| `alembic upgrade head` | Apply all pending migrations (local dev) |
-| `alembic history` | View migration history |
-| `alembic downgrade -1` | Rollback last migration (local dev) |
-| `alembic current` | Show current migration version |
 
 From the project root:
 
 | Command | Description |
 |---------|-------------|
-| `python scripts/generate/generate_migrations_sql.py` | Regenerate SQL from Alembic migrations |
+| `python scripts/generate/generate_migrations_sql.py` | Regenerate SQL from Alembic migrations (for Native App deployment) |
+| `python scripts/generate/generate_migrations_sql.py --schema <SCHEMA> --database <DB> --role <ROLE>` | Generate local_migrations.sql for local Snowflake development |
+
+### Generating Local Migrations SQL
+
+For local Snowflake development, you can generate a `local_migrations.sql` file that can be executed directly against your local Snowflake database. This file includes the database, schema, and role context needed to run the migrations.
+
+```bash
+python scripts/generate/generate_migrations_sql.py \
+  --schema APP_DATA \
+  --database BLENDX_APP_DEV_DB \
+  --role BLENDX_APP_DEV_ROLE
+```
+
+This generates `scripts/generated/local_migrations.sql` which you can execute with:
+
+```bash
+snow sql -f scripts/generated/local_migrations.sql --connection your_connection
+```
+
+The local migrations file includes:
+- `USE ROLE`, `USE DATABASE`, and `USE SCHEMA` statements
+- Alembic version tracking table creation
+- All migrations with `IF NOT EXISTS` / `IF EXISTS` clauses for idempotency
+- Version tracking inserts to mark migrations as applied
+
+> **Note**: The `local_migrations.sql` file is not committed to the repository as it contains environment-specific configuration.
 
 ### Migration Files Reference
 
@@ -559,6 +561,153 @@ python scripts/generate/generate_migrations_sql.py
 Then commit the generated SQL files before pushing again.
 
 > **Note**: The `alembic_version` table tracks which migrations have been applied. Use `CALL app_data.get_migration_status()` to check the current state.
+
+## External Access Integration Management
+
+The application supports dynamic External Access Integration (EAI) management, allowing you to configure connections to external APIs without modifying the code.
+
+### Overview
+
+External Access Integrations allow the application to make outbound connections to external services (APIs). Each EAI consists of:
+- **Network Rule**: Defines which hosts are allowed for egress traffic
+- **External Access Integration**: Associates the network rule with the application
+- **Application Specification**: Describes the EAI for consumer approval in Snowflake UI
+
+### Default Configuration
+
+By default, the application comes pre-configured with Serper API access for web search capabilities:
+
+| Name | Label | Host | Purpose |
+|------|-------|------|---------|
+| `SERPER` | Connection to Serper API | `google.serper.dev` | Web search functionality |
+
+### Managing External Access Configurations
+
+EAI configurations are stored in the `app_data.external_access_configs` table and managed through SQL procedures.
+
+#### List Configured EAIs
+
+```sql
+CALL app_public.list_external_access();
+```
+
+Returns a table with all configured EAIs: `name`, `label`, `description`, `host_ports`, `enabled`.
+
+#### Add a New EAI Configuration
+
+```sql
+CALL app_public.add_external_access(
+    'OPENAI',                           -- name (unique identifier, stored as uppercase)
+    'Connection to OpenAI API',         -- label (shown in Snowflake UI)
+    'Access to OpenAI for LLM',         -- description
+    'api.openai.com'                    -- host_ports (comma-separated for multiple hosts)
+);
+```
+
+Example with multiple hosts:
+```sql
+CALL app_public.add_external_access(
+    'AWS_SERVICES',
+    'Connection to AWS Services',
+    'Access to S3 and Lambda',
+    's3.amazonaws.com,lambda.us-east-1.amazonaws.com'
+);
+```
+
+#### Remove an EAI Configuration
+
+```sql
+CALL app_public.remove_external_access('OPENAI');
+```
+
+> **Note**: This only removes the configuration from the table. To remove the actual Snowflake resources, use `drop_single_external_access`.
+
+#### Enable/Disable an EAI
+
+```sql
+-- Disable
+CALL app_public.toggle_external_access('SERPER', FALSE);
+
+-- Enable
+CALL app_public.toggle_external_access('SERPER', TRUE);
+```
+
+Disabled EAIs will not be created when starting the application.
+
+### Creating and Dropping EAIs in Snowflake
+
+After adding a configuration, you need to create the actual Snowflake resources.
+
+#### Create a Single EAI
+
+```sql
+-- Without environment prefix
+CALL app_public.create_single_external_access('', 'OPENAI');
+
+-- With environment prefix (e.g., QA)
+CALL app_public.create_single_external_access('QA', 'OPENAI');
+```
+
+This creates:
+- Network rule: `app_public.{PREFIX}_BLENDX_OPENAI_NETWORK_RULE`
+- External access integration: `{PREFIX}_BLENDX_OPENAI_EAI`
+- Application specification for consumer approval
+
+#### Drop a Single EAI
+
+```sql
+CALL app_public.drop_single_external_access('QA', 'OPENAI');
+```
+
+### Automatic EAI Management
+
+When using `start_application()` or `start_application_WITH_PREFIX()`, all **enabled** EAI configurations are automatically created and attached to the service.
+
+```sql
+-- Creates all enabled EAIs and starts the service
+CALL app_public.start_application_WITH_PREFIX('QA');
+```
+
+Similarly, `destroy_app()` automatically drops all EAIs configured in the table.
+
+### Important Considerations
+
+1. **Consumer Approval Required**: Each EAI requires explicit approval from the consumer in the Snowflake UI (Security tab). New EAIs will appear as pending requests.
+
+2. **Service Restart Required**: To use newly created EAIs, the service must be recreated with the new `EXTERNAL_ACCESS_INTEGRATIONS` list. This typically means:
+   ```sql
+   CALL app_public.destroy_app_WITH_PREFIX('QA');
+   CALL app_public.start_application_WITH_PREFIX('QA');
+   ```
+
+3. **Naming Convention**: EAI names are automatically converted to uppercase and follow this pattern:
+   - Without prefix: `BLENDX_{NAME}_EAI`
+   - With prefix: `{PREFIX}_BLENDX_{NAME}_EAI`
+
+4. **Network Rules**: Each EAI gets its own network rule following the same naming pattern with `_NETWORK_RULE` suffix.
+
+### Example Workflow: Adding OpenAI Integration
+
+```sql
+-- 1. Add configuration
+CALL app_public.add_external_access(
+    'OPENAI',
+    'Connection to OpenAI API',
+    'Access to OpenAI GPT models for LLM capabilities',
+    'api.openai.com'
+);
+
+-- 2. Verify configuration
+CALL app_public.list_external_access();
+
+-- 3. Restart the application to apply changes
+CALL app_public.destroy_app_WITH_PREFIX('QA');
+CALL app_public.start_application_WITH_PREFIX('QA');
+
+-- 4. Approve the new EAI in Snowflake UI (Security tab)
+
+-- 5. Configure secrets for the new API (Connections tab)
+```
 
 ## Considerations
 

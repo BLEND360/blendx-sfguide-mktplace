@@ -14,7 +14,54 @@ CREATE TABLE IF NOT EXISTS app_data.alembic_version (
 );
 
 -- -----------------------------------------------------------------------------
--- Migration 1: bdeeff6c3dc1
+-- Migration 1: a1b2c3d4e5f6
+-- add_workflow_id_and_result_to_executions
+-- -----------------------------------------------------------------------------
+
+ALTER TABLE app_data.flow_executions ADD COLUMN IF NOT EXISTS workflow_id VARCHAR;
+
+ALTER TABLE app_data.flow_executions ADD COLUMN IF NOT EXISTS result TEXT;
+
+ALTER TABLE app_data.execution_groups ADD COLUMN IF NOT EXISTS workflow_id VARCHAR;
+
+ALTER TABLE app_data.execution_groups ADD COLUMN IF NOT EXISTS result TEXT;
+
+-- Mark migration as applied
+INSERT INTO app_data.alembic_version (version_num)
+SELECT 'a1b2c3d4e5f6' WHERE NOT EXISTS (
+    SELECT 1 FROM app_data.alembic_version WHERE version_num = 'a1b2c3d4e5f6'
+);
+
+-- -----------------------------------------------------------------------------
+-- Migration 2: b2c3d4e5f6g7
+-- add_external_access_configs
+-- -----------------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS app_data.external_access_configs (
+    id INTEGER NOT NULL,
+    name VARCHAR(100) NOT NULL,
+    label VARCHAR(255) NOT NULL,
+    description TEXT,
+    host_ports VARCHAR(1000) NOT NULL,
+    enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    UNIQUE (name)
+);
+
+-- Seed with Serper configuration for backwards compatibility (idempotent)
+INSERT INTO app_data.external_access_configs (name, label, description, host_ports, enabled)
+SELECT 'SERPER', 'Connection to Serper API', 'Access to Serper API for web search capabilities', 'google.serper.dev', TRUE
+WHERE NOT EXISTS (SELECT 1 FROM app_data.external_access_configs WHERE name = 'SERPER');
+
+-- Mark migration as applied
+INSERT INTO app_data.alembic_version (version_num)
+SELECT 'b2c3d4e5f6g7' WHERE NOT EXISTS (
+    SELECT 1 FROM app_data.alembic_version WHERE version_num = 'b2c3d4e5f6g7'
+);
+
+-- -----------------------------------------------------------------------------
+-- Migration 3: bdeeff6c3dc1
 -- initial
 -- -----------------------------------------------------------------------------
 
