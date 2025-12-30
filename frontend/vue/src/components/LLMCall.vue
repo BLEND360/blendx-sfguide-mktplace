@@ -1122,7 +1122,7 @@ flowchart LR
     executionId: null,
     executionPollingInterval: null,
     executionPollingAttempts: 0,
-    maxExecutionPollingAttempts: 360,  // 30 minutes at 5-second intervals
+    maxExecutionPollingAttempts: 120,  // 10 minutes at 5-second intervals
     showRunResultDialog: false,
     runResultStatus: null,
     runResultData: null,
