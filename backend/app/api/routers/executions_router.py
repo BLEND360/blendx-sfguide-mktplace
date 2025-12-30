@@ -1,9 +1,9 @@
 """
 Workflow Execution Router
 
-This module provides endpoints for executing crews and flows from YAML configuration
-without persisting any data to the database. Useful for testing, development, and
-scenarios where execution tracking is not required.
+This module provides endpoints for executing crews and flows from YAML configuration.
+Flow executions are persisted to the database for status tracking. Crew executions
+are stored in-memory only.
 """
 
 import asyncio
@@ -25,9 +25,10 @@ from app.api.utils.yaml_validation import (
 from app.crewai.engine.builders.build_engine import CrewAIEngineConfig
 from app.crewai.models.error_formatter import format_yaml_validation_error
 from app.crewai.utils.parameter_substitution import substitute_parameters
-from app.database.db import get_db
+from app.database.db import get_db, get_new_db_session
 from app.database.models.flow_executions import FlowExecution
 from app.database.models.execution_groups import ExecutionGroup
+from app.database.utils.enums import StatusEnum
 
 router = APIRouter(prefix="/executions", tags=["Executions"])
 logger = logging.getLogger(__name__)
@@ -160,18 +161,20 @@ async def _run_flow(flow, flow_name: str, inputs: Optional[dict]) -> str:
 
 @router.post(
     "/run-crew-async",
-    summary="Execute crews from YAML config asynchronously without persistence",
+    summary="Execute crews from YAML config asynchronously",
     response_model=ExecutionAsyncResponse,
     status_code=status.HTTP_202_ACCEPTED,
 )
 async def run_crew_async(
     request: ExecutionRequest,
     background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
 ) -> ExecutionAsyncResponse:
     """
-    Execute crews from YAML configuration asynchronously without persisting any data.
+    Execute crews from YAML configuration asynchronously.
 
-    Returns an execution_id that can be used to poll for status/results.
+    Persists execution status to database and returns an execution_id
+    that can be used to poll for status/results.
     """
     execution_id = str(uuid.uuid4())
 
@@ -200,28 +203,94 @@ async def run_crew_async(
             detail=f"Unexpected error during crew configuration: {str(e)}",
         )
 
-    # Initialize execution tracking
+    # Initialize execution tracking in memory
     _executions[execution_id] = {
         "status": "RUNNING",
         "result": None,
     }
 
+    # Persist execution to database with PENDING status
+    crew_name = crews_config.get_crew_name() if hasattr(crews_config, 'get_crew_name') else None
+    try:
+        execution_group = ExecutionGroup(
+            id=execution_id,
+            workflow_id=request.workflow_id,
+            name=crew_name,
+            status=StatusEnum.PENDING,
+        )
+        db.add(execution_group)
+        db.commit()
+        logger.info(f"Created execution group record: {execution_id}")
+    except Exception as e:
+        logger.error(f"Failed to persist execution group to database: {str(e)}")
+        db.rollback()
+
     async def background_run() -> None:
+        bg_db = None
         try:
+            # Update database status to RUNNING
+            try:
+                bg_db = get_new_db_session()
+                exec_group = bg_db.query(ExecutionGroup).filter(ExecutionGroup.id == execution_id).first()
+                if exec_group:
+                    exec_group.status = StatusEnum.RUNNING
+                    bg_db.commit()
+                    logger.info(f"Updated execution group {execution_id} to RUNNING")
+            except Exception as db_e:
+                logger.error(f"Failed to update execution group status to RUNNING: {str(db_e)}")
+                if bg_db:
+                    bg_db.rollback()
+
             crews = crews_config.create_crews(input=request.input)
             results = await _run_crews(crews)
             _executions[execution_id] = {
                 "status": "COMPLETED",
                 "result": results,
             }
+
+            # Update database with completed status
+            try:
+                bg_db = get_new_db_session()
+                exec_group = bg_db.query(ExecutionGroup).filter(ExecutionGroup.id == execution_id).first()
+                if exec_group:
+                    exec_group.status = StatusEnum.COMPLETED
+                    exec_group.result = str(results) if results else None
+                    exec_group.finished_at = datetime.utcnow()
+                    bg_db.commit()
+                    logger.info(f"Updated execution group {execution_id} to COMPLETED")
+            except Exception as db_e:
+                logger.error(f"Failed to update execution group status in database: {str(db_e)}")
+                if bg_db:
+                    bg_db.rollback()
+
         except Exception as e:
             logger.error(f"Error running crew: {str(e)}")
+            error_result = f"Error: {str(e)}"
             _executions[execution_id] = {
                 "status": "FAILED",
-                "result": f"Error: {str(e)}",
+                "result": error_result,
             }
+
+            # Update database with failed status
+            try:
+                if bg_db is None:
+                    bg_db = get_new_db_session()
+                exec_group = bg_db.query(ExecutionGroup).filter(ExecutionGroup.id == execution_id).first()
+                if exec_group:
+                    exec_group.status = StatusEnum.FAILED
+                    exec_group.result = error_result
+                    exec_group.finished_at = datetime.utcnow()
+                    bg_db.commit()
+                    logger.info(f"Updated execution group {execution_id} to FAILED")
+            except Exception as db_e:
+                logger.error(f"Failed to update execution group status in database: {str(db_e)}")
+                if bg_db:
+                    bg_db.rollback()
+
         finally:
             crews_config.cleanup()
+            if bg_db:
+                bg_db.close()
 
     background_tasks.add_task(background_run)
     return ExecutionAsyncResponse(execution_id=execution_id)
@@ -234,18 +303,20 @@ async def run_crew_async(
 
 @router.post(
     "/run-flow-async",
-    summary="Execute flow from YAML config asynchronously without persistence",
+    summary="Execute flow from YAML config asynchronously",
     response_model=ExecutionAsyncResponse,
     status_code=status.HTTP_202_ACCEPTED,
 )
 async def run_flow_async(
     request: ExecutionRequest,
     background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
 ) -> ExecutionAsyncResponse:
     """
-    Execute a flow from YAML configuration asynchronously without persisting any data.
+    Execute a flow from YAML configuration asynchronously.
 
-    Returns an execution_id that can be used to poll for status/results.
+    Persists execution status to database and returns an execution_id
+    that can be used to poll for status/results.
     """
     execution_id = str(uuid.uuid4())
 
@@ -276,15 +347,44 @@ async def run_flow_async(
             detail=f"Unexpected error during flow configuration: {str(e)}",
         )
 
-    # Initialize execution tracking
+    # Initialize execution tracking in memory
     _executions[execution_id] = {
         "status": "RUNNING",
         "result": None,
     }
 
+    # Persist execution to database with PENDING status
+    flow_name = flow_config.get_flow_name()
+    try:
+        flow_execution = FlowExecution(
+            id=execution_id,
+            workflow_id=request.workflow_id,
+            name=flow_name,
+            status=StatusEnum.PENDING,
+        )
+        db.add(flow_execution)
+        db.commit()
+        logger.info(f"Created flow execution record: {execution_id}")
+    except Exception as e:
+        logger.error(f"Failed to persist flow execution to database: {str(e)}")
+        db.rollback()
+
     async def background_run() -> None:
+        bg_db = None
         try:
-            flow_name = flow_config.get_flow_name()
+            # Update database status to RUNNING
+            try:
+                bg_db = get_new_db_session()
+                flow_exec = bg_db.query(FlowExecution).filter(FlowExecution.id == execution_id).first()
+                if flow_exec:
+                    flow_exec.status = StatusEnum.RUNNING
+                    bg_db.commit()
+                    logger.info(f"Updated flow execution {execution_id} to RUNNING")
+            except Exception as db_e:
+                logger.error(f"Failed to update flow execution status to RUNNING: {str(db_e)}")
+                if bg_db:
+                    bg_db.rollback()
+
             flow = flow_config.create_flow(input=request.input)
 
             # Set flow ID and workflow_id in state if possible
@@ -309,14 +409,50 @@ async def run_flow_async(
                 "status": "COMPLETED",
                 "result": result,
             }
+
+            # Update database with completed status
+            try:
+                bg_db = get_new_db_session()
+                flow_exec = bg_db.query(FlowExecution).filter(FlowExecution.id == execution_id).first()
+                if flow_exec:
+                    flow_exec.status = StatusEnum.COMPLETED
+                    flow_exec.result = result
+                    flow_exec.finished_at = datetime.utcnow()
+                    bg_db.commit()
+                    logger.info(f"Updated flow execution {execution_id} to COMPLETED")
+            except Exception as db_e:
+                logger.error(f"Failed to update flow execution status in database: {str(db_e)}")
+                if bg_db:
+                    bg_db.rollback()
+
         except Exception as e:
             logger.error(f"Error running flow: {str(e)}")
+            error_result = f"Error: {str(e)}"
             _executions[execution_id] = {
                 "status": "FAILED",
-                "result": f"Error: {str(e)}",
+                "result": error_result,
             }
+
+            # Update database with failed status
+            try:
+                if bg_db is None:
+                    bg_db = get_new_db_session()
+                flow_exec = bg_db.query(FlowExecution).filter(FlowExecution.id == execution_id).first()
+                if flow_exec:
+                    flow_exec.status = StatusEnum.FAILED
+                    flow_exec.result = error_result
+                    flow_exec.finished_at = datetime.utcnow()
+                    bg_db.commit()
+                    logger.info(f"Updated flow execution {execution_id} to FAILED")
+            except Exception as db_e:
+                logger.error(f"Failed to update flow execution status in database: {str(db_e)}")
+                if bg_db:
+                    bg_db.rollback()
+
         finally:
             flow_config.cleanup()
+            if bg_db:
+                bg_db.close()
 
     background_tasks.add_task(background_run)
     return ExecutionAsyncResponse(execution_id=execution_id)
@@ -332,25 +468,56 @@ async def run_flow_async(
     summary="Get status and result of an execution",
     response_model=ExecutionStatusResponse,
 )
-async def get_execution_status(execution_id: str) -> ExecutionStatusResponse:
+async def get_execution_status(
+    execution_id: str,
+    db: Session = Depends(get_db),
+) -> ExecutionStatusResponse:
     """
     Get the status and result of a workflow execution.
 
     Poll this endpoint to check if an async execution has completed.
+    First checks in-memory cache, then falls back to database.
     """
+    # First check in-memory cache
     execution = _executions.get(execution_id)
 
-    if execution is None:
+    if execution is not None:
         return ExecutionStatusResponse(
             execution_id=execution_id,
-            status="NOT_FOUND",
-            result=None,
+            status=execution["status"],
+            result=execution["result"],
         )
+
+    # Fall back to database lookup for flow executions
+    try:
+        flow_exec = db.query(FlowExecution).filter(FlowExecution.id == execution_id).first()
+        if flow_exec:
+            status_str = flow_exec.status.name if flow_exec.status else "UNKNOWN"
+            return ExecutionStatusResponse(
+                execution_id=execution_id,
+                status=status_str,
+                result=flow_exec.result,
+            )
+    except Exception as e:
+        logger.error(f"Error querying flow_executions for {execution_id}: {str(e)}")
+
+    # Fall back to database lookup for execution groups (crews)
+    try:
+        exec_group = db.query(ExecutionGroup).filter(ExecutionGroup.id == execution_id).first()
+        if exec_group:
+            status_str = exec_group.status.name if exec_group.status else "UNKNOWN"
+            return ExecutionStatusResponse(
+                execution_id=execution_id,
+                status=status_str,
+                result=exec_group.result,
+            )
+    except Exception as e:
+        logger.error(f"Error querying execution_groups for {execution_id}: {str(e)}")
 
     return ExecutionStatusResponse(
         execution_id=execution_id,
-        status=execution["status"],
-        result=execution["result"],
+        status="NOT_FOUND",
+        result=None,
     )
 
 
@@ -404,7 +571,7 @@ async def list_flow_executions_by_workflow(
             executions=[
                 ExecutionItem(
                     execution_id=exec.id,
-                    status=exec.status.value if exec.status else "UNKNOWN",
+                    status=exec.status.name if exec.status else "UNKNOWN",
                     name=exec.name,
                     created_at=exec.created_at,
                     updated_at=exec.updated_at,
@@ -451,7 +618,7 @@ async def list_group_executions_by_workflow(
             executions=[
                 ExecutionItem(
                     execution_id=exec.id,
-                    status=exec.status.value if exec.status else "UNKNOWN",
+                    status=exec.status.name if exec.status else "UNKNOWN",
                     name=exec.name,
                     created_at=exec.created_at,
                     updated_at=exec.updated_at,
@@ -492,7 +659,7 @@ async def get_flow_execution_status(
 
         return ExecutionStatusResponse(
             execution_id=execution.id,
-            status=execution.status.value if execution.status else "UNKNOWN",
+            status=execution.status.name if execution.status else "UNKNOWN",
             result=execution.result,
         )
     except Exception as e:
@@ -527,7 +694,7 @@ async def get_group_execution_status(
 
         return ExecutionStatusResponse(
             execution_id=execution.id,
-            status=execution.status.value if execution.status else "UNKNOWN",
+            status=execution.status.name if execution.status else "UNKNOWN",
             result=execution.result,
         )
     except Exception as e:
