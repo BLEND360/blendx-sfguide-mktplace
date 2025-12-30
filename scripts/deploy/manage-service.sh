@@ -54,6 +54,28 @@ else
             start_application
         else
             echo "$UPDATE_OUTPUT"
+            # Restart service to apply new images (update_service only updates spec, doesn't restart containers)
+            echo "Restarting service to apply new images..."
+            snow sql -q "USE ROLE $ROLE; CALL $APP_INSTANCE.app_public.stop_app();" --connection $CONNECTION
+
+            # Wait for service to be fully suspended before resuming
+            echo "Waiting for service to suspend..."
+            MAX_WAIT=60
+            WAIT_COUNT=0
+            while [ $WAIT_COUNT -lt $MAX_WAIT ]; do
+                STATUS_OUTPUT=$(snow sql -q "USE ROLE $ROLE; CALL $APP_INSTANCE.app_public.get_service_status();" --connection $CONNECTION 2>&1)
+                # Service returns [] or empty when suspended
+                if echo "$STATUS_OUTPUT" | grep -qE "\[\]|SUSPENDED"; then
+                    echo "Service suspended successfully"
+                    break
+                fi
+                WAIT_COUNT=$((WAIT_COUNT + 5))
+                echo "Waiting for suspend... ($WAIT_COUNT/$MAX_WAIT seconds)"
+                sleep 5
+            done
+
+            snow sql -q "USE ROLE $ROLE; CALL $APP_INSTANCE.app_public.resume_app();" --connection $CONNECTION
+            echo "Service restarted successfully"
         fi
     fi
 fi

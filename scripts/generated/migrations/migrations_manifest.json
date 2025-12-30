@@ -2,6 +2,20 @@
   "migrations": [
     {
       "index": 1,
+      "revision": "a1b2c3d4e5f6",
+      "filename": "20251230_add_workflow_id_to_executions.sql",
+      "message": "add_workflow_id_and_result_to_executions",
+      "down_revision": null
+    },
+    {
+      "index": 2,
+      "revision": "b2c3d4e5f6g7",
+      "filename": "20251230_add_external_access_configs.sql",
+      "message": "add_external_access_configs",
+      "down_revision": null
+    },
+    {
+      "index": 3,
       "revision": "bdeeff6c3dc1",
       "filename": "20251229_190047_initial.sql",
       "message": "initial",

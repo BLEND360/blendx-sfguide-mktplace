@@ -16,6 +16,7 @@ from app.database.models.chat_messages import ChatMessage
 from app.database.models.execution_groups import ExecutionGroup
 from app.database.models.flow_executions import FlowExecution
 from app.database.models.agent_executions import AgentExecution
+from app.database.models.external_access_configs import ExternalAccessConfig
 
 __all__ = [
     "Base",
@@ -25,4 +26,5 @@ __all__ = [
     "ExecutionGroup",
     "FlowExecution",
     "AgentExecution",
+    "ExternalAccessConfig",
 ]

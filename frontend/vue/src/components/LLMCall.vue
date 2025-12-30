@@ -1139,6 +1139,7 @@ flowchart LR
     showExecutionDetailsDialog: false,
     executionDetails: null,
     viewingExecutionId: null,
+    currentWorkflowType: null,
   }),
 
   computed: {
@@ -1716,13 +1717,20 @@ flowchart LR
       this.loadingWorkflowExecutions = true
       this.workflowExecutions = null
       this.showWorkflowExecutionsDialog = true
+      // Store workflow type for later use in viewExecutionDetails
+      this.currentWorkflowType = workflow.type
 
       const baseUrl = process.env.VUE_APP_API_URL
 
+      // Use the correct endpoint based on workflow type
+      // run-build-flow -> flow_executions, run-build-crew -> execution_groups
+      const isFlow = workflow.type === 'run-build-flow'
+      const endpoint = isFlow
+        ? `/executions/flow/workflow/${workflow.workflow_id}?limit=20`
+        : `/executions/group/workflow/${workflow.workflow_id}?limit=20`
+
       try {
-        const response = await axios.get(
-          baseUrl + `/crew/executions/workflow/${workflow.workflow_id}?limit=20`
-        )
+        const response = await axios.get(baseUrl + endpoint)
         if (response.data.executions) {
           this.workflowExecutions = response.data.executions
         } else {
@@ -1742,8 +1750,14 @@ flowchart LR
 
       const baseUrl = process.env.VUE_APP_API_URL
 
+      // Use the correct endpoint based on workflow type
+      const isFlow = this.currentWorkflowType === 'run-build-flow'
+      const endpoint = isFlow
+        ? `/executions/flow/status/${exec.execution_id}`
+        : `/executions/group/status/${exec.execution_id}`
+
       try {
-        const response = await axios.get(baseUrl + `/crew/status/${exec.execution_id}`)
+        const response = await axios.get(baseUrl + endpoint)
         this.executionDetails = response.data
         this.showExecutionDetailsDialog = true
       } catch (error) {

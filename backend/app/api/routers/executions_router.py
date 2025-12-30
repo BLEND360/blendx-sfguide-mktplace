@@ -9,12 +9,14 @@ scenarios where execution tracking is not required.
 import asyncio
 import logging
 import uuid
+from datetime import datetime
 from functools import partial
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 import yaml
-from fastapi import APIRouter, BackgroundTasks, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from pydantic import BaseModel, ValidationError
+from sqlalchemy.orm import Session
 
 from app.api.utils.yaml_validation import (
     validate_execution_group_configuration,
@@ -23,6 +25,9 @@ from app.api.utils.yaml_validation import (
 from app.crewai.engine.builders.build_engine import CrewAIEngineConfig
 from app.crewai.models.error_formatter import format_yaml_validation_error
 from app.crewai.utils.parameter_substitution import substitute_parameters
+from app.database.db import get_db
+from app.database.models.flow_executions import FlowExecution
+from app.database.models.execution_groups import ExecutionGroup
 
 router = APIRouter(prefix="/executions", tags=["Executions"])
 logger = logging.getLogger(__name__)
@@ -52,6 +57,25 @@ class ExecutionStatusResponse(BaseModel):
     execution_id: str
     status: str
     result: Optional[Any] = None
+
+
+class ExecutionItem(BaseModel):
+    """Response model for a single execution item in list."""
+
+    execution_id: str
+    status: str
+    name: Optional[str] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+    workflow_id: Optional[str] = None
+
+    model_config = {"from_attributes": True}
+
+
+class ExecutionsListResponse(BaseModel):
+    """Response model for list of executions."""
+
+    executions: List[ExecutionItem]
 
 
 # -----------------------------------------------------------------------------
@@ -343,3 +367,172 @@ async def delete_execution_status(execution_id: str) -> None:
     """
     if execution_id in _executions:
         del _executions[execution_id]
+
+
+# -----------------------------------------------------------------------------
+# List Executions by Workflow ID
+# -----------------------------------------------------------------------------
+
+
+@router.get(
+    "/flow/workflow/{workflow_id}",
+    summary="List flow executions for a workflow",
+    response_model=ExecutionsListResponse,
+)
+async def list_flow_executions_by_workflow(
+    workflow_id: str,
+    limit: int = 20,
+    db: Session = Depends(get_db),
+) -> ExecutionsListResponse:
+    """
+    List flow executions for a specific workflow.
+
+    Args:
+        workflow_id: The workflow ID to filter by
+        limit: Maximum number of executions to return (default: 20)
+    """
+    try:
+        executions = (
+            db.query(FlowExecution)
+            .filter(FlowExecution.workflow_id == workflow_id)
+            .order_by(FlowExecution.created_at.desc())
+            .limit(limit)
+            .all()
+        )
+
+        return ExecutionsListResponse(
+            executions=[
+                ExecutionItem(
+                    execution_id=exec.id,
+                    status=exec.status.value if exec.status else "UNKNOWN",
+                    name=exec.name,
+                    created_at=exec.created_at,
+                    updated_at=exec.updated_at,
+                    workflow_id=exec.workflow_id,
+                )
+                for exec in executions
+            ]
+        )
+    except Exception as e:
+        logger.error(f"Error listing flow executions for workflow {workflow_id}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to list flow executions: {str(e)}",
+        )
+
+
+@router.get(
+    "/group/workflow/{workflow_id}",
+    summary="List execution groups for a workflow",
+    response_model=ExecutionsListResponse,
+)
+async def list_group_executions_by_workflow(
+    workflow_id: str,
+    limit: int = 20,
+    db: Session = Depends(get_db),
+) -> ExecutionsListResponse:
+    """
+    List execution groups for a specific workflow.
+
+    Args:
+        workflow_id: The workflow ID to filter by
+        limit: Maximum number of executions to return (default: 20)
+    """
+    try:
+        executions = (
+            db.query(ExecutionGroup)
+            .filter(ExecutionGroup.workflow_id == workflow_id)
+            .order_by(ExecutionGroup.created_at.desc())
+            .limit(limit)
+            .all()
+        )
+
+        return ExecutionsListResponse(
+            executions=[
+                ExecutionItem(
+                    execution_id=exec.id,
+                    status=exec.status.value if exec.status else "UNKNOWN",
+                    name=exec.name,
+                    created_at=exec.created_at,
+                    updated_at=exec.updated_at,
+                    workflow_id=exec.workflow_id,
+                )
+                for exec in executions
+            ]
+        )
+    except Exception as e:
+        logger.error(f"Error listing execution groups for workflow {workflow_id}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to list execution groups: {str(e)}",
+        )
+
+
+@router.get(
+    "/flow/status/{execution_id}",
+    summary="Get status of a flow execution",
+    response_model=ExecutionStatusResponse,
+)
+async def get_flow_execution_status(
+    execution_id: str,
+    db: Session = Depends(get_db),
+) -> ExecutionStatusResponse:
+    """
+    Get the status and result of a flow execution from database.
+    """
+    try:
+        execution = db.query(FlowExecution).filter(FlowExecution.id == execution_id).first()
+
+        if execution is None:
+            return ExecutionStatusResponse(
+                execution_id=execution_id,
+                status="NOT_FOUND",
+                result=None,
+            )
+
+        return ExecutionStatusResponse(
+            execution_id=execution.id,
+            status=execution.status.value if execution.status else "UNKNOWN",
+            result=execution.result,
+        )
+    except Exception as e:
+        logger.error(f"Error getting flow execution status {execution_id}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get flow execution status: {str(e)}",
+        )
+
+
+@router.get(
+    "/group/status/{execution_id}",
+    summary="Get status of an execution group",
+    response_model=ExecutionStatusResponse,
+)
+async def get_group_execution_status(
+    execution_id: str,
+    db: Session = Depends(get_db),
+) -> ExecutionStatusResponse:
+    """
+    Get the status and result of an execution group from database.
+    """
+    try:
+        execution = db.query(ExecutionGroup).filter(ExecutionGroup.id == execution_id).first()
+
+        if execution is None:
+            return ExecutionStatusResponse(
+                execution_id=execution_id,
+                status="NOT_FOUND",
+                result=None,
+            )
+
+        return ExecutionStatusResponse(
+            execution_id=execution.id,
+            status=execution.status.value if execution.status else "UNKNOWN",
+            result=execution.result,
+        )
+    except Exception as e:
+        logger.error(f"Error getting execution group status {execution_id}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get execution group status: {str(e)}",
+        )

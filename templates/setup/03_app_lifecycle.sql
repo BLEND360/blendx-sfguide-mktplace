@@ -3,6 +3,158 @@
 -- start, stop, resume, update, destroy, alter compute pool
 -- =============================================================================
 
+-- =============================================================================
+-- EXTERNAL ACCESS INTEGRATION (EAI) MANAGEMENT
+-- Procedures to manage dynamic External Access Integrations
+-- =============================================================================
+
+-- Add a new external access configuration
+CREATE OR REPLACE PROCEDURE app_public.add_external_access(
+    eai_name VARCHAR,
+    eai_label VARCHAR,
+    eai_description VARCHAR,
+    eai_host_ports VARCHAR
+)
+    RETURNS STRING
+    LANGUAGE SQL
+AS $$
+BEGIN
+    INSERT INTO app_data.external_access_configs (name, label, description, host_ports, enabled)
+    VALUES (UPPER(:eai_name), :eai_label, :eai_description, :eai_host_ports, TRUE);
+    RETURN 'External access config "' || UPPER(:eai_name) || '" added successfully';
+END;
+$$;
+
+GRANT USAGE ON PROCEDURE app_public.add_external_access(VARCHAR, VARCHAR, VARCHAR, VARCHAR) TO APPLICATION ROLE app_admin;
+
+-- Remove an external access configuration
+CREATE OR REPLACE PROCEDURE app_public.remove_external_access(eai_name VARCHAR)
+    RETURNS STRING
+    LANGUAGE SQL
+AS $$
+BEGIN
+    DELETE FROM app_data.external_access_configs WHERE name = UPPER(:eai_name);
+    RETURN 'External access config "' || UPPER(:eai_name) || '" removed';
+END;
+$$;
+
+GRANT USAGE ON PROCEDURE app_public.remove_external_access(VARCHAR) TO APPLICATION ROLE app_admin;
+
+-- Enable/disable an external access configuration
+CREATE OR REPLACE PROCEDURE app_public.toggle_external_access(eai_name VARCHAR, is_enabled BOOLEAN)
+    RETURNS STRING
+    LANGUAGE SQL
+AS $$
+BEGIN
+    UPDATE app_data.external_access_configs SET enabled = :is_enabled WHERE name = UPPER(:eai_name);
+    RETURN 'External access config "' || UPPER(:eai_name) || '" ' || CASE WHEN :is_enabled THEN 'enabled' ELSE 'disabled' END;
+END;
+$$;
+
+GRANT USAGE ON PROCEDURE app_public.toggle_external_access(VARCHAR, BOOLEAN) TO APPLICATION ROLE app_admin;
+
+-- List all external access configurations
+CREATE OR REPLACE PROCEDURE app_public.list_external_access()
+    RETURNS TABLE (name VARCHAR, label VARCHAR, description VARCHAR, host_ports VARCHAR, enabled BOOLEAN)
+    LANGUAGE SQL
+AS $$
+DECLARE
+    res RESULTSET;
+BEGIN
+    res := (SELECT name, label, description, host_ports, enabled FROM app_data.external_access_configs ORDER BY name);
+    RETURN TABLE(res);
+END;
+$$;
+
+GRANT USAGE ON PROCEDURE app_public.list_external_access() TO APPLICATION ROLE app_admin;
+
+-- Create a single External Access Integration (Network Rule + EAI + Specification)
+CREATE OR REPLACE PROCEDURE app_public.create_single_external_access(
+    env_prefix VARCHAR,
+    eai_config_name VARCHAR
+)
+    RETURNS STRING
+    LANGUAGE SQL
+AS $$
+DECLARE
+    config_label VARCHAR;
+    config_desc VARCHAR;
+    config_hosts VARCHAR;
+    full_eai_name VARCHAR;
+    full_rule_name VARCHAR;
+    hosts_formatted VARCHAR;
+BEGIN
+    -- Get configuration from table
+    SELECT label, description, host_ports
+    INTO :config_label, :config_desc, :config_hosts
+    FROM app_data.external_access_configs
+    WHERE name = UPPER(:eai_config_name) AND enabled = TRUE;
+
+    IF (config_hosts IS NULL) THEN
+        RETURN 'EAI config "' || UPPER(:eai_config_name) || '" not found or disabled';
+    END IF;
+
+    -- Build names with prefix
+    full_eai_name := CASE WHEN :env_prefix = '' THEN 'BLENDX_' || UPPER(:eai_config_name) || '_EAI'
+                         ELSE UPPER(:env_prefix) || '_BLENDX_' || UPPER(:eai_config_name) || '_EAI' END;
+    full_rule_name := CASE WHEN :env_prefix = '' THEN 'BLENDX_' || UPPER(:eai_config_name) || '_NETWORK_RULE'
+                          ELSE UPPER(:env_prefix) || '_BLENDX_' || UPPER(:eai_config_name) || '_NETWORK_RULE' END;
+
+    -- Format hosts for VALUE_LIST (handle comma-separated hosts)
+    hosts_formatted := REPLACE(:config_hosts, ',', ''',''');
+
+    -- Create Network Rule
+    EXECUTE IMMEDIATE 'CREATE NETWORK RULE IF NOT EXISTS app_public.' || full_rule_name ||
+        ' TYPE = HOST_PORT VALUE_LIST = (''' || hosts_formatted || ''') MODE = EGRESS';
+
+    -- Create External Access Integration
+    EXECUTE IMMEDIATE 'CREATE EXTERNAL ACCESS INTEGRATION IF NOT EXISTS ' || full_eai_name ||
+        ' ALLOWED_NETWORK_RULES = (app_public.' || full_rule_name || ') ENABLED = TRUE';
+
+    -- Set Application Specification for consumer approval
+    EXECUTE IMMEDIATE 'ALTER APPLICATION SET SPECIFICATION ' || full_eai_name ||
+        ' TYPE = EXTERNAL_ACCESS' ||
+        ' LABEL = ''' || config_label || '''' ||
+        ' DESCRIPTION = ''' || config_desc || '''' ||
+        ' HOST_PORTS = (''' || hosts_formatted || ''')';
+
+    RETURN 'Created EAI: ' || full_eai_name || ' with hosts: ' || :config_hosts;
+END;
+$$;
+
+GRANT USAGE ON PROCEDURE app_public.create_single_external_access(VARCHAR, VARCHAR) TO APPLICATION ROLE app_admin;
+
+-- Drop a single External Access Integration
+CREATE OR REPLACE PROCEDURE app_public.drop_single_external_access(
+    env_prefix VARCHAR,
+    eai_config_name VARCHAR
+)
+    RETURNS STRING
+    LANGUAGE SQL
+AS $$
+DECLARE
+    full_eai_name VARCHAR;
+    full_rule_name VARCHAR;
+BEGIN
+    -- Build names with prefix
+    full_eai_name := CASE WHEN :env_prefix = '' THEN 'BLENDX_' || UPPER(:eai_config_name) || '_EAI'
+                         ELSE UPPER(:env_prefix) || '_BLENDX_' || UPPER(:eai_config_name) || '_EAI' END;
+    full_rule_name := CASE WHEN :env_prefix = '' THEN 'BLENDX_' || UPPER(:eai_config_name) || '_NETWORK_RULE'
+                          ELSE UPPER(:env_prefix) || '_BLENDX_' || UPPER(:eai_config_name) || '_NETWORK_RULE' END;
+
+    EXECUTE IMMEDIATE 'DROP EXTERNAL ACCESS INTEGRATION IF EXISTS ' || full_eai_name;
+    EXECUTE IMMEDIATE 'DROP NETWORK RULE IF EXISTS app_public.' || full_rule_name;
+
+    RETURN 'Dropped EAI: ' || full_eai_name || ' and network rule: ' || full_rule_name;
+END;
+$$;
+
+GRANT USAGE ON PROCEDURE app_public.drop_single_external_access(VARCHAR, VARCHAR) TO APPLICATION ROLE app_admin;
+
+-- =============================================================================
+-- START APPLICATION
+-- =============================================================================
+
 -- Internal procedure with env_prefix, warehouse_size, and compute pool parameters (use start_application wrapper instead)
 CREATE OR REPLACE PROCEDURE app_public.start_application_internal(env_prefix VARCHAR, warehouse_size VARCHAR, cp_min_nodes NUMBER, cp_max_nodes NUMBER)
     RETURNS string
@@ -12,17 +164,18 @@ DECLARE
     migration_status VARCHAR;
     migration_verification VARCHAR;
     poolname VARCHAR;
-    eai_name VARCHAR;
-    network_rule_name VARCHAR;
     wh_name VARCHAR;
     wh_size VARCHAR;
     pool_min NUMBER;
     pool_max NUMBER;
+    eai_names_list VARCHAR DEFAULT '';
+    eai_count NUMBER DEFAULT 0;
+    eai_result VARCHAR;
+    config_name VARCHAR;
+    cur CURSOR FOR SELECT name FROM app_data.external_access_configs WHERE enabled = TRUE;
 BEGIN
         -- Build resource names with optional environment prefix (all uppercase for consistency)
         poolname := CASE WHEN :env_prefix = '' THEN 'BLENDX_APP_COMPUTE_POOL' ELSE UPPER(:env_prefix) || '_BLENDX_APP_COMPUTE_POOL' END;
-        eai_name := CASE WHEN :env_prefix = '' THEN 'BLENDX_SERPER_EAI' ELSE UPPER(:env_prefix) || '_BLENDX_SERPER_EAI' END;
-        network_rule_name := CASE WHEN :env_prefix = '' THEN 'BLENDX_SERPER_NETWORK_RULE' ELSE UPPER(:env_prefix) || '_BLENDX_SERPER_NETWORK_RULE' END;
         wh_name := CASE WHEN :env_prefix = '' THEN 'BLENDX_APP_WH' ELSE UPPER(:env_prefix) || '_BLENDX_APP_WH' END;
 
         -- Default warehouse size to X-SMALL if not provided
@@ -51,30 +204,40 @@ BEGIN
         EXECUTE IMMEDIATE 'CREATE COMPUTE POOL IF NOT EXISTS ' || poolname ||
             ' MIN_NODES = ' || pool_min || ' MAX_NODES = ' || pool_max || ' INSTANCE_FAMILY = CPU_X64_M AUTO_RESUME = TRUE AUTO_SUSPEND_SECS = 300';
 
-        -- Create network rule for Serper API access (prefixed to avoid conflicts)
-        EXECUTE IMMEDIATE 'CREATE NETWORK RULE IF NOT EXISTS app_public.' || network_rule_name ||
-            ' TYPE = HOST_PORT VALUE_LIST = (''google.serper.dev'') MODE = EGRESS';
+        -- Create all enabled External Access Integrations from config table
+        OPEN cur;
+        FOR record IN cur DO
+            config_name := record.name;
 
-        -- Create external access integration for Serper API (prefixed to avoid conflicts)
-        EXECUTE IMMEDIATE 'CREATE EXTERNAL ACCESS INTEGRATION IF NOT EXISTS ' || eai_name ||
-            ' ALLOWED_NETWORK_RULES = (app_public.' || network_rule_name || ') ENABLED = TRUE';
+            -- Create the EAI
+            CALL app_public.create_single_external_access(:env_prefix, config_name) INTO :eai_result;
 
-        -- Set application specification for external access (required for consumer approval)
-        EXECUTE IMMEDIATE 'ALTER APPLICATION SET SPECIFICATION ' || eai_name ||
-            ' TYPE = EXTERNAL_ACCESS' ||
-            ' LABEL = ''Connection to Serper API''' ||
-            ' DESCRIPTION = ''Access to Serper API for web search capabilities''' ||
-            ' HOST_PORTS = (''google.serper.dev'')';
+            -- Build the list of EAI names for the service
+            IF (eai_names_list != '') THEN
+                eai_names_list := eai_names_list || ', ';
+            END IF;
+            eai_names_list := eai_names_list ||
+                CASE WHEN :env_prefix = '' THEN 'BLENDX_' || config_name || '_EAI'
+                     ELSE UPPER(:env_prefix) || '_BLENDX_' || config_name || '_EAI' END;
+            eai_count := eai_count + 1;
+        END FOR;
+        CLOSE cur;
 
-        -- Create the service (warehouse is passed via QUERY_WAREHOUSE, backend detects it via CURRENT_WAREHOUSE())
-        EXECUTE IMMEDIATE 'CREATE SERVICE app_public.blendx_st_spcs IN COMPUTE POOL ' || poolname ||
-            ' FROM SPECIFICATION_FILE=''/fullstack.yaml'' QUERY_WAREHOUSE=' || wh_name ||
-            ' EXTERNAL_ACCESS_INTEGRATIONS = (' || eai_name || ')';
+        -- Create the service with all EAIs (warehouse is passed via QUERY_WAREHOUSE, backend detects it via CURRENT_WAREHOUSE())
+        IF (eai_names_list != '') THEN
+            EXECUTE IMMEDIATE 'CREATE SERVICE app_public.blendx_st_spcs IN COMPUTE POOL ' || poolname ||
+                ' FROM SPECIFICATION_FILE=''/fullstack.yaml'' QUERY_WAREHOUSE=' || wh_name ||
+                ' EXTERNAL_ACCESS_INTEGRATIONS = (' || eai_names_list || ')';
+        ELSE
+            -- No EAIs configured, create service without external access
+            EXECUTE IMMEDIATE 'CREATE SERVICE app_public.blendx_st_spcs IN COMPUTE POOL ' || poolname ||
+                ' FROM SPECIFICATION_FILE=''/fullstack.yaml'' QUERY_WAREHOUSE=' || wh_name;
+        END IF;
 
         GRANT USAGE ON SERVICE app_public.blendx_st_spcs TO APPLICATION ROLE app_user;
         GRANT SERVICE ROLE app_public.blendx_st_spcs!ALL_ENDPOINTS_USAGE TO APPLICATION ROLE app_user;
 
-        RETURN migration_verification || ' | ' || migration_status || '. Service started with pool ' || poolname || ' (min=' || pool_min || ', max=' || pool_max || '), warehouse ' || wh_name || ' (' || wh_size || ')' || ' and EAI ' || eai_name || '. Check status, and when ready, get URL';
+        RETURN migration_verification || ' | ' || migration_status || '. Service started with pool ' || poolname || ' (min=' || pool_min || ', max=' || pool_max || '), warehouse ' || wh_name || ' (' || wh_size || ')' || ' and ' || eai_count || ' EAI(s): ' || eai_names_list || '. Check status, and when ready, get URL';
 END;
 $$;
 
@@ -289,19 +452,39 @@ CREATE OR REPLACE PROCEDURE app_public.destroy_app_internal(env_prefix VARCHAR)
 $$
 DECLARE
     wh_name VARCHAR;
-    eai_name VARCHAR;
-    network_rule_name VARCHAR;
+    full_eai_name VARCHAR;
+    full_rule_name VARCHAR;
+    config_name VARCHAR;
+    eai_count NUMBER DEFAULT 0;
+    cur CURSOR FOR SELECT name FROM app_data.external_access_configs;
 BEGIN
     -- Build resource names with optional environment prefix (all uppercase for consistency)
     wh_name := CASE WHEN :env_prefix = '' THEN 'BLENDX_APP_WH' ELSE UPPER(:env_prefix) || '_BLENDX_APP_WH' END;
-    eai_name := CASE WHEN :env_prefix = '' THEN 'BLENDX_SERPER_EAI' ELSE UPPER(:env_prefix) || '_BLENDX_SERPER_EAI' END;
-    network_rule_name := CASE WHEN :env_prefix = '' THEN 'BLENDX_SERPER_NETWORK_RULE' ELSE UPPER(:env_prefix) || '_BLENDX_SERPER_NETWORK_RULE' END;
 
+    -- Drop the service first
     DROP SERVICE IF EXISTS app_public.blendx_st_spcs;
+
+    -- Drop the warehouse
     EXECUTE IMMEDIATE 'DROP WAREHOUSE IF EXISTS ' || wh_name;
-    EXECUTE IMMEDIATE 'DROP EXTERNAL ACCESS INTEGRATION IF EXISTS ' || eai_name;
-    EXECUTE IMMEDIATE 'DROP NETWORK RULE IF EXISTS ' || network_rule_name;
-    RETURN 'Service, warehouse ' || wh_name || ', EAI ' || eai_name || ', and network rule ' || network_rule_name || ' destroyed';
+
+    -- Drop all EAIs from config table
+    OPEN cur;
+    FOR record IN cur DO
+        config_name := record.name;
+
+        -- Build names with prefix
+        full_eai_name := CASE WHEN :env_prefix = '' THEN 'BLENDX_' || config_name || '_EAI'
+                             ELSE UPPER(:env_prefix) || '_BLENDX_' || config_name || '_EAI' END;
+        full_rule_name := CASE WHEN :env_prefix = '' THEN 'BLENDX_' || config_name || '_NETWORK_RULE'
+                              ELSE UPPER(:env_prefix) || '_BLENDX_' || config_name || '_NETWORK_RULE' END;
+
+        EXECUTE IMMEDIATE 'DROP EXTERNAL ACCESS INTEGRATION IF EXISTS ' || full_eai_name;
+        EXECUTE IMMEDIATE 'DROP NETWORK RULE IF EXISTS app_public.' || full_rule_name;
+        eai_count := eai_count + 1;
+    END FOR;
+    CLOSE cur;
+
+    RETURN 'Service destroyed, warehouse ' || wh_name || ' dropped, and ' || eai_count || ' EAI(s) with their network rules removed';
 END
 $$;
 GRANT USAGE ON PROCEDURE app_public.destroy_app_internal(VARCHAR) TO APPLICATION ROLE app_admin;
