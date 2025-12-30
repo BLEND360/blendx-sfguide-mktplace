@@ -260,8 +260,8 @@ jobs:
           snow sql --query "PUT file://${{ github.workspace }}/app/src/*.sql @${{ vars.SNOWFLAKE_DATABASE }}.${{ vars.SNOWFLAKE_SCHEMA }}.app_stage AUTO_COMPRESS=FALSE OVERWRITE=TRUE;" --connection ${{ env.SNOWFLAKE_CONNECTION }}
           snow sql --query "PUT file://${{ github.workspace }}/app/src/*.yml @${{ vars.SNOWFLAKE_DATABASE }}.${{ vars.SNOWFLAKE_SCHEMA }}.app_stage AUTO_COMPRESS=FALSE OVERWRITE=TRUE;" --connection ${{ env.SNOWFLAKE_CONNECTION }}
           snow sql --query "PUT file://${{ github.workspace }}/app/src/*.yaml @${{ vars.SNOWFLAKE_DATABASE }}.${{ vars.SNOWFLAKE_SCHEMA }}.app_stage AUTO_COMPRESS=FALSE OVERWRITE=TRUE;" --connection ${{ env.SNOWFLAKE_CONNECTION }}
-          # Upload scripts/setup directory
-          snow sql --query "PUT file://${{ github.workspace }}/app/src/scripts/setup/* @${{ vars.SNOWFLAKE_DATABASE }}.${{ vars.SNOWFLAKE_SCHEMA }}.app_stage/scripts/setup AUTO_COMPRESS=FALSE OVERWRITE=TRUE;" --connection ${{ env.SNOWFLAKE_CONNECTION }}
+          # Upload setup directory
+          snow sql --query "PUT file://${{ github.workspace }}/app/src/setup/* @${{ vars.SNOWFLAKE_DATABASE }}.${{ vars.SNOWFLAKE_SCHEMA }}.app_stage/setup AUTO_COMPRESS=FALSE OVERWRITE=TRUE;" --connection ${{ env.SNOWFLAKE_CONNECTION }}
 
       - name: Create application package
         run: |
