@@ -154,7 +154,7 @@ class Settings(BaseSettings):
         None, description="Schema for crew execution results table (defaults to snowflake_schema if not set)"
     )
     crew_execution_table: str = Field(
-        "crew_execution_results", description="Table name for crew execution results"
+        "crew_executions", description="Table name for crew execution results"
     )
 
     # Workflows table configuration

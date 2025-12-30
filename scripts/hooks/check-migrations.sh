@@ -4,11 +4,11 @@
 # This hook runs when files in backend/app/database/models/ or
 # backend/alembic/versions/ are modified.
 
-MIGRATIONS_SQL="scripts/sql/migrations.sql"
-MIGRATIONS_DIR="scripts/sql/migrations/"
+MIGRATIONS_SQL="scripts/generated/migrations/migrations.sql"
+MIGRATIONS_DIR="scripts/generated/migrations/sql/"
 
 # Check if migrations.sql or migrations/ directory files are also being committed
-staged_migrations=$(git diff --cached --name-only | grep -E "^scripts/sql/migrations")
+staged_migrations=$(git diff --cached --name-only | grep -E "^scripts/generated/migrations")
 
 if [ -n "$staged_migrations" ]; then
     # migrations files are staged, all good
@@ -23,10 +23,10 @@ echo "   Modified files:"
 git diff --cached --name-only | grep -E "^(backend/app/database/models/|backend/alembic/versions/).*\.py$" | sed 's/^/     - /'
 echo ""
 echo "   To update migrations SQL, run:"
-echo "     python scripts/generate_migrations_sql.py"
+echo "     python scripts/generate/generate_migrations_sql.py"
 echo ""
 echo "   Then stage the updated files:"
-echo "     git add scripts/sql/migrations.sql scripts/sql/migrations/ scripts/sql/migrations_manifest.json"
+echo "     git add scripts/generated/migrations/"
 echo ""
 echo "   Continuing with commit anyway..."
 echo ""

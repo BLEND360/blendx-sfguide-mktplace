@@ -10,7 +10,7 @@ import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routers import crew_router, health_router, nl_ai_generator_router, nl_ai_generator_async_router, ephemeral_router
+from app.api.routers import crew_router, health_router, nl_ai_generator_router, nl_ai_generator_async_router, executions_router
 
 # Configure logging
 logging.basicConfig(
@@ -36,7 +36,7 @@ app.include_router(health_router.router)
 app.include_router(crew_router.router)
 app.include_router(nl_ai_generator_router.router)
 app.include_router(nl_ai_generator_async_router.router)
-app.include_router(ephemeral_router.router)
+app.include_router(executions_router.router)
 
 
 if __name__ == "__main__":

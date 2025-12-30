@@ -1,39 +1,47 @@
 #!/usr/bin/env python3
 """
-Generate SQL from Alembic migrations for Snowflake Native App.
+Generate SQL from Alembic migrations for Snowflake Native App and local development.
 
 This script reads all Alembic migration files and generates:
-1. Individual SQL files per migration in scripts/sql/migrations/
-2. A combined migrations.sql for backward compatibility
+1. Individual SQL files per migration in scripts/generated/migrations/
+2. A combined migrations.sql for Native App (uses app_data schema)
+3. A local_migrations.sql for local development (uses custom schema)
 
 Each migration file uses idempotent SQL (IF NOT EXISTS, IF EXISTS) to support
 incremental upgrades for consumers who already have the app installed.
 
 Usage:
-    python scripts/generate_migrations_sql.py
+    # For Native App only (default)
+    python scripts/generate/generate_migrations_sql.py
+
+    # For local development with custom schema
+    python scripts/generate/generate_migrations_sql.py --schema MY_SCHEMA
 
 Output:
-    scripts/sql/migrations/           - Directory with individual migration SQL files
-    scripts/sql/migrations.sql        - Combined SQL file with all migrations
-    scripts/sql/migrations_manifest.json - Manifest with migration metadata
+    scripts/generated/migrations/sql/              - Directory with individual migration SQL files
+    scripts/generated/migrations/migrations.sql    - Combined SQL file for Native App
+    scripts/generated/migrations/migrations_manifest.json - Manifest with migration metadata
+    scripts/generated/local_migrations.sql         - SQL file for local development (if --schema provided)
 """
 
+import argparse
 import json
-import os
 import re
 import sys
 from pathlib import Path
 
 # Add backend to path for imports
 SCRIPT_DIR = Path(__file__).resolve().parent
-PROJECT_ROOT = SCRIPT_DIR.parent
+PROJECT_ROOT = SCRIPT_DIR.parent.parent  # scripts/generate -> scripts -> project root
 BACKEND_DIR = PROJECT_ROOT / "backend"
 sys.path.insert(0, str(BACKEND_DIR))
 
 ALEMBIC_VERSIONS_DIR = BACKEND_DIR / "alembic" / "versions"
-OUTPUT_DIR = SCRIPT_DIR / "sql" / "migrations"
-OUTPUT_FILE = SCRIPT_DIR / "sql" / "migrations.sql"
-MANIFEST_FILE = SCRIPT_DIR / "sql" / "migrations_manifest.json"
+SCRIPTS_DIR = SCRIPT_DIR.parent  # scripts/generate -> scripts
+OUTPUT_DIR = SCRIPTS_DIR / "generated" / "migrations" / "sql"
+OUTPUT_FILE = SCRIPTS_DIR / "generated" / "migrations" / "migrations.sql"
+MANIFEST_FILE = SCRIPTS_DIR / "generated" / "migrations" / "migrations_manifest.json"
+LOCAL_MIGRATIONS_FILE = SCRIPTS_DIR / "generated" / "local_migrations.sql"
 
 
 def parse_migration_file(filepath: Path) -> dict:
@@ -318,6 +326,13 @@ def parse_column_content(col_content: str) -> dict:
 
 def extract_default_value(options_str: str):
     """Extract server_default value from options string, properly formatted for SQL."""
+    # SQL functions that should not be quoted (Snowflake built-in functions)
+    SQL_FUNCTIONS = {
+        'CURRENT_TIMESTAMP', 'CURRENT_DATE', 'CURRENT_TIME',
+        'SYSDATE', 'GETDATE', 'NOW',
+        'UUID_STRING', 'SEQ1', 'SEQ2', 'SEQ4', 'SEQ8',
+    }
+
     # Try to find server_default=sa.text('...') or server_default='...' or server_default=True/False
     default_match = re.search(
         r"server_default\s*=\s*(sa\.text\(\s*['\"]([^'\"]+)['\"]\s*\)|['\"]([^'\"]+)['\"]|True|False|None)",
@@ -342,6 +357,9 @@ def extract_default_value(options_str: str):
     # If val looks like a function call (ends with ()), return as is
     if val.endswith("()"):
         return val
+    # If val is a known SQL function (without parentheses), return as-is
+    if val.upper() in SQL_FUNCTIONS:
+        return val.upper()
     # If val is numeric, return as is
     if re.fullmatch(r"[-+]?\d+(\.\d+)?", val):
         return val
@@ -453,6 +471,20 @@ def map_sqlalchemy_to_snowflake(sa_type: str) -> str:
     """Map SQLAlchemy type to Snowflake type."""
     sa_type = sa_type.strip()
 
+    # Handle Enum types - Snowflake doesn't have native ENUM, use VARCHAR
+    # Pattern: sa.Enum('VAL1', 'VAL2', name='enumname') or Enum('VAL1', 'VAL2', name='enumname')
+    if re.match(r"(sa\.)?Enum\(", sa_type):
+        return "VARCHAR"
+
+    # Handle snowflake.sqlalchemy custom types (e.g., snowflake.sqlalchemy.custom_types.VARIANT)
+    if "snowflake.sqlalchemy" in sa_type:
+        # Extract the actual type name (VARIANT, ARRAY, OBJECT, etc.)
+        type_match = re.search(r"\.([A-Z]+)(?:\(\))?$", sa_type)
+        if type_match:
+            return type_match.group(1)
+        # Fallback: just extract last part
+        return sa_type.split(".")[-1].replace("()", "")
+
     # Normalize type string for matching
     base_type = sa_type.split('(')[0]
 
@@ -469,6 +501,8 @@ def map_sqlalchemy_to_snowflake(sa_type: str) -> str:
         "sa.TIMESTAMP_TZ": "TIMESTAMP_TZ",
         "VARIANT": "VARIANT",
         "BINARY": "BINARY",
+        "ARRAY": "ARRAY",
+        "OBJECT": "OBJECT",
     }
 
     # Check for length inside parentheses
@@ -487,7 +521,7 @@ def map_sqlalchemy_to_snowflake(sa_type: str) -> str:
         return f"VARCHAR({length_match.group(1)})"
 
     # If type is already a Snowflake type like VARIANT(), BINARY(), etc.
-    if sa_type.startswith(("VARIANT", "BINARY", "FLOAT", "NUMBER", "TIMESTAMP", "DATE")):
+    if sa_type.startswith(("VARIANT", "BINARY", "FLOAT", "NUMBER", "TIMESTAMP", "DATE", "ARRAY", "OBJECT")):
         # Remove trailing parentheses for consistency
         return sa_type.replace("()", "")
 
@@ -528,8 +562,14 @@ def generate_individual_migration_sql(migration: dict, index: int) -> str:
     return "\n".join(lines)
 
 
-def generate_migrations_sql():
-    """Generate migration SQL files - both individual and combined."""
+def generate_migrations_sql(local_schema: str = None, local_database: str = None, local_role: str = None):
+    """Generate migration SQL files - both individual and combined.
+
+    Args:
+        local_schema: If provided, also generates local_migrations.sql with this schema name.
+        local_database: Database name for local migrations (optional, adds USE DATABASE).
+        local_role: Role name for local migrations (optional, adds USE ROLE).
+    """
     if not ALEMBIC_VERSIONS_DIR.exists():
         print(f"Error: Alembic versions directory not found: {ALEMBIC_VERSIONS_DIR}")
         sys.exit(1)
@@ -564,8 +604,9 @@ def generate_migrations_sql():
         slug = migration["slug"]
         message = migration["message"]
 
-        # Generate filename: 001_initial_schema.sql
-        filename = f"{str(i + 1).zfill(3)}_{slug}.sql"
+        # Generate filename: use original migration filename with .sql extension
+        original_filename = migration["filepath"].stem  # e.g., 20251229_165659_initial
+        filename = f"{original_filename}.sql"
         filepath = OUTPUT_DIR / filename
 
         # Generate SQL content
@@ -591,12 +632,12 @@ def generate_migrations_sql():
     MANIFEST_FILE.write_text(json.dumps(migration_manifest, indent=2))
     print(f"  Generated: migrations_manifest.json")
 
-    # Generate combined migrations.sql for backward compatibility
+    # Generate combined migrations.sql for Native App (uses app_data schema)
     combined_lines = [
         "-- =============================================================================",
-        "-- BlendX Database Migrations (Combined)",
+        "-- BlendX Database Migrations (Combined) - Native App",
         "-- Auto-generated from Alembic migrations - DO NOT EDIT MANUALLY",
-        "-- Generated by: scripts/generate_migrations_sql.py",
+        "-- Generated by: scripts/generate/generate_migrations_sql.py",
         "-- =============================================================================",
         "-- ",
         "-- This file contains ALL migrations combined for initial installation.",
@@ -635,12 +676,66 @@ def generate_migrations_sql():
         combined_lines.append(f");")
         combined_lines.append("")
 
-    # Write combined output file
+    # Write combined output file for Native App
     OUTPUT_FILE.parent.mkdir(parents=True, exist_ok=True)
     OUTPUT_FILE.write_text("\n".join(combined_lines))
 
     print(f"\nGenerated: {OUTPUT_FILE}")
     print(f"Generated: {OUTPUT_DIR}/")
+
+    # Generate local_migrations.sql if schema is provided
+    if local_schema:
+        local_migrations_content = "\n".join(combined_lines).replace("app_data.", f"{local_schema}.")
+
+        # Build the USE statements
+        use_statements = []
+        if local_role:
+            use_statements.append(f"USE ROLE {local_role};")
+        if local_database:
+            use_statements.append(f"USE DATABASE {local_database};")
+            use_statements.append(f"USE SCHEMA {local_database}.{local_schema};")
+
+        use_block = "\n".join(use_statements) + "\n\n" if use_statements else ""
+
+        # Build command info for header
+        cmd_parts = ["--schema", local_schema]
+        if local_database:
+            cmd_parts.extend(["--database", local_database])
+        if local_role:
+            cmd_parts.extend(["--role", local_role])
+        cmd_info = " ".join(cmd_parts)
+
+        local_migrations_header = f"""-- =============================================================================
+-- BlendX Local Development Migrations
+-- Auto-generated from Alembic migrations - DO NOT EDIT MANUALLY
+-- Generated by: scripts/generate/generate_migrations_sql.py {cmd_info}
+-- =============================================================================
+--
+-- Database: {local_database or '(not specified)'}
+-- Schema: {local_schema}
+-- Role: {local_role or '(not specified)'}
+--
+-- Usage:
+--   snow sql -f scripts/generated/local_migrations.sql --connection your_connection
+-- =============================================================================
+
+{use_block}"""
+        # Replace the header in local migrations
+        local_content_lines = local_migrations_content.split("\n")
+        # Find where the actual content starts (after the header comments)
+        content_start = 0
+        for idx, line in enumerate(local_content_lines):
+            if line.startswith("-- Alembic version tracking table"):
+                content_start = idx
+                break
+
+        local_migrations_final = local_migrations_header + "\n".join(local_content_lines[content_start:])
+
+        LOCAL_MIGRATIONS_FILE.parent.mkdir(parents=True, exist_ok=True)
+        LOCAL_MIGRATIONS_FILE.write_text(local_migrations_final)
+
+        print(f"Generated: {LOCAL_MIGRATIONS_FILE} (schema: {local_schema})")
+
     print(f"\nMigrations included: {len(ordered_migrations)}")
     for i, m in enumerate(ordered_migrations):
         print(f"  {i + 1}. {m['revision']}: {m['message']}")
@@ -649,5 +744,32 @@ def generate_migrations_sql():
         print(f"\nLatest version: {migration_manifest['latest_version']}")
 
 
+def main():
+    parser = argparse.ArgumentParser(
+        description='Generate SQL from Alembic migrations',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=__doc__
+    )
+    parser.add_argument(
+        '--schema',
+        help='Schema name for local development (generates local_migrations.sql)'
+    )
+    parser.add_argument(
+        '--database',
+        help='Database name for local development (used with --schema)'
+    )
+    parser.add_argument(
+        '--role',
+        help='Role name for local development (used with --schema)'
+    )
+
+    args = parser.parse_args()
+    generate_migrations_sql(
+        local_schema=args.schema,
+        local_database=args.database,
+        local_role=args.role
+    )
+
+
 if __name__ == "__main__":
-    generate_migrations_sql()
+    main()

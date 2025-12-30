@@ -75,64 +75,62 @@ jobs:
           host: ${{ secrets.SNOWFLAKE_HOST }}
           login-registry: 'false'
 
-      - name: Validate QA has versions
+      - name: Validate QA default release directive exists
         run: |
-          echo "Validating QA release channel has versions..."
+          echo "Validating QA default release directive exists..."
 
-          QA_ROW=$(snow sql -q "
+          QA_DEFAULT=$(snow sql -q "
             USE ROLE ${{ vars.SNOWFLAKE_DEPLOY_ROLE }};
-            SHOW VERSIONS IN APPLICATION PACKAGE ${{ vars.SNOWFLAKE_APP_PACKAGE }};
+            SHOW RELEASE DIRECTIVES
+            IN APPLICATION PACKAGE ${{ vars.SNOWFLAKE_APP_PACKAGE }};
           " --connection ${{ env.SNOWFLAKE_CONNECTION }} \
             | grep -i "| *QA *|" \
-            | tail -1 || true)
+            | grep -i "| *true *|" || true)
 
-          if [ -z "$QA_ROW" ]; then
-            echo "::error::No versions found in QA release channel. Deploy to QA first."
+          if [ -z "$QA_DEFAULT" ]; then
+            echo "::error::No default release directive found for QA. Promote a version to QA first."
             exit 1
           fi
 
-          echo "QA release channel has at least one version"
+          echo "QA default release directive found"
 
-      - name: Detect version and patch from QA channel
+      - name: Detect version and patch from QA default release directive
         id: detect_version
         run: |
-          echo "Detecting latest version from QA channel..."
+          echo "Detecting QA default release directive..."
 
-          VERSIONS_TABLE=$(snow sql -q "
+          DIRECTIVES=$(snow sql -q "
             USE ROLE ${{ vars.SNOWFLAKE_DEPLOY_ROLE }};
-            SHOW VERSIONS IN APPLICATION PACKAGE ${{ vars.SNOWFLAKE_APP_PACKAGE }};
-          " --connection ${{ env.SNOWFLAKE_CONNECTION }} 2>/dev/null || echo "")
+            SHOW RELEASE DIRECTIVES
+            IN APPLICATION PACKAGE ${{ vars.SNOWFLAKE_APP_PACKAGE }};
+          " --connection ${{ env.SNOWFLAKE_CONNECTION }})
 
-          echo "Versions table:"
-          echo "$VERSIONS_TABLE"
+          echo "Release directives:"
+          echo "$DIRECTIVES"
 
-          # Find the latest QA version (last row with QA in release_channel_name)
-          QA_ROW=$(echo "$VERSIONS_TABLE" | grep -i "| *QA *|" | tail -1)
+          QA_ROW=$(echo "$DIRECTIVES" \
+            | grep -i "| *QA *|" \
+            | grep -i "| *true *|")
 
           if [ -z "$QA_ROW" ]; then
-            echo "::error::No versions found in QA release channel."
+            echo "::error::Could not find QA default release directive."
             exit 1
           fi
 
-          # Parse version and patch from pipe-separated format
           VERSION=$(echo "$QA_ROW" | awk -F'|' '{gsub(/^[ \t]+|[ \t]+$/, "", $2); print $2}')
           PATCH=$(echo "$QA_ROW" | awk -F'|' '{gsub(/^[ \t]+|[ \t]+$/, "", $3); print $3}')
 
           if [ -z "$VERSION" ] || [ -z "$PATCH" ]; then
-            echo "::error::Could not parse version/patch from QA channel"
+            echo "::error::Failed to parse version/patch from QA default release directive."
             exit 1
           fi
 
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "patch=$PATCH" >> $GITHUB_OUTPUT
 
-          echo "=========================================="
-          echo "Promotion Configuration:"
+          echo "QA default directive:"
           echo "  Version: $VERSION"
-          echo "  Patch: $PATCH"
-          echo "  Source: QA"
-          echo "  Target: STABLE"
-          echo "=========================================="
+          echo "  Patch:   $PATCH"
 
       - name: Validate STABLE release monotonicity
         run: |
@@ -198,6 +196,40 @@ jobs:
           echo ""
           echo "Release Directives:"
           snow sql -q "USE ROLE ${{ vars.SNOWFLAKE_DEPLOY_ROLE }}; SHOW RELEASE DIRECTIVES IN APPLICATION PACKAGE ${{ vars.SNOWFLAKE_APP_PACKAGE }};" --connection ${{ env.SNOWFLAKE_CONNECTION }}
+
+      - name: Upgrade STABLE application instance
+        run: |
+          VERSION="${{ steps.detect_version.outputs.version }}"
+          PATCH="${{ steps.detect_version.outputs.patch }}"
+
+          echo "Checking if STABLE application instance exists..."
+          APP_EXISTS=$(snow sql -q "USE ROLE ${{ vars.SNOWFLAKE_ROLE }}; SHOW APPLICATIONS LIKE '${{ vars.SNOWFLAKE_APP_INSTANCE }}';" --connection ${{ env.SNOWFLAKE_CONNECTION }} 2>&1 || true)
+
+          if echo "$APP_EXISTS" | grep -q "0 Row"; then
+            echo "STABLE application instance does not exist yet. Skipping upgrade."
+            echo "Create the STABLE instance manually using setup/create-application.sh --env stable"
+          else
+            echo "Upgrading STABLE application ${{ vars.SNOWFLAKE_APP_INSTANCE }} to version $VERSION patch $PATCH..."
+            snow sql -q "USE ROLE ${{ vars.SNOWFLAKE_ROLE }}; ALTER APPLICATION ${{ vars.SNOWFLAKE_APP_INSTANCE }} UPGRADE USING VERSION $VERSION PATCH $PATCH;" --connection ${{ env.SNOWFLAKE_CONNECTION }}
+            echo "Application upgraded successfully"
+          fi
+
+      - name: Restart STABLE service
+        run: |
+          # Check if app instance exists first
+          APP_EXISTS=$(snow sql -q "USE ROLE ${{ vars.SNOWFLAKE_ROLE }}; SHOW APPLICATIONS LIKE '${{ vars.SNOWFLAKE_APP_INSTANCE }}';" --connection ${{ env.SNOWFLAKE_CONNECTION }} 2>&1 || true)
+
+          if echo "$APP_EXISTS" | grep -q "0 Row"; then
+            echo "STABLE application instance does not exist. Skipping service restart."
+          else
+            export SNOWFLAKE_ROLE="${{ vars.SNOWFLAKE_ROLE }}"
+            export SNOWFLAKE_APP_INSTANCE="${{ vars.SNOWFLAKE_APP_INSTANCE }}"
+            export SNOWFLAKE_COMPUTE_POOL="${{ vars.SNOWFLAKE_COMPUTE_POOL }}"
+            export SNOWFLAKE_CONNECTION="${{ env.SNOWFLAKE_CONNECTION }}"
+            export SNOWFLAKE_ENV_PREFIX="STABLE"
+            chmod +x scripts/deploy/manage-service.sh
+            ./scripts/deploy/manage-service.sh
+          fi
 
       - name: Summary
         run: |

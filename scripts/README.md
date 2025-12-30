@@ -1,6 +1,37 @@
-# BlendX Deployment Scripts
+# BlendX Scripts
 
-This directory contains scripts for deploying the BlendX Native Application to Snowflake.
+This directory contains scripts for deploying and developing the BlendX Native Application.
+
+## Directory Structure
+
+```
+scripts/
+├── dev/                    # Local development scripts
+│   ├── run-local.sh       # Run backend + frontend locally
+│   ├── build-local.sh     # Build Docker images locally
+│   └── cleanup.sh         # Clean up Snowflake resources
+├── generate/              # Code generation scripts
+│   ├── generate_migrations_sql.py   # Convert Alembic migrations to SQL
+│   ├── generate_local_setup.py      # Generate local dev setup SQL
+│   ├── generate-app-files.py        # Generate manifest, fullstack, setup.sql
+│   └── generate_pdf.py              # Generate PDF documentation
+├── deploy/                # Deployment and service management
+│   ├── manage-service.sh  # Manage SPCS service (resume/restart)
+│   └── wait-for-service.sh # Wait for service readiness
+├── generated/             # Auto-generated files (do not edit manually)
+│   ├── migrations/        # Migration files (committed)
+│   │   ├── sql/           # Individual migration SQL files
+│   │   ├── migrations.sql # Combined migrations
+│   │   └── migrations_manifest.json
+│   └── local_*.sql        # Local dev files (not committed)
+├── sql/                   # SQL files (manually maintained)
+├── hooks/                 # Git hooks
+│   └── check-migrations.sh
+├── test/                  # Test scripts
+│   └── ...
+├── .env.example          # Environment configuration template
+└── README.md             # This file
+```
 
 ## Prerequisites
 
@@ -157,7 +188,7 @@ You can also specify a specific version/patch manually:
 If you need to manage the service without deploying:
 
 ```bash
-./scripts/manage-service.sh
+./scripts/deploy/manage-service.sh
 ```
 
 This script will:
@@ -175,17 +206,44 @@ If you need to recreate the test application:
 
 ## Available Scripts
 
+### Development (`dev/`)
+| Script | Purpose |
+|--------|---------|
+| `dev/run-local.sh` | Run backend + frontend locally |
+| `dev/build-local.sh` | Build Docker images locally |
+| `dev/cleanup.sh` | Clean up Snowflake resources |
+
+### Code Generation (`generate/`)
+| Script | Purpose |
+|--------|---------|
+| `generate/generate_migrations_sql.py` | Convert Alembic migrations to SQL |
+| `generate/generate_local_setup.py` | Generate local dev setup SQL |
+| `generate/generate-app-files.py` | Generate app files (manifest, fullstack, setup.sql) |
+
+### Deployment (`deploy/`)
+| Script | Purpose |
+|--------|---------|
+| `deploy/manage-service.sh` | Manages the SPCS service (resume/restart/start) |
+| `deploy/wait-for-service.sh` | Wait for service readiness |
+
+### Setup (`../setup/`)
 | Script | Purpose |
 |--------|---------|
 | `provider-setup.sh` | **Initial setup** - Creates application package (Provider) |
-| `deploy.sh` | Builds and deploys to QA channel (development) |
-| `release.sh` | Updates DEFAULT channel (production/marketplace) |
 | `create-application.sh` | **Initial setup** - Creates application instance (Consumer) |
-| `recreate-app-qa.sh` | Recreates test app using QA release channel |
-| `manage-service.sh` | Manages the SPCS service (resume/restart/start) |
-| `sql/consumer.sql` | **Initial setup** - Consumer secrets and permissions setup |
-| `sql/local_setup.sql` | Local development database setup |
-| `sql/grant_cortex_permissions.sql` | Grant Cortex AI permissions |
+
+### Generated Files
+| File | Purpose |
+|--------|---------|
+| `generated/migrations/sql/` | Individual SQL migration files (auto-generated, committed) |
+| `generated/migrations/migrations.sql` | Combined migrations SQL (auto-generated, committed) |
+| `generated/migrations/migrations_manifest.json` | Migration metadata (auto-generated, committed) |
+| `generated/local_*.sql` | Local development files (auto-generated, not committed) |
+
+### SQL Files
+| File | Purpose |
+|--------|---------|
+| `sql/consumer_example.sql` | Consumer setup example |
 
 ## Configuration
 

@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.database.db import get_db
 from app.handlers.lite_llm_handler import get_llm
-from app.utils.spcs_helper import get_serper_api_key, get_secret, _LOCAL_SECRETS_DIR
+from app.utils.spcs_helper import get_serper_api_key, _LOCAL_SECRETS_DIR
 
 router = APIRouter(tags=["Health"])
 logger = logging.getLogger(__name__)
@@ -47,55 +47,99 @@ async def health():
 
     return health_info
 
-
 @router.get("/test-cortex")
 async def test_cortex(db: Session = Depends(get_db)):
     """
-    Test Cortex connection using direct SQL call.
-    This bypasses LiteLLM to diagnose connection/permission issues.
+    Test Cortex LLM connection.
     """
-    logger.info("Testing Cortex connection via SQL")
+    logger.info("Testing Cortex")
 
     try:
         test_prompt = "Say 'Hello, Cortex is working!' in exactly those words."
+        query = text("SELECT SNOWFLAKE.CORTEX.COMPLETE('claude-3-5-sonnet', :prompt) as response")
 
-        query = text("""
-            SELECT SNOWFLAKE.CORTEX.COMPLETE(
-                'claude-3-5-sonnet',
-                :prompt
-            ) as response
-        """)
-
-        logger.info(f"Executing Cortex SQL query with prompt: {test_prompt}")
         result = db.execute(query, {"prompt": test_prompt}).fetchone()
 
         if result and result[0]:
-            response_text = result[0]
-            logger.info(f"✅ Cortex response received: {response_text[:100]}...")
-
             return {
                 "status": "success",
-                "message": "Cortex is working correctly via SQL",
-                "response": response_text,
-                "method": "SNOWFLAKE.CORTEX.COMPLETE",
-                "model": "claude-3-5-sonnet",
+                "message": "Cortex is working",
+                "response": result[0],
             }
         else:
-            logger.error("❌ Empty response from Cortex")
-            return {
-                "status": "error",
-                "message": "Received empty response from Cortex",
-                "response": None,
-            }
+            return {"status": "error", "message": "Empty response", "response": None}
 
     except Exception as e:
-        logger.error(f"❌ Cortex test failed: {str(e)}", exc_info=True)
+        logger.error(f"Cortex test failed: {str(e)}", exc_info=True)
         return {
             "status": "error",
-            "message": f"Failed to call Cortex: {str(e)}",
+            "message": f"Failed: {str(e)}",
             "error_type": type(e).__name__,
-            "response": None,
         }
+
+
+@router.get("/test-network")
+async def test_network():
+    """
+    Test 6: Diagnóstico de red - DNS y conectividad.
+    Verifica si el contenedor puede resolver DNS y conectar a hosts externos.
+    """
+    import socket
+
+    logger.info("Testing network connectivity")
+
+    results = {
+        "status": "success",
+        "dns_resolution": {},
+        "connectivity": {},
+    }
+
+    # Hosts a probar
+    hosts_to_test = [
+        ("google.serper.dev", 443),
+        ("api.anthropic.com", 443),
+        ("www.google.com", 443),
+    ]
+
+    for host, port in hosts_to_test:
+        # Test DNS
+        try:
+            ip = socket.gethostbyname(host)
+            results["dns_resolution"][host] = {
+                "resolved": True,
+                "ip": ip,
+            }
+        except socket.gaierror as e:
+            results["dns_resolution"][host] = {
+                "resolved": False,
+                "error": str(e),
+            }
+            results["status"] = "partial_failure"
+
+        # Test conectividad TCP (solo si DNS resolvió)
+        if results["dns_resolution"].get(host, {}).get("resolved"):
+            try:
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.settimeout(5)
+                result = sock.connect_ex((host, port))
+                sock.close()
+                results["connectivity"][f"{host}:{port}"] = {
+                    "connected": result == 0,
+                    "error_code": result if result != 0 else None,
+                }
+            except Exception as e:
+                results["connectivity"][f"{host}:{port}"] = {
+                    "connected": False,
+                    "error": str(e),
+                }
+
+    # Info adicional de red del contenedor
+    try:
+        results["container_hostname"] = socket.gethostname()
+    except Exception:
+        pass
+
+    return results
 
 
 @router.get("/test-secrets")

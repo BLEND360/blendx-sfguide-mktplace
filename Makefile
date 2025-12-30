@@ -95,3 +95,27 @@ dev-setup:       ## [Local] Setup .env file from example
 		cp .env.example .env; \
 		echo "$(GREEN)✓ .env created. Edit with your credentials$(NC)"; \
 	fi
+
+init:            ## [Local] Initialize development environment (hooks, pre-commit, .env)
+	@echo "$(BLUE)Initializing development environment...$(NC)"
+	@git config core.hooksPath .githooks
+	@echo "$(GREEN)✓ Git hooks configured$(NC)"
+	@pre-commit install
+	@echo "$(GREEN)✓ Pre-commit hooks installed$(NC)"
+	@$(MAKE) dev-setup
+	@echo "$(GREEN)✓ Development environment ready$(NC)"
+
+requirements:    ## Regenerate backend/requirements.txt from pyproject.toml
+	@echo "$(BLUE)Regenerating requirements.txt...$(NC)"
+	cd backend && uv export --no-hashes --no-dev -o requirements.txt
+	@echo "$(GREEN)✓ requirements.txt updated$(NC)"
+
+check-requirements: ## Verify requirements.txt is in sync with pyproject.toml
+	@echo "$(BLUE)Checking requirements.txt sync...$(NC)"
+	@cd backend && uv export --no-hashes --no-dev -o /tmp/requirements-check.txt 2>/dev/null && \
+	if ! diff -q <(grep -v "^#" requirements.txt | sort) <(grep -v "^#" /tmp/requirements-check.txt | sort) > /dev/null 2>&1; then \
+		echo "$(YELLOW)requirements.txt is out of sync with pyproject.toml$(NC)"; \
+		echo "Run: make requirements"; \
+		exit 1; \
+	fi
+	@echo "$(GREEN)✓ requirements.txt is in sync$(NC)"

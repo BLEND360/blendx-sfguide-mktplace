@@ -78,7 +78,14 @@ Click on the reference and select the secret you created in the previous step.
 After activation, start the service by calling:
 
 ```sql
-CALL <app_name>.app_public.start_app('<pool_name>');
+-- For marketplace consumers (uses defaults: X-SMALL warehouse, compute pool with 1-3 nodes)
+CALL <app_name>.app_public.start_application();
+
+-- With custom warehouse size (MEDIUM instead of default X-SMALL)
+CALL <app_name>.app_public.start_application('MEDIUM');
+
+-- With custom warehouse size and compute pool nodes (min_nodes, max_nodes)
+CALL <app_name>.app_public.start_application('MEDIUM', 2, 5);
 ```
 
 Check the service status:
@@ -116,11 +123,16 @@ Once the application is running, open the URL returned by `app_url()` to access 
 ```sql
 -- Replace placeholders with your actual values:
 -- <app_name>: Your application instance name
--- <pool_name>: Your compute pool name
 -- <your_role>: Your Snowflake role
 
--- Start application
-CALL <app_name>.app_public.start_app('<pool_name>');
+-- Start application (defaults: X-SMALL warehouse, 1-3 compute pool nodes)
+CALL <app_name>.app_public.start_application();
+
+-- Start with custom warehouse size
+CALL <app_name>.app_public.start_application('MEDIUM');
+
+-- Start with custom warehouse and compute pool (warehouse_size, min_nodes, max_nodes)
+CALL <app_name>.app_public.start_application('MEDIUM', 2, 5);
 
 -- Get application URL
 CALL <app_name>.app_public.app_url();
@@ -132,8 +144,17 @@ CALL <app_name>.app_public.get_service_status();
 CALL <app_name>.app_public.get_service_logs('eap-backend', 200);
 CALL <app_name>.app_public.get_service_logs('eap-frontend', 200);
 
+-- Modify compute pool after creation (min_nodes, max_nodes)
+CALL <app_name>.app_public.alter_compute_pool(1, 10);
+
 -- Stop application
 CALL <app_name>.app_public.stop_app();
+
+-- Resume application
+CALL <app_name>.app_public.resume_app();
+
+-- Destroy application (removes service completely)
+CALL <app_name>.app_public.destroy_app();
 
 -- View recent crew executions
 CALL <app_name>.app_public.get_recent_crew_executions(10);

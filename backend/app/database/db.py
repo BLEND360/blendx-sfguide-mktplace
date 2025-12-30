@@ -16,6 +16,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.config.settings import get_settings
+from app.utils.spcs_helper import get_effective_warehouse
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -87,12 +88,17 @@ def create_snowflake_engine_with_private_key():
         encryption_algorithm=serialization.NoEncryption(),
     )
 
+    # Get effective warehouse (base name + env prefix from database if present)
+    effective_warehouse = get_effective_warehouse() or settings.snowflake_warehouse
+
+    logger.info(f"Using warehouse: {effective_warehouse}")
+
     return create_engine(
         URL(
             account=settings.snowflake_account,
             host=settings.snowflake_host,
             port=443,
-            warehouse=settings.snowflake_warehouse,
+            warehouse=effective_warehouse,
             database=settings.snowflake_database,
             schema=settings.snowflake_schema,
             role=settings.snowflake_role,
@@ -144,12 +150,18 @@ def create_snowflake_engine():
         # The token contains account and host information
         # Only pass account/host if they're explicitly set (for local testing)
         url_params = {
-            "warehouse": settings.snowflake_warehouse,
             "database": settings.snowflake_database,
             "schema": settings.snowflake_schema,
             "authenticator": "oauth",
             "token": oauth_token,
         }
+
+        # Get effective warehouse (base name + env prefix from database if present)
+        effective_warehouse = get_effective_warehouse()
+        if effective_warehouse:
+            url_params["warehouse"] = effective_warehouse
+        else:
+            logger.warning("Could not determine warehouse name")
 
         # Only include account/host if they're non-empty (for local OAuth testing)
         # Empty strings should not be passed to avoid DNS resolution errors
@@ -159,7 +171,7 @@ def create_snowflake_engine():
             url_params["host"] = settings.snowflake_host
 
         logger.info(f"Creating OAuth connection with params: {list(url_params.keys())}")
-        logger.info(f"Database: {url_params.get('database')}, Schema: {url_params.get('schema')}, Warehouse: {url_params.get('warehouse')}")
+        logger.info(f"Database: {url_params.get('database')}, Schema: {url_params.get('schema')}, Warehouse: {url_params.get('warehouse', 'not set')}")
 
         engine = create_engine(
             URL(**url_params),

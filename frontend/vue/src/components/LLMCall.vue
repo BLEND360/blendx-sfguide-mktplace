@@ -82,44 +82,6 @@
             </v-btn>
 
 
-            <v-divider class="my-3"></v-divider>
-
-            <v-btn
-              color="accent"
-              block
-              class="mb-2 dark-text"
-              @click="startCrew"
-              :loading="loading"
-              :disabled="anyTestLoading"
-            >
-              <v-icon left>mdi-play</v-icon>
-              RUN TEST CREW
-            </v-btn>
-
-            <v-btn
-              color="accent"
-              block
-              class="mb-2 dark-text"
-              @click="startExternalToolCrew"
-              :loading="loadingExternal"
-              :disabled="anyTestLoading"
-            >
-              <v-icon left>mdi-tools</v-icon>
-              RUN TEST CREW EXTERNAL TOOL
-            </v-btn>
-
-            <v-btn
-              color="accent"
-              block
-              class="mb-2 dark-text"
-              @click="listCrews"
-              :loading="listingCrews"
-              :disabled="anyTestLoading"
-              dark
-            >
-              <v-icon left>mdi-format-list-bulleted</v-icon>
-              LIST TEST EXECUTIONS
-            </v-btn>
           </v-card-text>
 
           <!-- Test Results Section -->
@@ -129,36 +91,6 @@
               <v-card-subtitle class="pb-1">Test Result:</v-card-subtitle>
               <v-card-text class="pt-0">
                 <pre class="response-text small-text">{{ testResponse }}</pre>
-              </v-card-text>
-            </v-card>
-          </v-card-text>
-
-          <!-- Execution Results Table -->
-          <v-card-text v-if="crewExecutions" class="pa-3 pt-0">
-            <v-divider class="mb-3"></v-divider>
-            <v-card outlined dark class="crew-table-card">
-              <v-card-subtitle class="pb-1 white--text">Execution Results:</v-card-subtitle>
-              <v-card-text class="pt-0">
-                <v-simple-table dense dark class="crew-table">
-                  <template v-slot:default>
-                    <thead>
-                      <tr>
-                        <th class="white--text">ID</th>
-                        <th class="white--text">Status</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr v-for="exec in crewExecutions" :key="exec.execution_id">
-                        <td class="text-monospace white--text">{{ exec.execution_id.substring(0, 8) }}...</td>
-                        <td>
-                          <v-chip x-small :color="getStatusColor(exec.status)" dark>
-                            {{ exec.status }}
-                          </v-chip>
-                        </td>
-                      </tr>
-                    </tbody>
-                  </template>
-                </v-simple-table>
               </v-card-text>
             </v-card>
           </v-card-text>
@@ -540,16 +472,6 @@
 
           <v-divider class="my-4"></v-divider>
 
-          <h3 class="mb-3">Crew Execution</h3>
-          <p class="mb-2">Run pre-configured AI agent crews:</p>
-          <ul class="mb-4">
-            <li><strong>RUN TEST CREW:</strong> Executes the default CrewAI workflow</li>
-            <li><strong>RUN TEST EXTERNAL TOOL:</strong> Executes a crew with external tools (like Serper)</li>
-            <li><strong>LIST TEST EXECUTIONS:</strong> Shows recent crew execution history and their status</li>
-          </ul>
-
-          <v-divider class="my-4"></v-divider>
-
           <h3 class="mb-3">Workflow History</h3>
           <p class="mb-2">Access and manage your previously generated workflows:</p>
           <ul class="mb-4">
@@ -750,7 +672,7 @@
 
         <v-card-text class="pa-4">
           <p class="mb-4">
-            You are about to run this workflow using ephemeral execution (no data will be persisted).
+            You are about to run this workflow (no data will be persisted).
           </p>
           <v-chip small outlined class="mb-4">
             <v-icon left small>mdi-tag</v-icon>
@@ -817,7 +739,7 @@
               {{ runResultStatus === 'STARTING' ? 'Starting workflow execution...' : 'Workflow is running...' }}
             </p>
             <p class="text-caption grey--text">
-              Elapsed time: {{ ephemeralPollingAttempts * 5 }} seconds
+              Elapsed time: {{ executionPollingAttempts * 5 }} seconds
             </p>
           </div>
 
@@ -1173,30 +1095,10 @@ flowchart LR
     testingSerper: false,
     testingEaiEnv: false,
 
-    // Crew states
-    loading: false,
-    loadingExternal: false,
-    listingCrews: false,
-    crewExecutions: null,
-
-    // Crew execution tracking
-    executionId: null,
-    status: null,
-    statusMessage: 'Starting crew execution...',
-    pollingInterval: null,
-    pollingAttempts: 0,
-    maxPollingAttempts: 120,
-
-    // External crew tracking
-    executionIdExternal: null,
-    statusExternal: null,
-    statusMessageExternal: 'Starting external tool crew execution...',
-    pollingIntervalExternal: null,
-    pollingAttemptsExternal: 0,
-
     // NL Generator polling
     nlPollingInterval: null,
     nlPollingAttempts: 0,
+    maxPollingAttempts: 200,  // ~10 minutes at 3-second intervals
 
     // Workflow History
     workflowHistory: null,
@@ -1215,12 +1117,12 @@ flowchart LR
     saveMessageIndex: null,
     saveError: null,
 
-    // Run Workflow (Ephemeral Execution)
+    // Run Workflow Execution
     runningWorkflow: null,
-    ephemeralExecutionId: null,
-    ephemeralPollingInterval: null,
-    ephemeralPollingAttempts: 0,
-    maxEphemeralPollingAttempts: 180,  // 15 minutes at 5-second intervals
+    executionId: null,
+    executionPollingInterval: null,
+    executionPollingAttempts: 0,
+    maxExecutionPollingAttempts: 120,  // 10 minutes at 5-second intervals
     showRunResultDialog: false,
     runResultStatus: null,
     runResultData: null,
@@ -1237,14 +1139,14 @@ flowchart LR
     showExecutionDetailsDialog: false,
     executionDetails: null,
     viewingExecutionId: null,
+    currentWorkflowType: null,
   }),
 
   computed: {
     // Only disable test buttons when another test is running (not during workflow generation)
     anyTestLoading() {
       return this.testingCortex || this.testingLitellm || this.testingSecrets ||
-             this.testingSerper || this.testingEaiEnv || this.loading || this.loadingExternal ||
-             this.listingCrews || this.loadingHistory
+             this.testingSerper || this.testingEaiEnv || this.loadingHistory
     }
   },
 
@@ -1343,8 +1245,8 @@ flowchart LR
 
       if (this.nlPollingAttempts > this.maxPollingAttempts) {
         this.stopNLPolling()
-        this.chatMessages[messageIndex].status = 'error'
-        this.chatMessages[messageIndex].error = 'Timeout: Generation took too long'
+        this.chatMessages[messageIndex].status = 'pending'
+        this.chatMessages[messageIndex].statusMessage = 'The workflow is still being processed. Please check the Executions list to see the result.'
         this.isGenerating = false
         return
       }
@@ -1530,163 +1432,6 @@ flowchart LR
       }
     },
 
-    // Crew methods
-    async startCrew() {
-      this.loading = true
-      this.error = null
-      this.testResponse = null
-      this.pollingAttempts = 0
-
-      const baseUrl = process.env.VUE_APP_API_URL
-
-      try {
-        const startResponse = await axios.post(baseUrl + "/crew/start")
-        this.executionId = startResponse.data.execution_id
-        this.status = startResponse.data.status
-        this.testResponse = `Crew started: ${this.executionId.substring(0, 8)}...`
-        this.startPolling()
-      } catch (error) {
-        this.error = "Error starting crew: " + (error.response?.data?.detail || error.message)
-        this.loading = false
-      }
-    },
-
-    startPolling() {
-      this.pollingInterval = setInterval(async () => {
-        await this.checkStatus()
-      }, 5000)
-    },
-
-    stopPolling() {
-      if (this.pollingInterval) {
-        clearInterval(this.pollingInterval)
-        this.pollingInterval = null
-      }
-    },
-
-    async checkStatus() {
-      this.pollingAttempts++
-
-      if (this.pollingAttempts > this.maxPollingAttempts) {
-        this.stopPolling()
-        this.error = "Polling timeout"
-        this.loading = false
-        return
-      }
-
-      const baseUrl = process.env.VUE_APP_API_URL
-
-      try {
-        const statusResponse = await axios.get(baseUrl + `/crew/status/${this.executionId}`)
-        const data = statusResponse.data
-
-        if (data.status === 'COMPLETED') {
-          this.stopPolling()
-          this.testResponse = `Crew completed!\n${data.result?.raw || JSON.stringify(data.result, null, 2)}`
-          this.loading = false
-        } else if (data.status === 'ERROR') {
-          this.stopPolling()
-          this.error = data.error || 'Unknown error'
-          this.loading = false
-        } else {
-          this.testResponse = `Crew processing... (${this.pollingAttempts * 5}s)`
-        }
-      } catch (error) {
-        this.stopPolling()
-        this.error = "Error checking status: " + (error.response?.data?.detail || error.message)
-        this.loading = false
-      }
-    },
-
-    async startExternalToolCrew() {
-      this.loadingExternal = true
-      this.error = null
-      this.testResponse = null
-      this.pollingAttemptsExternal = 0
-
-      const baseUrl = process.env.VUE_APP_API_URL
-
-      try {
-        const startResponse = await axios.post(baseUrl + "/crew/start-external-tool")
-        this.executionIdExternal = startResponse.data.execution_id
-        this.statusExternal = startResponse.data.status
-        this.testResponse = `External crew started: ${this.executionIdExternal.substring(0, 8)}...`
-        this.startPollingExternal()
-      } catch (error) {
-        this.error = "Error starting external crew: " + (error.response?.data?.detail || error.message)
-        this.loadingExternal = false
-      }
-    },
-
-    startPollingExternal() {
-      this.pollingIntervalExternal = setInterval(async () => {
-        await this.checkStatusExternal()
-      }, 5000)
-    },
-
-    stopPollingExternal() {
-      if (this.pollingIntervalExternal) {
-        clearInterval(this.pollingIntervalExternal)
-        this.pollingIntervalExternal = null
-      }
-    },
-
-    async checkStatusExternal() {
-      this.pollingAttemptsExternal++
-
-      if (this.pollingAttemptsExternal > this.maxPollingAttempts) {
-        this.stopPollingExternal()
-        this.error = "Polling timeout"
-        this.loadingExternal = false
-        return
-      }
-
-      const baseUrl = process.env.VUE_APP_API_URL
-
-      try {
-        const statusResponse = await axios.get(baseUrl + `/crew/status/${this.executionIdExternal}`)
-        const data = statusResponse.data
-
-        if (data.status === 'COMPLETED') {
-          this.stopPollingExternal()
-          this.testResponse = `External crew completed!\n${data.result?.raw || JSON.stringify(data.result, null, 2)}`
-          this.loadingExternal = false
-        } else if (data.status === 'ERROR') {
-          this.stopPollingExternal()
-          this.error = data.error || 'Unknown error'
-          this.loadingExternal = false
-        } else {
-          this.testResponse = `External crew processing... (${this.pollingAttemptsExternal * 5}s)`
-        }
-      } catch (error) {
-        this.stopPollingExternal()
-        this.error = "Error checking status: " + (error.response?.data?.detail || error.message)
-        this.loadingExternal = false
-      }
-    },
-
-    async listCrews() {
-      this.listingCrews = true
-      this.error = null
-      this.testResponse = null
-      this.crewExecutions = null
-
-      const baseUrl = process.env.VUE_APP_API_URL
-
-      try {
-        const response = await axios.get(baseUrl + "/crew/executions?limit=10&is_test=true")
-        if (response.data.executions) {
-          this.crewExecutions = response.data.executions
-        } else {
-          this.error = "No executions found"
-        }
-      } catch (error) {
-        this.error = "Error listing crews: " + (error.response?.data?.detail || error.message)
-      } finally {
-        this.listingCrews = false
-      }
-    },
-
     getStatusColor(status) {
       switch (status) {
         case 'COMPLETED': return 'success'
@@ -1867,7 +1612,7 @@ flowchart LR
       // Determine endpoint based on workflow type
       // type is "run-build-flow" or "run-build-crew"
       const isFlow = workflow.type === 'run-build-flow'
-      const endpoint = isFlow ? '/ephemeral/run-flow-async' : '/ephemeral/run-crew-async'
+      const endpoint = isFlow ? '/executions/run-flow-async' : '/executions/run-crew-async'
 
       try {
         const response = await axios.post(baseUrl + endpoint, {
@@ -1876,12 +1621,12 @@ flowchart LR
           workflow_id: workflow.workflow_id || null
         })
 
-        this.ephemeralExecutionId = response.data.execution_id
+        this.executionId = response.data.execution_id
         this.runResultStatus = 'RUNNING'
         this.showRunResultDialog = true
 
         // Start polling for results
-        this.startEphemeralPolling()
+        this.startExecutionPolling()
       } catch (error) {
         console.error('Error starting workflow execution:', error)
         this.runResultError = error.response?.data?.detail || error.message
@@ -1891,27 +1636,27 @@ flowchart LR
       }
     },
 
-    startEphemeralPolling() {
-      this.ephemeralPollingAttempts = 0
-      this.ephemeralPollingInterval = setInterval(async () => {
-        await this.checkEphemeralStatus()
+    startExecutionPolling() {
+      this.executionPollingAttempts = 0
+      this.executionPollingInterval = setInterval(async () => {
+        await this.checkExecutionStatus()
       }, 5000)  // Poll every 5 seconds
     },
 
-    stopEphemeralPolling() {
-      if (this.ephemeralPollingInterval) {
-        clearInterval(this.ephemeralPollingInterval)
-        this.ephemeralPollingInterval = null
+    stopExecutionPolling() {
+      if (this.executionPollingInterval) {
+        clearInterval(this.executionPollingInterval)
+        this.executionPollingInterval = null
       }
     },
 
-    async checkEphemeralStatus() {
-      this.ephemeralPollingAttempts++
+    async checkExecutionStatus() {
+      this.executionPollingAttempts++
 
-      if (this.ephemeralPollingAttempts > this.maxEphemeralPollingAttempts) {
-        this.stopEphemeralPolling()
-        this.runResultError = 'Timeout: Workflow execution took too long'
-        this.runResultStatus = 'FAILED'
+      if (this.executionPollingAttempts > this.maxExecutionPollingAttempts) {
+        this.stopExecutionPolling()
+        this.runResultError = 'The workflow is taking longer than expected. You can check the result later in "List Executions".'
+        this.runResultStatus = 'PENDING'
         this.runningWorkflow = null
         return
       }
@@ -1919,26 +1664,26 @@ flowchart LR
       const baseUrl = process.env.VUE_APP_API_URL
 
       try {
-        const response = await axios.get(baseUrl + `/ephemeral/status/${this.ephemeralExecutionId}`)
+        const response = await axios.get(baseUrl + `/executions/status/${this.executionId}`)
         const data = response.data
 
         this.runResultStatus = data.status
 
         if (data.status === 'COMPLETED') {
-          this.stopEphemeralPolling()
+          this.stopExecutionPolling()
           this.runResultData = data.result
           this.runningWorkflow = null
         } else if (data.status === 'FAILED' || data.status === 'NOT_FOUND') {
-          this.stopEphemeralPolling()
+          this.stopExecutionPolling()
           this.runResultError = data.result || 'Workflow execution failed'
           this.runningWorkflow = null
         }
         // If still RUNNING, continue polling
       } catch (error) {
-        console.error('Error checking ephemeral status:', error)
+        console.error('Error checking execution status:', error)
         // Don't stop on transient errors, keep polling
-        if (this.ephemeralPollingAttempts > 5 && error.response?.status >= 500) {
-          this.stopEphemeralPolling()
+        if (this.executionPollingAttempts > 5 && error.response?.status >= 500) {
+          this.stopExecutionPolling()
           this.runResultError = error.response?.data?.detail || error.message
           this.runResultStatus = 'FAILED'
           this.runningWorkflow = null
@@ -1948,11 +1693,11 @@ flowchart LR
 
     closeRunResultDialog() {
       this.showRunResultDialog = false
-      // Cleanup the ephemeral execution from memory
-      if (this.ephemeralExecutionId) {
+      // Cleanup the execution from memory
+      if (this.executionId) {
         const baseUrl = process.env.VUE_APP_API_URL
-        axios.delete(baseUrl + `/ephemeral/status/${this.ephemeralExecutionId}`).catch(() => {})
-        this.ephemeralExecutionId = null
+        axios.delete(baseUrl + `/executions/status/${this.executionId}`).catch(() => {})
+        this.executionId = null
       }
     },
 
@@ -1972,13 +1717,20 @@ flowchart LR
       this.loadingWorkflowExecutions = true
       this.workflowExecutions = null
       this.showWorkflowExecutionsDialog = true
+      // Store workflow type for later use in viewExecutionDetails
+      this.currentWorkflowType = workflow.type
 
       const baseUrl = process.env.VUE_APP_API_URL
 
+      // Use the correct endpoint based on workflow type
+      // run-build-flow -> flow_executions, run-build-crew -> execution_groups
+      const isFlow = workflow.type === 'run-build-flow'
+      const endpoint = isFlow
+        ? `/executions/flow/workflow/${workflow.workflow_id}?limit=20`
+        : `/executions/group/workflow/${workflow.workflow_id}?limit=20`
+
       try {
-        const response = await axios.get(
-          baseUrl + `/crew/executions/workflow/${workflow.workflow_id}?limit=20`
-        )
+        const response = await axios.get(baseUrl + endpoint)
         if (response.data.executions) {
           this.workflowExecutions = response.data.executions
         } else {
@@ -1998,8 +1750,14 @@ flowchart LR
 
       const baseUrl = process.env.VUE_APP_API_URL
 
+      // Use the correct endpoint based on workflow type
+      const isFlow = this.currentWorkflowType === 'run-build-flow'
+      const endpoint = isFlow
+        ? `/executions/flow/status/${exec.execution_id}`
+        : `/executions/group/status/${exec.execution_id}`
+
       try {
-        const response = await axios.get(baseUrl + `/crew/status/${exec.execution_id}`)
+        const response = await axios.get(baseUrl + endpoint)
         this.executionDetails = response.data
         this.showExecutionDetailsDialog = true
       } catch (error) {
@@ -2123,10 +1881,8 @@ flowchart LR
   },
 
   beforeDestroy() {
-    this.stopPolling()
-    this.stopPollingExternal()
     this.stopNLPolling()
-    this.stopEphemeralPolling()
+    this.stopExecutionPolling()
   }
 }
 </script>
